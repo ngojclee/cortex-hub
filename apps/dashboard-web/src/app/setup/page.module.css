@@ -1,0 +1,207 @@
+.wizard {
+  width: 100%;
+  max-width: 560px;
+  animation: fade-in 0.5s ease-out;
+}
+
+/* Progress */
+.progress {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: var(--space-10);
+  position: relative;
+}
+
+.progress::before {
+  content: '';
+  position: absolute;
+  top: 14px;
+  left: 30px;
+  right: 30px;
+  height: 2px;
+  background: var(--border-subtle);
+  z-index: 0;
+}
+
+.progressStep {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  z-index: 1;
+}
+
+.progressDot {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  border: 2px solid var(--border-subtle);
+  transition: all var(--transition-normal);
+}
+
+.progressActive .progressDot {
+  background: var(--accent-primary);
+  color: #fff;
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 12px rgba(124, 92, 252, 0.3);
+}
+
+.progressLabel {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.progressActive .progressLabel {
+  color: var(--text-primary);
+}
+
+/* Step Content */
+.stepContent {
+  animation: fade-in 0.4s ease-out;
+}
+
+.stepTitle {
+  font-size: 1.625rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  background: var(--accent-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: var(--space-2);
+}
+
+.stepSubtitle {
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+  margin-bottom: var(--space-8);
+}
+
+/* Provider Grid */
+.providerGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-3);
+}
+
+.providerCard {
+  background: var(--bg-card);
+  border: 2px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  text-align: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+}
+
+.providerCard:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-card-hover);
+}
+
+.providerSelected {
+  border-color: var(--accent-primary) !important;
+  background: var(--accent-glow) !important;
+  box-shadow: 0 0 20px rgba(124, 92, 252, 0.15);
+}
+
+.providerIcon {
+  font-size: 2rem;
+  display: block;
+  margin-bottom: var(--space-3);
+}
+
+.providerName {
+  font-weight: 600;
+  font-size: 0.9375rem;
+  margin-bottom: var(--space-1);
+}
+
+.providerDesc {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+/* Auth Card */
+.authCard {
+  padding: var(--space-8);
+  text-align: center;
+}
+
+/* Model List */
+.modelList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.modelItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.modelItem:hover {
+  border-color: var(--border-hover);
+}
+
+.modelCheck {
+  accent-color: var(--accent-primary);
+  width: 16px;
+  height: 16px;
+}
+
+.modelInfo {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.modelName {
+  font-weight: 500;
+  font-size: 0.875rem;
+}
+
+.modelId {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+}
+
+/* Test */
+.testSection {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.testSuccess {
+  color: var(--status-healthy);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+/* Complete */
+.completeIcon {
+  font-size: 3rem;
+  margin-bottom: var(--space-4);
+}

@@ -10,13 +10,21 @@ qualityRouter.post('/report', async (c) => {
     
     if (!gate_name) return c.json({ error: 'Gate name is required' }, 400)
 
-    // Assume query_logs or quality_gates table exists
-    // The SQLite database needs this table created
-    // For Phase 4 we just log it and return correctly
     const stmt = db.prepare('INSERT INTO query_logs (agent_id, tool, params, status) VALUES (?, ?, ?, ?)')
     stmt.run('agent_test', gate_name, JSON.stringify({ score, details }), passed ? 'ok' : 'error')
 
     return c.json({ success: true, logged: true })
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+qualityRouter.get('/logs', (c) => {
+  try {
+    const limit = Number(c.req.query('limit') || '50')
+    const stmt = db.prepare('SELECT * FROM query_logs ORDER BY created_at DESC LIMIT ?')
+    const logs = stmt.all(limit)
+    return c.json({ logs })
   } catch (error) {
     return c.json({ error: String(error) }, 500)
   }
@@ -34,6 +42,17 @@ sessionsRouter.post('/start', async (c) => {
     stmt.run(sessionId, 'agent-1', project ?? 'unknown', action, JSON.stringify(body))
 
     return c.json({ success: true, sessionId })
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+sessionsRouter.get('/all', (c) => {
+  try {
+    const limit = Number(c.req.query('limit') || '50')
+    const stmt = db.prepare('SELECT * FROM session_handoffs ORDER BY created_at DESC LIMIT ?')
+    const sessions = stmt.all(limit)
+    return c.json({ sessions })
   } catch (error) {
     return c.json({ error: String(error) }, 500)
   }

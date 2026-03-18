@@ -113,4 +113,51 @@ export async function testConnection() {
   return res.json() as Promise<{ cliproxy: boolean; qdrant: boolean; dashboardApi: boolean; allPassed: boolean }>
 }
 
+// ── Quality Logs ──
+export interface QueryLog {
+  id: number
+  agent_id: string
+  tool: string
+  params: string | null
+  latency_ms: number | null
+  status: string
+  error: string | null
+  created_at: string
+}
+
+export async function getQualityLogs(limit = 50) {
+  return apiFetch<{ logs: QueryLog[] }>(`/api/quality/logs?limit=${limit}`)
+}
+
+// ── Sessions ──
+export interface SessionHandoff {
+  id: string
+  from_agent: string
+  to_agent: string | null
+  project: string
+  task_summary: string
+  context: string
+  priority: number
+  status: string
+  claimed_by: string | null
+  created_at: string
+  expires_at: string | null
+}
+
+export async function getSessions(limit = 50) {
+  return apiFetch<{ sessions: SessionHandoff[] }>(`/api/sessions/all?limit=${limit}`)
+}
+
+// ── Settings ──
+export interface SettingsData {
+  environment: string
+  services: Record<string, string>
+  database: string
+  version: string
+}
+
+export async function getSettings() {
+  return apiFetch<SettingsData>('/api/setup/settings')
+}
+
 export { ApiError }

@@ -7,7 +7,8 @@ import styles from './Sidebar.module.css'
 const navItems = [
   { href: '/', label: 'Dashboard', icon: '◈' },
   { href: '/keys', label: 'API Keys', icon: '⚿' },
-  { href: '/logs', label: 'Logs', icon: '☰' },
+  { href: '/quality', label: 'Quality', icon: '✦' },
+  { href: '/sessions', label: 'Sessions', icon: '⇄' },
   { href: '/settings', label: 'Settings', icon: '⚙' },
 ]
 

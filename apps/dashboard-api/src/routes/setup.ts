@@ -64,3 +64,18 @@ setupRouter.get('/test', async (c) => {
   
   return c.json(results, results.allPassed ? 200 : 503)
 })
+
+setupRouter.get('/settings', (c) => {
+  return c.json({
+    environment: process.env.NODE_ENV || 'development',
+    services: {
+      cliproxy: process.env.LLM_PROXY_URL || process.env.CLIPROXY_URL || 'http://localhost:8317',
+      qdrant: process.env.QDRANT_URL || 'http://localhost:6333',
+      neo4j: process.env.NEO4J_URL || 'bolt://localhost:7687',
+      mem0: process.env.MEM0_URL || 'http://localhost:8050',
+      dashboardApi: `http://localhost:${process.env.PORT || 4000}`,
+    },
+    database: process.env.DATABASE_PATH || 'data/cortex.db',
+    version: '0.1.0',
+  })
+})

@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useCallback } from 'react'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import useSWR from 'swr'
 import { config } from '@/lib/config'
@@ -42,7 +43,36 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
+interface TestResult {
+  success: boolean
+  provider: string
+  model: string
+  latency: number
+  reply?: string
+  error?: string
+}
+
 function ProviderCard({ provider, onReconnect }: { provider: Provider; onReconnect: () => void }) {
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<TestResult | null>(null)
+
+  const handleTest = useCallback(async () => {
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const res = await fetch(`${config.api.base}/api/llm/providers/${provider.id}/test`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(20000),
+      })
+      const data = await res.json() as TestResult
+      setTestResult(data)
+    } catch (err) {
+      setTestResult({ success: false, provider: provider.id, model: '—', latency: 0, error: String(err) })
+    } finally {
+      setTesting(false)
+    }
+  }, [provider.id])
+
   return (
     <div className={`card ${styles.providerCard}`}>
       <div className={styles.providerHeader}>
@@ -87,10 +117,34 @@ function ProviderCard({ provider, onReconnect }: { provider: Provider; onReconne
         </div>
       )}
 
+      {/* Test Result */}
+      {testResult && (
+        <div className={`${styles.testResult} ${testResult.success ? styles.testSuccess : styles.testFail}`}>
+          <div className={styles.testHeader}>
+            <span>{testResult.success ? '✅' : '❌'} Test {testResult.success ? 'Passed' : 'Failed'}</span>
+            <span className={styles.testLatency}>{testResult.latency}ms</span>
+          </div>
+          {testResult.success ? (
+            <p className={styles.testDetail}>Model: {testResult.model} — Reply: &quot;{testResult.reply}&quot;</p>
+          ) : (
+            <p className={styles.testDetail}>{testResult.error}</p>
+          )}
+        </div>
+      )}
+
       {/* Actions */}
       <div className={styles.providerActions}>
         {provider.status === 'connected' ? (
-          <button className="btn btn-secondary btn-sm">Disconnect</button>
+          <>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={handleTest}
+              disabled={testing}
+            >
+              {testing ? '⏳ Testing...' : '🧪 Test Connection'}
+            </button>
+            <button className="btn btn-secondary btn-sm">Disconnect</button>
+          </>
         ) : (
           <button className="btn btn-primary btn-sm" onClick={onReconnect}>
             🔐 Connect

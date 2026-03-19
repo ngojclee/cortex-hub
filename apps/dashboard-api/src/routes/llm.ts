@@ -118,6 +118,74 @@ llmRouter.get('/models', async (c) => {
   }
 })
 
+// ── Test a provider (send a real request) ──
+llmRouter.post('/providers/:id/test', async (c) => {
+  const providerId = c.req.param('id')
+
+  // Pick a lightweight model per provider
+  const testModels: Record<string, string> = {
+    openai: 'gpt-4o-mini',
+    gemini: 'gemini-2.0-flash',
+    anthropic: 'claude-sonnet-4-20250514',
+  }
+
+  const model = testModels[providerId] ?? 'gpt-4o-mini'
+  const startTime = Date.now()
+
+  try {
+    const res = await fetch(`${CLIPROXY_URL()}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: 'Reply with "OK" only.' }],
+        max_tokens: 5,
+      }),
+      signal: AbortSignal.timeout(15000),
+    })
+
+    const latency = Date.now() - startTime
+
+    if (!res.ok) {
+      const text = await res.text()
+      return c.json({
+        success: false,
+        provider: providerId,
+        model,
+        latency,
+        error: `LLM returned ${res.status}: ${text.substring(0, 200)}`,
+      })
+    }
+
+    const data = (await res.json()) as {
+      choices?: { message?: { content?: string } }[]
+      usage?: { prompt_tokens?: number; completion_tokens?: number }
+    }
+
+    const reply = data.choices?.[0]?.message?.content ?? ''
+
+    return c.json({
+      success: true,
+      provider: providerId,
+      model,
+      latency,
+      reply: reply.substring(0, 100),
+      usage: data.usage ?? null,
+    })
+  } catch (err) {
+    return c.json(
+      {
+        success: false,
+        provider: providerId,
+        model,
+        latency: Date.now() - startTime,
+        error: String(err),
+      },
+      502
+    )
+  }
+})
+
 // ── Disconnect a provider (revoke auth) ──
 llmRouter.post('/providers/:id/disconnect', async (c) => {
   const providerId = c.req.param('id')

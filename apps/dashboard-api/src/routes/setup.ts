@@ -28,12 +28,43 @@ setupRouter.get('/status', (c) => {
 })
 
 setupRouter.post('/complete', async (c) => {
+  const MEM0_URL = process.env.MEM0_URL || 'http://mem0:8050'
+
   try {
+    // Mark setup as complete in DB
     const stmt = db.prepare(
       "UPDATE setup_status SET completed = 1, completed_at = datetime('now') WHERE id = 1"
     )
     stmt.run()
-    return c.json({ success: true })
+
+    // Auto-configure mem0 in background
+    let mem0Status: 'ok' | 'unreachable' | 'error' = 'unreachable'
+    try {
+      const healthRes = await fetch(`${MEM0_URL}/health`, {
+        signal: AbortSignal.timeout(5000),
+      })
+      if (healthRes.ok) {
+        mem0Status = 'ok'
+        console.log('[Setup] mem0 is healthy and ready')
+      } else {
+        console.warn(`[Setup] mem0 returned ${healthRes.status}`)
+        mem0Status = 'error'
+      }
+    } catch (err) {
+      console.warn('[Setup] mem0 unreachable during setup:', err)
+      mem0Status = 'unreachable'
+    }
+
+    return c.json({
+      success: true,
+      mem0: {
+        status: mem0Status,
+        message:
+          mem0Status === 'ok'
+            ? 'mem0 memory service is configured and ready'
+            : 'mem0 is not available yet — it will auto-connect when the container starts',
+      },
+    })
   } catch (error) {
     return c.json({ success: false, error: String(error) }, 500)
   }

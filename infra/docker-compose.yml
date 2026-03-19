@@ -92,15 +92,15 @@ services:
   # Routes AI calls through CLIProxyAPI
   # ─────────────────────────────────────────────
   mem0:
-    image: mem0/mem0:latest
+    image: mem0/mem0-api-server:latest
     container_name: cortex-mem0
     restart: unless-stopped
     ports:
-      - "8050:8050"
+      - "8050:8000"
     environment:
       MEM0_API_KEY: ${MEM0_API_KEY:-local}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-proxy-key}
-      OPENAI_API_BASE: http://llm-proxy:8317/v1
+      OPENAI_BASE_URL: http://llm-proxy:8317/v1
       MEM0_VECTOR_STORE: qdrant
       MEM0_QDRANT_HOST: qdrant
       MEM0_QDRANT_PORT: 6333
@@ -122,7 +122,7 @@ services:
         limits:
           memory: 1G
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8050/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 5s
       retries: 3

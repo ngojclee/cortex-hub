@@ -30,7 +30,7 @@ setupRouter.get('/status', (c) => {
 setupRouter.post('/complete', async (c) => {
   try {
     const stmt = db.prepare(
-      'UPDATE setup_status SET completed = 1, completed_at = datetime("now") WHERE id = 1'
+      "UPDATE setup_status SET completed = 1, completed_at = datetime('now') WHERE id = 1"
     )
     stmt.run()
     return c.json({ success: true })

@@ -179,6 +179,31 @@ services:
       start_period: 10s
 
   # ─────────────────────────────────────────────
+  # Dashboard Web (Next.js Static Export + nginx)
+  # ─────────────────────────────────────────────
+  dashboard-web:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.dashboard-web
+    image: ghcr.io/lktiep/cortex-hub-web:latest
+    container_name: cortex-dashboard-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: ${DASHBOARD_API_URL:-https://cortex-api.jackle.dev}
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # ─────────────────────────────────────────────
   # Watchtower — Auto-update containers
   # ─────────────────────────────────────────────
   watchtower:

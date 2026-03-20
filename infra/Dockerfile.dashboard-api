@@ -30,7 +30,6 @@ RUN pnpm --filter @cortex/shared-types build \
 # ── Production ───────────────────────────────
 FROM node:22-slim AS runner
 RUN apt-get update -qq && apt-get install -y --no-install-recommends curl docker.io git ca-certificates && rm -rf /var/lib/apt/lists/*
-RUN npm install -g gitnexus
 
 WORKDIR /app
 ENV NODE_ENV=production

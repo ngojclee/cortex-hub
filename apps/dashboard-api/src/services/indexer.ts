@@ -1,6 +1,6 @@
 import { spawn, ChildProcess } from 'child_process'
-import { existsSync, mkdirSync, rmSync } from 'fs'
-import { join } from 'path'
+import { existsSync, mkdirSync, rmSync, readdirSync, readFileSync, statSync } from 'fs'
+import { join, extname } from 'path'
 import { db } from '../db/client.js'
 import { createLogger } from '@cortex/shared-utils'
 
@@ -60,6 +60,101 @@ function appendLog(jobId: string, text: string) {
   // Keep last 10KB of logs
   const trimmed = newLog.length > 10240 ? newLog.slice(-10240) : newLog
   db.prepare('UPDATE index_jobs SET log = ? WHERE id = ?').run(trimmed, jobId)
+}
+
+// ── Symbol extraction patterns per language ──
+const SYMBOL_PATTERNS: Record<string, RegExp[]> = {
+  // TypeScript / JavaScript
+  '.ts':  [/(?:export\s+)?(?:async\s+)?function\s+(\w+)/g, /(?:export\s+)?class\s+(\w+)/g, /(?:export\s+)?interface\s+(\w+)/g, /(?:export\s+)?type\s+(\w+)\s*=/g, /(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=/g, /(?:export\s+)?enum\s+(\w+)/g],
+  '.tsx': [/(?:export\s+)?(?:async\s+)?function\s+(\w+)/g, /(?:export\s+)?class\s+(\w+)/g, /(?:export\s+)?interface\s+(\w+)/g, /(?:export\s+)?type\s+(\w+)\s*=/g, /(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=/g],
+  '.js':  [/(?:export\s+)?(?:async\s+)?function\s+(\w+)/g, /(?:export\s+)?class\s+(\w+)/g, /(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=/g],
+  '.jsx': [/(?:export\s+)?(?:async\s+)?function\s+(\w+)/g, /(?:export\s+)?class\s+(\w+)/g, /(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=/g],
+  // Python
+  '.py':  [/^(?:async\s+)?def\s+(\w+)/gm, /^class\s+(\w+)/gm],
+  // Go
+  '.go':  [/^func\s+(?:\([^)]+\)\s+)?(\w+)/gm, /^type\s+(\w+)\s+(?:struct|interface)/gm],
+  // Rust
+  '.rs':  [/^(?:pub\s+)?(?:async\s+)?fn\s+(\w+)/gm, /^(?:pub\s+)?struct\s+(\w+)/gm, /^(?:pub\s+)?enum\s+(\w+)/gm, /^(?:pub\s+)?trait\s+(\w+)/gm, /^(?:pub\s+)?type\s+(\w+)/gm],
+  // Java / Kotlin
+  '.java': [/(?:public|private|protected)?\s*(?:static\s+)?(?:class|interface|enum)\s+(\w+)/g, /(?:public|private|protected)\s+\w+\s+(\w+)\s*\(/g],
+  '.kt':   [/(?:fun|class|interface|object|enum\s+class)\s+(\w+)/g],
+  // Ruby
+  '.rb':  [/^(?:\s*)def\s+(\w+)/gm, /^(?:\s*)class\s+(\w+)/gm, /^(?:\s*)module\s+(\w+)/gm],
+  // PHP
+  '.php': [/function\s+(\w+)/g, /class\s+(\w+)/g, /interface\s+(\w+)/g],
+  // Vue / Svelte (extract script sections)
+  '.vue': [/(?:export\s+)?(?:async\s+)?function\s+(\w+)/g, /(?:const|let|var)\s+(\w+)\s*=/g],
+  '.svelte': [/(?:export\s+)?(?:async\s+)?function\s+(\w+)/g, /(?:const|let|var)\s+(\w+)\s*=/g],
+  // SQL
+  '.sql': [/CREATE\s+(?:OR\s+REPLACE\s+)?(?:TABLE|VIEW|FUNCTION|PROCEDURE|INDEX)\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:\w+\.)?(\w+)/gi],
+  // CSS
+  '.css': [/\.([a-zA-Z][\w-]+)\s*\{/g],
+}
+
+const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', '__pycache__', '.turbo', 'coverage', '.cache', 'vendor'])
+const SOURCE_EXTENSIONS = new Set(Object.keys(SYMBOL_PATTERNS))
+const MAX_FILE_SIZE = 512 * 1024 // 512KB
+
+/**
+ * Walk directory recursively and extract symbols from source files.
+ * Pure JS — no native dependencies.
+ */
+function extractSymbolsFromDir(dir: string): { totalFiles: number; symbolsFound: number; symbolNames: string[] } {
+  let totalFiles = 0
+  const allSymbols: string[] = []
+
+  function walk(currentDir: string) {
+    let entries: string[]
+    try {
+      entries = readdirSync(currentDir)
+    } catch {
+      return
+    }
+
+    for (const entry of entries) {
+      if (SKIP_DIRS.has(entry) || entry.startsWith('.')) continue
+
+      const fullPath = join(currentDir, entry)
+      let stat
+      try {
+        stat = statSync(fullPath)
+      } catch {
+        continue
+      }
+
+      if (stat.isDirectory()) {
+        walk(fullPath)
+      } else if (stat.isFile()) {
+        const ext = extname(entry).toLowerCase()
+        if (!SOURCE_EXTENSIONS.has(ext)) continue
+        if (stat.size > MAX_FILE_SIZE) continue
+
+        totalFiles++
+        const patterns = SYMBOL_PATTERNS[ext]
+        if (!patterns) continue
+
+        try {
+          const content = readFileSync(fullPath, 'utf-8')
+          for (const pattern of patterns) {
+            // Reset regex lastIndex for reuse
+            const regex = new RegExp(pattern.source, pattern.flags)
+            let match
+            while ((match = regex.exec(content)) !== null) {
+              const name = match[1]
+              if (name && name.length > 1 && !name.startsWith('_')) {
+                allSymbols.push(name)
+              }
+            }
+          }
+        } catch {
+          // Skip unreadable files
+        }
+      }
+    }
+  }
+
+  walk(dir)
+  return { totalFiles, symbolsFound: allSymbols.length, symbolNames: allSymbols }
 }
 
 /**
@@ -135,48 +230,18 @@ export async function startIndexing(projectId: string, jobId: string, branch: st
     updateJob(jobId, { progress: 25 })
     logger.info(`[${jobId}] Clone complete`)
 
-    // ── Step 2: GitNexus Analyze (non-fatal) ──
+    // ── Step 2: Symbol Extraction (pure JS — no native deps) ──
     updateJob(jobId, { status: 'analyzing', progress: 30 })
-    logger.info(`[${jobId}] Running gitnexus analyze`)
+    logger.info(`[${jobId}] Extracting symbols (pure JS)`)
 
-    const analyzeResult = await runCommand('npx', [
-      '-y', 'gitnexus', 'analyze', '.', '--force'
-    ], repoDir, jobId)
-
-    // Parse symbols count from gitnexus output
-    let symbolsFound = 0
-    let totalFiles = 0
-    const symbolMatch = analyzeResult.stdout.match(/(\d+)\s*symbols?/i)
-    const fileMatch = analyzeResult.stdout.match(/(\d+)\s*files?/i)
-    if (symbolMatch?.[1]) symbolsFound = parseInt(symbolMatch[1], 10)
-    if (fileMatch?.[1]) totalFiles = parseInt(fileMatch[1], 10)
-
-    if (analyzeResult.code !== 0) {
-      // GitNexus failed (e.g. GLIBC mismatch) — graceful degradation
-      appendLog(jobId, `[warn] gitnexus failed (exit ${analyzeResult.code}), falling back to file counting`)
-      logger.warn(`[${jobId}] GitNexus failed (non-fatal): exit ${analyzeResult.code}`)
-
-      // Fallback: count files ourselves
-      try {
-        const fallbackResult = await runCommand('find', [
-          '.', '-type', 'f',
-          '(', '-name', '*.ts', '-o', '-name', '*.js', '-o', '-name', '*.tsx', '-o', '-name', '*.jsx',
-          '-o', '-name', '*.py', '-o', '-name', '*.go', '-o', '-name', '*.rs', '-o', '-name', '*.java',
-          '-o', '-name', '*.rb', '-o', '-name', '*.php', '-o', '-name', '*.vue', '-o', '-name', '*.svelte',
-          '-o', '-name', '*.css', '-o', '-name', '*.html', '-o', '-name', '*.json', '-o', '-name', '*.yaml',
-          '-o', '-name', '*.yml', '-o', '-name', '*.md', '-o', '-name', '*.sql', ')',
-          '-not', '-path', '*/node_modules/*', '-not', '-path', '*/.git/*', '-not', '-path', '*/dist/*',
-          '-not', '-path', '*/build/*', '-not', '-path', '*/.next/*',
-        ], repoDir, jobId)
-        totalFiles = fallbackResult.stdout.split('\n').filter(Boolean).length
-        appendLog(jobId, `Fallback file count: ${totalFiles} source files`)
-      } catch {
-        appendLog(jobId, `[warn] File counting also failed, continuing with 0`)
-      }
+    const { totalFiles, symbolsFound, symbolNames } = extractSymbolsFromDir(repoDir)
+    appendLog(jobId, `Found ${totalFiles} source files, ${symbolsFound} symbols`)
+    if (symbolNames.length > 0) {
+      appendLog(jobId, `Sample symbols: ${symbolNames.slice(0, 20).join(', ')}`)
     }
 
     updateJob(jobId, { progress: 70, symbols_found: symbolsFound, total_files: totalFiles })
-    logger.info(`[${jobId}] GitNexus analyze complete: ${symbolsFound} symbols, ${totalFiles} files`)
+    logger.info(`[${jobId}] Symbol extraction: ${symbolsFound} symbols, ${totalFiles} files`)
 
     // ── Step 3: mem0 Ingest (branch-scoped) ──
     updateJob(jobId, { status: 'ingesting', progress: 80 })

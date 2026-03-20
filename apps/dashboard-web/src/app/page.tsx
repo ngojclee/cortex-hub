@@ -196,40 +196,7 @@ export default function DashboardPage() {
 
   return (
     <DashboardLayout title="Dashboard" subtitle="System overview and service health">
-      {/* Stats Grid */}
-      <div className={styles.statsGrid}>
-        {metrics.map((stat) => (
-          <div key={stat.label} className={`card ${styles.statCard}`}>
-            <span className={styles.statIcon}>{stat.icon}</span>
-            <div>
-              <div className={styles.statValue}>{stat.value}</div>
-              <div className={styles.statLabel}>{stat.label}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Services */}
-      <section className={styles.section}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
-          <h2 className={styles.sectionTitle} style={{ margin: 0 }}>System Status</h2>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={() => mutate()}
-            disabled={isLoading}
-          >
-            {isLoading ? 'Checking...' : 'Refresh Status'}
-          </button>
-        </div>
-
-        <div className={styles.servicesGrid}>
-          {services.map((service) => (
-            <ServiceCard key={service.name} {...service} />
-          ))}
-        </div>
-      </section>
-
-      {/* System Resources */}
+      {/* System Resources — top of page */}
       <section className={styles.section}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
           <h2 className={styles.sectionTitle} style={{ margin: 0 }}>System Resources</h2>
@@ -286,6 +253,41 @@ export default function DashboardPage() {
           </div>
         )}
       </section>
+
+      {/* Stats Grid */}
+      <div className={styles.statsGrid}>
+        {metrics.map((stat) => (
+          <div key={stat.label} className={`card ${styles.statCard}`}>
+            <span className={styles.statIcon}>{stat.icon}</span>
+            <div>
+              <div className={styles.statValue}>{stat.value}</div>
+              <div className={styles.statLabel}>{stat.label}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Services */}
+      <section className={styles.section}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
+          <h2 className={styles.sectionTitle} style={{ margin: 0 }}>System Status</h2>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => mutate()}
+            disabled={isLoading}
+          >
+            {isLoading ? 'Checking...' : 'Refresh Status'}
+          </button>
+        </div>
+
+        <div className={styles.servicesGrid}>
+          {services.map((service) => (
+            <ServiceCard key={service.name} {...service} />
+          ))}
+        </div>
+      </section>
+
+
 
       {/* Activity Feed */}
       <section className={styles.section}>

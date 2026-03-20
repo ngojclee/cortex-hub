@@ -23,23 +23,47 @@ app = FastAPI(title="mem0 Memory API", version="0.1.0")
 # Lazy init to let env vars be set before import
 _memory = None
 
+def _read_codex_token():
+    """Read Codex OAuth access_token from cliproxy-auth volume."""
+    auth_dir = os.environ.get("CLIPROXY_AUTH_DIR", "/app/cliproxy-auth")
+    if not os.path.isdir(auth_dir):
+        return None
+    for fname in os.listdir(auth_dir):
+        if fname.startswith("codex-") and fname.endswith(".json"):
+            try:
+                with open(os.path.join(auth_dir, fname)) as f:
+                    data = json.load(f)
+                return data.get("access_token")
+            except Exception:
+                pass
+    return None
+
 def get_memory():
     global _memory
     if _memory is None:
         from mem0 import Memory
+
+        # Try to get a real API key: Codex OAuth > env var > fallback
+        codex_token = _read_codex_token()
+        api_key = codex_token or os.environ.get("OPENAI_API_KEY", "proxy-key")
+        llm_base_url = os.environ.get("OPENAI_BASE_URL")  # CLIProxy for chat
+
         config = {
             "llm": {
                 "provider": "openai",
                 "config": {
                     "model": os.environ.get("MEM0_LLM_MODEL", "gpt-5.4-mini"),
-                    "api_key": os.environ.get("OPENAI_API_KEY", "proxy-key"),
+                    "api_key": api_key,
                 }
             },
             "embedder": {
                 "provider": "openai",
                 "config": {
                     "model": os.environ.get("MEM0_EMBEDDING_MODEL", "text-embedding-3-small"),
-                    "api_key": os.environ.get("OPENAI_API_KEY", "proxy-key"),
+                    "api_key": api_key,
+                    # Embeddings go DIRECT to OpenAI — CLIProxy v6.8.55
+                    # does not support /v1/embeddings (returns 404)
+                    "openai_base_url": "https://api.openai.com/v1",
                 }
             },
             "vector_store": {
@@ -52,11 +76,9 @@ def get_memory():
             },
         }
 
-        # Set OpenAI base URL if provided (for CLIProxy)
-        base_url = os.environ.get("OPENAI_BASE_URL")
-        if base_url:
-            config["llm"]["config"]["openai_base_url"] = base_url
-            config["embedder"]["config"]["openai_base_url"] = base_url
+        # LLM chat completions route through CLIProxy
+        if llm_base_url:
+            config["llm"]["config"]["openai_base_url"] = llm_base_url
 
         _memory = Memory.from_config(config)
     return _memory

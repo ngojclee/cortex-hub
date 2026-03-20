@@ -26,69 +26,70 @@ interface DiskInfo {
 }
 
 // ── Helper: get Docker container stats ──
-async function getContainerStats(): Promise<ContainerInfo[]> {
+function getContainerStats(): ContainerInfo[] {
   try {
-    // Use Docker socket directly
-    const res = await fetch('http://localhost/containers/json?all=true', {
-      // @ts-expect-error - node fetch supports unix socket
-      unix: '/var/run/docker.sock',
-      signal: AbortSignal.timeout(5000),
-    })
-    if (!res.ok) throw new Error(`Docker API: ${res.status}`)
-    const containers = (await res.json()) as Array<{
-      Names: string[]
-      State: string
-      Status: string
-      Image: string
-    }>
+    // Get container list via docker ps
+    const psOutput = execFileSync('docker', [
+      'ps', '-a',
+      '--filter', 'name=cortex-',
+      '--format', '{{.Names}}|{{.State}}|{{.Status}}|{{.Image}}',
+    ], { timeout: 5000, encoding: 'utf-8' }).trim()
 
-    // Get stats for each running container
+    if (!psOutput) return []
+
+    const containers = psOutput.split('\n').filter(Boolean)
     const stats: ContainerInfo[] = []
-    for (const container of containers) {
-      const name = container.Names[0]?.replace(/^\//, '') ?? 'unknown'
-      if (!name.startsWith('cortex-')) continue
 
-      let cpu = '0%'
-      let memory = '0 MB'
+    // Get stats for all running containers in one call
+    let statsMap: Record<string, { cpu: string; memory: string; memPercent: number }> = {}
+    try {
+      const statsOutput = execFileSync('docker', [
+        'stats', '--no-stream',
+        '--format', '{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}|{{.MemPerc}}',
+      ], { timeout: 10000, encoding: 'utf-8' }).trim()
+
+      if (statsOutput) {
+        for (const line of statsOutput.split('\n').filter(Boolean)) {
+          const [name, cpu, memory, memPerc] = line.split('|')
+          if (name) {
+            statsMap[name] = {
+              cpu: cpu ?? '0%',
+              memory: memory ?? '0B / 0B',
+              memPercent: parseFloat(memPerc?.replace('%', '') ?? '0') || 0,
+            }
+          }
+        }
+      }
+    } catch {
+      // docker stats might fail if no running containers
+    }
+
+    for (const line of containers) {
+      const [name, state, statusText, image] = line.split('|')
+      if (!name) continue
+
+      const containerStats = statsMap[name]
       let memoryRaw = 0
       let memoryLimit = 0
-      let memoryPercent = 0
 
-      if (container.State === 'running') {
-        try {
-          const output = execFileSync('docker', [
-            'stats', '--no-stream', '--format',
-            '{{.CPUPerc}}|{{.MemUsage}}|{{.MemPerc}}',
-            name,
-          ], { timeout: 5000, encoding: 'utf-8' }).trim()
-
-          const parts = output.split('|')
-          cpu = parts[0] ?? '0%'
-          memory = parts[1] ?? '0B / 0B'
-          const memPercStr = parts[2] ?? '0%'
-          memoryPercent = parseFloat(memPercStr.replace('%', '')) || 0
-
-          // Parse memory usage: "123.4MiB / 512MiB"
-          const memMatch = memory.match(/([\d.]+)(\w+)\s*\/\s*([\d.]+)(\w+)/)
-          if (memMatch) {
-            memoryRaw = parseToBytes(parseFloat(memMatch[1]!), memMatch[2]!)
-            memoryLimit = parseToBytes(parseFloat(memMatch[3]!), memMatch[4]!)
-          }
-        } catch {
-          // Container might have stopped between list and stats
+      if (containerStats?.memory) {
+        const memMatch = containerStats.memory.match(/([\d.]+)(\w+)\s*\/\s*([\d.]+)(\w+)/)
+        if (memMatch) {
+          memoryRaw = parseToBytes(parseFloat(memMatch[1]!), memMatch[2]!)
+          memoryLimit = parseToBytes(parseFloat(memMatch[3]!), memMatch[4]!)
         }
       }
 
       stats.push({
-        name,
-        status: container.State,
-        cpu,
-        memory,
+        name: name ?? 'unknown',
+        status: state ?? 'unknown',
+        cpu: containerStats?.cpu ?? '0%',
+        memory: containerStats?.memory ?? '—',
         memoryRaw,
         memoryLimit,
-        memoryPercent,
-        uptime: container.Status,
-        image: container.Image.split(':')[0]?.split('/').pop() ?? container.Image,
+        memoryPercent: containerStats?.memPercent ?? 0,
+        uptime: statusText ?? '',
+        image: (image ?? '').split(':')[0]?.split('/').pop() ?? image ?? '',
       })
     }
 
@@ -154,7 +155,7 @@ systemRouter.get('/metrics', async (c) => {
 
   const cpu = getCpuUsage()
   const disk = getDiskUsage()
-  const containers = await getContainerStats()
+  const containers = getContainerStats()
 
   // Network info
   const networkInterfaces = os.networkInterfaces()

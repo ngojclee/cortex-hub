@@ -7,19 +7,17 @@ FROM node:22-slim AS base
 RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
 
-# ── 1. Build Stage ────────────────────────────
+# ── 1. Build & Deploy Stage ───────────────────
 FROM base AS builder
 # Copy everything first
 COPY . .
-# Force hoisted linker for absolute flat structure
-RUN echo "node-linker=hoisted" > .npmrc \
- && echo "shamefully-hoist=true" >> .npmrc
 # Install all dependencies (dev + prod)
 RUN pnpm install --frozen-lockfile
 # Build all workspaces
 RUN pnpm build
-# Prune for production
-RUN pnpm install --prod --frozen-lockfile --ignore-scripts
+# Use pnpm deploy to create a standalone, production folder for the main app
+# This folder will contain full copies of workspace dependencies in node_modules
+RUN pnpm --filter @cortex/dashboard-api --prod deploy /app/deploy
 
 # ── 2. Production Runner ──────────────────────
 FROM debian:trixie-slim AS runner
@@ -34,31 +32,18 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=4000
 
-# Copy root metadata for ESM resolution
-COPY --from=builder /app/package.json ./
-COPY --from=builder /app/pnpm-workspace.yaml ./
+# Copy the standalone production bundle from builder
+COPY --from=builder /app/deploy ./
 
-# Copy prod dependencies (flat and self-contained)
-COPY --from=builder /app/node_modules ./node_modules
-
-# Copy built packages
-COPY --from=builder /app/packages/shared-types/dist ./packages/shared-types/dist
-COPY --from=builder /app/packages/shared-types/package.json ./packages/shared-types/
-COPY --from=builder /app/packages/shared-utils/dist ./packages/shared-utils/dist
-COPY --from=builder /app/packages/shared-utils/package.json ./packages/shared-utils/
-COPY --from=builder /app/apps/dashboard-api/dist ./apps/dashboard-api/dist
-COPY --from=builder /app/apps/dashboard-api/package.json ./apps/dashboard-api/
-COPY --from=builder /app/apps/dashboard-api/src/db/schema.sql ./apps/dashboard-api/dist/db/schema.sql
-COPY --from=builder /app/apps/hub-mcp/dist ./apps/hub-mcp/dist
-COPY --from=builder /app/apps/hub-mcp/package.json ./apps/hub-mcp/
-
-# Frontend static assets
+# Copy built frontend assets (not included in API bundle)
 COPY --from=builder /app/apps/dashboard-web/out ./public
 
+# Ensure necessary folders exist
 RUN mkdir -p /app/data /data/repos
 
 ARG COMMIT_SHA
 ENV COMMIT_SHA=${COMMIT_SHA}
 
 EXPOSE 4000
-CMD ["node", "apps/dashboard-api/dist/index.js"]
+# Start the bundled app from its own directory root
+CMD ["node", "dist/index.js"]

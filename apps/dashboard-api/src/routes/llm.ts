@@ -25,7 +25,7 @@ const PROVIDER_DEFS = [
     authType: 'oauth' as const,
     oauthEndpoint: 'codex-auth-url',
     statusEndpoint: 'codex-auth-status',
-    usedBy: ['mem0', 'mcp-tools'],
+    usedBy: ['mem9', 'mcp-tools'],
   },
   {
     id: 'gemini',

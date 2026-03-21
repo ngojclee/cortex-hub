@@ -14,6 +14,7 @@ import { indexingRouter } from './routes/indexing.js'
 import { usageRouter } from './routes/usage.js'
 import { statsRouter as metricsRouter } from './routes/stats.js'
 import { systemRouter } from './routes/system.js'
+import { accountsRouter } from './routes/accounts.js'
 import mcpApp from '@cortex/hub-mcp'
 
 const app = new Hono()
@@ -69,6 +70,7 @@ app.route('/api/projects', indexingRouter)
 app.route('/api/usage', usageRouter)
 app.route('/api/system', systemRouter)
 app.route('/api/metrics', metricsRouter)
+app.route('/api/accounts', accountsRouter)
 app.route('/api/indexing', indexingRouter)
 
 // Mount MCP Gateway (Stateless)

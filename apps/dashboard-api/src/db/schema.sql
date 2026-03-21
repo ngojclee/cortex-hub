@@ -100,6 +100,27 @@ CREATE TABLE IF NOT EXISTS usage_logs (
     created_at TEXT DEFAULT (datetime('now'))
 );
 
+-- ── Provider Accounts (multi-account per provider) ──
+CREATE TABLE IF NOT EXISTS provider_accounts (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,                                  -- "OpenAI (Personal)"
+    type TEXT NOT NULL,                                  -- "openai_compat" | "gemini" | "anthropic"
+    api_base TEXT NOT NULL,                              -- "http://llm-proxy:8317/v1"
+    api_key TEXT,                                        -- stored for runtime use (TODO: encrypt)
+    status TEXT DEFAULT 'enabled',                       -- "enabled" | "disabled"
+    capabilities TEXT DEFAULT '["chat"]',                -- JSON: ["chat", "embedding", "code"]
+    models TEXT DEFAULT '[]',                            -- cached JSON array of model IDs
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- ── Model Routing (fallback chains per purpose) ──
+CREATE TABLE IF NOT EXISTS model_routing (
+    purpose TEXT PRIMARY KEY,                            -- "chat" | "embedding" | "code"
+    chain TEXT NOT NULL DEFAULT '[]',                    -- JSON: [{"accountId":"...","model":"gpt-5.4-mini"},...]
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+
 -- Insert default uncompleted setup status
 INSERT OR IGNORE INTO setup_status (id, completed) VALUES (1, 0);
 

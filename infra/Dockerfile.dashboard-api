@@ -7,40 +7,21 @@ FROM node:22-slim AS base
 RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
 
-# ── 1. Install all dependencies for build ────
-FROM base AS deps
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
-COPY packages/shared-types/package.json ./packages/shared-types/
-COPY packages/shared-utils/package.json ./packages/shared-utils/
-COPY apps/dashboard-api/package.json ./apps/dashboard-api/
-COPY apps/dashboard-web/package.json ./apps/dashboard-web/
-COPY apps/hub-mcp/package.json ./apps/hub-mcp/
-RUN pnpm install --frozen-lockfile --prod=false
-
-# ── 2. Build stage ────────────────────────────
+# ── 1. Build Stage ────────────────────────────
 FROM base AS builder
-COPY --from=deps /app /app
+# Copy everything first
 COPY . .
-RUN pnpm --filter @cortex/shared-types build \
- && pnpm --filter @cortex/shared-utils build \
- && pnpm --filter @cortex/hub-mcp build \
- && pnpm --filter @cortex/dashboard-api build \
- && pnpm --filter @cortex/dashboard-web build
+# Force hoisted linker for absolute flat structure
+RUN echo "node-linker=hoisted" > .npmrc \
+ && echo "shamefully-hoist=true" >> .npmrc
+# Install all dependencies (dev + prod)
+RUN pnpm install --frozen-lockfile
+# Build all workspaces
+RUN pnpm build
+# Prune for production
+RUN pnpm install --prod --frozen-lockfile --ignore-scripts
 
-# ── 3. Production dependencies ────────────────
-FROM base AS prod-deps
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
-COPY packages/shared-types/package.json ./packages/shared-types/
-COPY packages/shared-utils/package.json ./packages/shared-utils/
-COPY apps/dashboard-api/package.json ./apps/dashboard-api/
-COPY apps/dashboard-web/package.json ./apps/dashboard-web/
-COPY apps/hub-mcp/package.json ./apps/hub-mcp/
-# Force hoisted linker for production to ensure real folders in runner
-RUN echo "shamefully-hoist=true" >> .npmrc \
- && echo "node-linker=hoisted" >> .npmrc \
- && pnpm install --frozen-lockfile --prod --ignore-scripts
-
-# ── 4. Production Runner ──────────────────────
+# ── 2. Production Runner ──────────────────────
 FROM debian:trixie-slim AS runner
 RUN apt-get update -qq \
  && apt-get install -y --no-install-recommends curl ca-certificates gnupg docker.io git \
@@ -53,10 +34,10 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=4000
 
-# Copy prod dependencies (physically hoisted, no broken symlinks)
-COPY --from=prod-deps /app/node_modules ./node_modules
+# Copy prod dependencies (flat and self-contained)
+COPY --from=builder /app/node_modules ./node_modules
 
-# Copy built packages (dist folders and package.json)
+# Copy built packages
 COPY --from=builder /app/packages/shared-types/dist ./packages/shared-types/dist
 COPY --from=builder /app/packages/shared-types/package.json ./packages/shared-types/
 COPY --from=builder /app/packages/shared-utils/dist ./packages/shared-utils/dist

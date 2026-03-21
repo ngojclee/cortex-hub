@@ -52,6 +52,6 @@ RUN mkdir -p /app/data /data/repos
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
   CMD node -e "fetch('http://localhost:4000/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
 
-EXPOSE 4000
+EXPOSE 4000 3000 8317
 
 CMD ["node", "apps/dashboard-api/dist/index.js"]

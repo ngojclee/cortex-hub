@@ -89,6 +89,14 @@ app.use('/*', serveStatic({
 
 const port = Number(process.env.PORT) || 4000
 
-serve({ fetch: app.fetch, port }, () => {
-  logger.info(`Dashboard API running on http://localhost:${port}`)
+// In All-in-One Hub, we listen on multiple ports for Cloudflare Tunnel compatibility
+// dashboard-api: 4000
+// dashboard-web: 3000
+// hub-mcp: 8317
+const ports = [port, 3000, 8317]
+
+ports.forEach(p => {
+  serve({ fetch: app.fetch, port: p }, () => {
+    logger.info(`All-in-One Hub listening on http://localhost:${p}`)
+  })
 })

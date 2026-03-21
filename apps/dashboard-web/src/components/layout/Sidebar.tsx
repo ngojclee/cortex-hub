@@ -2,6 +2,8 @@
 
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
+import useSWR from 'swr'
+import { checkHealth } from '@/lib/api'
 import styles from './Sidebar.module.css'
 
 const navItems = [
@@ -17,6 +19,12 @@ const navItems = [
 
 export default function Sidebar() {
   const pathname = usePathname()
+  const { data: health } = useSWR('health', checkHealth, { refreshInterval: 30000 })
+
+  const commitShort = health?.commit && health.commit !== 'dev'
+    ? health.commit.slice(0, 7)
+    : 'dev'
+  const isOnline = health?.status === 'ok' || health?.status === 'degraded'
 
   return (
     <aside className={styles.sidebar}>
@@ -26,7 +34,7 @@ export default function Sidebar() {
           <span className={styles.logoIcon}>◇</span>
           <span className={styles.logoText}>Cortex Hub</span>
         </div>
-        <span className={styles.version}>v0.1</span>
+        <span className={styles.version}>v{health?.version ?? '0.1'}</span>
       </div>
 
       {/* Navigation */}
@@ -51,9 +59,16 @@ export default function Sidebar() {
       {/* Footer */}
       <div className={styles.footer}>
         <div className={styles.statusRow}>
-          <span className="status-dot healthy" />
-          <span className={styles.statusText}>All systems online</span>
+          <span className={`status-dot ${isOnline ? 'healthy' : 'unhealthy'}`} />
+          <span className={styles.statusText}>
+            {isOnline ? 'All systems online' : 'Connecting...'}
+          </span>
         </div>
+        {commitShort !== 'dev' && (
+          <div className={styles.commitRow} title={`Commit: ${health?.commit}\nBuilt: ${health?.buildDate ?? 'unknown'}`}>
+            <code className={styles.commitHash}>{commitShort}</code>
+          </div>
+        )}
       </div>
     </aside>
   )

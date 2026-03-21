@@ -119,3 +119,18 @@
   font-size: 0.75rem;
   color: var(--text-tertiary);
 }
+
+.commitRow {
+  margin-top: var(--space-2);
+  cursor: default;
+}
+
+.commitHash {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.03em;
+}

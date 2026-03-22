@@ -12,7 +12,7 @@ RUN apt-get update && \
 # Install gitnexus globally
 RUN npm install -g gitnexus@latest
 
-WORKDIR /data
+WORKDIR /app/data
 
 # GitNexus stores its index in ~/.gitnexus
 # Volume mount will persist this across restarts

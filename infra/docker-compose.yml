@@ -73,7 +73,7 @@ services:
     ports:
       - "4848:4848"
     volumes:
-      - api-data:/data
+      - api-data:/app/data
       - gitnexus-data:/root/.gitnexus
     environment:
       PORT: 4848
@@ -106,6 +106,7 @@ services:
       - "3000:4000" # Backward compatibility for dashboard port
     volumes:
       - api-data:/app/data
+      - gitnexus-data:/root/.gitnexus
       - cliproxy-auth:/app/cliproxy-auth
       - /var/run/docker.sock:/var/run/docker.sock
     environment:

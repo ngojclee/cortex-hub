@@ -11,6 +11,7 @@ import { registerKnowledgeTools } from './tools/knowledge.js'
 import { registerMemoryTools } from './tools/memory.js'
 import { registerQualityTools } from './tools/quality.js'
 import { registerSessionTools } from './tools/session.js'
+import { registerChangeTools } from './tools/changes.js'
 import { validateApiKey } from './middleware/auth.js'
 import type { Env } from './types.js'
 
@@ -104,7 +105,8 @@ app.get('/', (c) => {
       'cortex_code_impact',
       'cortex_code_reindex',
       'cortex_quality_report',
-      'cortex_session_start'
+      'cortex_session_start',
+      'cortex_changes'
     ],
   })
 })
@@ -122,6 +124,7 @@ function createMcpServer(env: Env) {
   registerIndexingTools(server, env)
   registerQualityTools(server, env)
   registerSessionTools(server, env)
+  registerChangeTools(server, env)
   return server
 }
 

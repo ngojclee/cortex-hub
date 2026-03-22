@@ -363,6 +363,58 @@ for tool_key in "${SELECTED_TOOLS[@]}"; do
     done
 done
 
+# ── Step 4b: Generate CLAUDE.md for Claude Code ──
+HAS_CLAUDE=false
+for t in "${SELECTED_TOOLS[@]}"; do [ "$t" = "claude" ] && HAS_CLAUDE=true; done
+
+if $HAS_CLAUDE && [ ! -f "CLAUDE.md" ]; then
+    echo -e "${BLUE}>>> Generating CLAUDE.md (auto MCP instructions for Claude Code)...${NC}"
+    GIT_REPO_URL=$(git remote get-url origin 2>/dev/null || echo "unknown")
+    cat > CLAUDE.md <<CLAUDEEOF
+# Cortex Hub — Claude Code Instructions
+
+## Auto MCP (MANDATORY — every conversation)
+
+At the START of every conversation, before doing anything else:
+
+1. Call \`cortex_session_start\` with:
+   \`\`\`
+   repo: "$GIT_REPO_URL"
+   mode: "development"
+   agentId: "claude-code"
+   \`\`\`
+   This returns project context AND unseen code changes from other agents.
+
+2. If \`recentChanges.count > 0\` in the response, warn the user and run \`git pull\` before editing any affected files.
+
+3. Read \`STATE.md\` for current task progress (if it exists).
+
+## Before editing shared files
+
+Call \`cortex_changes\` to check if another agent modified the same files:
+\`\`\`
+agentId: "claude-code"
+projectId: "<from session_start response>"
+\`\`\`
+
+## After pushing code
+
+Call \`cortex_code_reindex\` to update code intelligence:
+\`\`\`
+repo: "$GIT_REPO_URL"
+branch: "<current branch>"
+\`\`\`
+
+## Quality gates
+
+Every session must end with verification commands from \`.cortex/project-profile.json\`.
+Call \`cortex_quality_report\` with results.
+CLAUDEEOF
+    echo -e "${GREEN}>>> Generated CLAUDE.md${NC}"
+elif $HAS_CLAUDE; then
+    echo -e "${GREEN}>>> Found existing CLAUDE.md — skipping generation${NC}"
+fi
+
 # ── Step 5: Scan & Detect Project Stack ──
 echo ""
 echo -e "${BLUE}>>> Scanning project stack...${NC}"

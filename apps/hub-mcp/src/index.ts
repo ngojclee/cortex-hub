@@ -57,6 +57,35 @@ app.get('/health', (c) => {
   })
 })
 
+// ─── OAuth Discovery Stubs ────────────────────────────────────────
+// mcp-remote probes these endpoints before using Bearer auth.
+// Without proper responses, it hangs. Return RFC 9728 Protected
+// Resource Metadata telling the client to use Bearer tokens.
+
+// RFC 9728: Protected Resource Metadata (path-aware for /mcp)
+app.get('/.well-known/oauth-protected-resource/mcp', (c) => {
+  return c.json({
+    resource: `${c.req.url.replace('/.well-known/oauth-protected-resource/mcp', '/mcp')}`,
+    bearer_methods_supported: ['header'],
+    resource_documentation: 'https://cortex-mcp.jackle.dev',
+  })
+})
+
+// Fallback: root-level Protected Resource Metadata
+app.get('/.well-known/oauth-protected-resource', (c) => {
+  return c.json({
+    resource: c.req.url.replace('/.well-known/oauth-protected-resource', '/'),
+    bearer_methods_supported: ['header'],
+    resource_documentation: 'https://cortex-mcp.jackle.dev',
+  })
+})
+
+// Return 404 for OAuth endpoints we don't support (authorization server, OpenID)
+// This is intentional — we use static Bearer tokens, not OAuth flows.
+app.get('/.well-known/oauth-authorization-server', (c) => c.json({ error: 'OAuth not supported. Use Bearer token.' }, 404))
+app.get('/.well-known/openid-configuration', (c) => c.json({ error: 'OAuth not supported. Use Bearer token.' }, 404))
+app.post('/register', (c) => c.json({ error: 'Dynamic client registration not supported.' }, 404))
+
 
 
 // Root endpoint — server info

@@ -10,7 +10,7 @@ const logger = createLogger('indexer')
 // Track running processes for cancellation
 const runningJobs = new Map<string, ChildProcess>()
 
-const REPOS_DIR = process.env.REPOS_DIR ?? '/data/repos'
+const REPOS_DIR = process.env.REPOS_DIR ?? '/app/data/repos'
 
 interface ProjectRow {
   id: string

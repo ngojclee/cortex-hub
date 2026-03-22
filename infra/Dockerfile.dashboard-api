@@ -101,7 +101,7 @@ COPY --from=builder /app/packages/shared-mem9/package.json ./packages/shared-mem
 COPY --from=builder /app/pnpm-workspace.yaml ./pnpm-workspace.yaml
 
 # Create data directories
-RUN mkdir -p /app/data /data/repos
+RUN mkdir -p /app/data /app/data/repos
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \

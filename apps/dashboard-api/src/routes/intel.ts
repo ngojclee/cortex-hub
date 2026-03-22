@@ -6,7 +6,7 @@ const execFileAsync = promisify(execFile)
 
 export const intelRouter = new Hono()
 
-const REPOS_DIR = process.env.REPOS_DIR ?? '/data/repos'
+const REPOS_DIR = process.env.REPOS_DIR ?? '/app/data/repos'
 
 /**
  * Run a gitnexus CLI command and return stdout.

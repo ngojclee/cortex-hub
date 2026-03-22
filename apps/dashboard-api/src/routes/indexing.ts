@@ -6,7 +6,7 @@ import { db } from '../db/client.js'
 import { startIndexing, cancelJob, buildAuthUrl } from '../services/indexer.js'
 import { embedProject } from '../services/mem9-embedder.js'
 
-const REPOS_DIR = process.env.REPOS_DIR ?? '/data/repos'
+const REPOS_DIR = process.env.REPOS_DIR ?? '/app/data/repos'
 
 export const indexingRouter = new Hono()
 

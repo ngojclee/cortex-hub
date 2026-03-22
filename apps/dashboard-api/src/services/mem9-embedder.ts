@@ -17,7 +17,7 @@ import { createLogger } from '@cortex/shared-utils'
 const logger = createLogger('mem9-embedder')
 
 const QDRANT_URL = process.env.QDRANT_URL ?? 'http://qdrant:6333'
-const REPOS_DIR = process.env.REPOS_DIR ?? '/data/repos'
+const REPOS_DIR = process.env.REPOS_DIR ?? '/app/data/repos'
 
 // ── File config ──
 const SKIP_DIRS = new Set([

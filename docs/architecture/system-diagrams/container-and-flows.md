@@ -8,7 +8,7 @@ C4Container
     Person(agent, "AI Agent", "Antigravity, GoClaw, or any MCP client")
 
     System_Boundary(cortex, "Cortex Hub") {
-        Container(hub_mcp, "Hub MCP Server", "Cloudflare Worker / Hono", "MCP gateway — auth, routing, logging, policy enforcement")
+        Container(hub_mcp, "Hub MCP Server", "Hono Node.js / Docker", "MCP gateway — auth, routing, logging, policy enforcement")
         Container(dash_web, "Dashboard Web", "Next.js 15 / Cloudflare Pages", "Admin UI — logs, API keys, repos, quality trends")
         Container(dash_api, "Dashboard API", "Hono / Node.js", "REST API for dashboard — CRUD, WebSocket logs")
         ContainerDb(sqlite, "App Database", "SQLite WAL", "API keys, quality reports, sessions, logs")

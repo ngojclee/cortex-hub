@@ -194,7 +194,7 @@ curl -s http://localhost:4000/health | jq .
 ```bash
 cd /opt/cortex-hub/apps/hub-mcp
 
-# Deploy to Cloudflare Workers
+# Deploy Hub MCP (Docker)
 npx wrangler deploy
 
 # Set secrets

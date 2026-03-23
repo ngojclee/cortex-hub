@@ -27,7 +27,7 @@
 
 | Component | Technology | Tier | Role |
 |---|---|---|---|
-| **Edge Gateway** | Cloudflare Workers | Free (100K req/day) | Hub MCP Server hosting |
+| **MCP Gateway** | Hono (Node.js, Docker) | ~$0 (self-hosted) | Hub MCP Server — Streamable HTTP + JSON-RPC |
 | **Tunnel** | Cloudflare Tunnel | Free | Secure server exposure, zero open ports |
 | **Static Hosting** | Cloudflare Pages | Free | Dashboard frontend deployment |
 | **Containers** | Docker + Compose | Free | Service orchestration |
@@ -52,7 +52,7 @@
 | Item | Cost |
 |---|---|
 | Server (self-hosted / existing VPS) | $0 |
-| Cloudflare Workers (free tier) | $0 |
+| Docker containers (self-hosted) | $0 |
 | Cloudflare Pages (free tier) | $0 |
 | Cloudflare Tunnel | $0 |
 | GitHub repository | $0 |

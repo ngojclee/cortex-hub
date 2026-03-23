@@ -44,7 +44,7 @@ cortex-hub/
 │           └── index.ts
 │
 ├── apps/
-│   ├── hub-mcp/                        # Hub MCP Server (Cloudflare Worker)
+│   ├── hub-mcp/                        # Hub MCP Server (Hono, Docker)
 │   │   └── src/
 │   │       ├── index.ts               # Worker entry point
 │   │       ├── auth.ts                # API key authentication

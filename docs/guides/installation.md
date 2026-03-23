@@ -33,7 +33,7 @@ cd cortex-hub
 │  5. ✅ Generate .env from prompts               │
 │  6. ✅ Build all packages                       │
 │  7. ✅ Pull and start Docker containers         │
-│  8. ✅ Deploy Hub MCP to Cloudflare Workers     │
+│  8. ✅ Deploy Hub MCP as Docker service              │
 │  9. ✅ Run health checks                        │
 │  10. ✅ Print connection details                │
 │                                                 │
@@ -174,7 +174,7 @@ main() {
   echo "  Next steps:"
   echo "    1. Configure .env with your API keys"
   echo "    2. Setup Cloudflare Tunnel (see docs/guides/implementation.md)"
-  echo "    3. Deploy Hub MCP to Cloudflare Workers"
+  echo "    3. Deploy Hub MCP (Docker container)"
   echo ""
 }
 

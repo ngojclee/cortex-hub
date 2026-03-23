@@ -106,14 +106,22 @@ indexingRouter.get('/:id/index/status', (c) => {
 // ── Get Index History ──
 indexingRouter.get('/:id/index/history', (c) => {
   const projectId = c.req.param('id')
+  const page = Math.max(1, parseInt(c.req.query('page') ?? '1', 10))
+  const limit = Math.min(50, Math.max(1, parseInt(c.req.query('limit') ?? '10', 10)))
+  const offset = (page - 1) * limit
 
   try {
+    const totalRow = db.prepare(
+      'SELECT COUNT(*) as total FROM index_jobs WHERE project_id = ?'
+    ).get(projectId) as { total: number }
+    const total = totalRow?.total ?? 0
+
     const jobs = db.prepare(
       `SELECT id, branch, status, progress, total_files, symbols_found, error, started_at, completed_at, created_at
-       FROM index_jobs WHERE project_id = ? ORDER BY created_at DESC LIMIT 20`
-    ).all(projectId) as IndexJob[]
+       FROM index_jobs WHERE project_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`
+    ).all(projectId, limit, offset) as IndexJob[]
 
-    return c.json({ jobs })
+    return c.json({ jobs, total, page, limit, totalPages: Math.ceil(total / limit) })
   } catch (error) {
     return c.json({ error: String(error) }, 500)
   }

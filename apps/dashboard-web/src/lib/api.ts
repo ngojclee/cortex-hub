@@ -546,8 +546,10 @@ export async function getIndexStatus(projectId: string) {
   return apiFetch<IndexStatus>(`/api/projects/${projectId}/index/status`)
 }
 
-export async function getIndexHistory(projectId: string) {
-  return apiFetch<{ jobs: IndexJobSummary[] }>(`/api/projects/${projectId}/index/history`)
+export async function getIndexHistory(projectId: string, page = 1, limit = 10) {
+  return apiFetch<{ jobs: IndexJobSummary[]; total: number; page: number; totalPages: number }>(
+    `/api/projects/${projectId}/index/history?page=${page}&limit=${limit}`
+  )
 }
 
 export async function cancelIndexing(projectId: string) {

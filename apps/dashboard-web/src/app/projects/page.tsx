@@ -39,6 +39,7 @@ function IndexingPanel({ projectId, hasGitUrl }: { projectId: string; hasGitUrl:
   const [showDiff, setShowDiff] = useState(false)
   const [branchesLoading, setBranchesLoading] = useState(false)
   const [embeddingBranch, setEmbeddingBranch] = useState<string | null>(null)
+  const [historyPage, setHistoryPage] = useState(1)
 
   const { data: status, mutate: mutateStatus } = useSWR<IndexStatus>(
     `index-status-${projectId}`,
@@ -47,8 +48,8 @@ function IndexingPanel({ projectId, hasGitUrl }: { projectId: string; hasGitUrl:
   )
 
   const { data: historyData, mutate: mutateHistory } = useSWR(
-    `index-history-${projectId}`,
-    () => getIndexHistory(projectId),
+    `index-history-${projectId}-page-${historyPage}`,
+    () => getIndexHistory(projectId, historyPage, 10),
     { refreshInterval: 15000 }
   )
 
@@ -371,7 +372,12 @@ function IndexingPanel({ projectId, hasGitUrl }: { projectId: string; hasGitUrl:
       {/* History */}
       {history.length > 0 && (
         <div className={styles.indexingHistory}>
-          <h4 className={styles.historyTitle}>Index History</h4>
+          <div className={styles.historyHeader}>
+            <h4 className={styles.historyTitle}>Index History</h4>
+            {(historyData?.totalPages ?? 1) > 1 && (
+              <span className={styles.historyCount}>{historyData?.total ?? 0} total</span>
+            )}
+          </div>
           <div className={styles.historyTable}>
             <div className={styles.historyHeaderRow}>
               <span>Branch</span>
@@ -380,7 +386,7 @@ function IndexingPanel({ projectId, hasGitUrl }: { projectId: string; hasGitUrl:
               <span>Files</span>
               <span>Date</span>
             </div>
-            {history.slice(0, 10).map((job: IndexJobSummary) => {
+            {history.map((job: IndexJobSummary) => {
               const jobStatus = STATUS_CONFIG[job.status] ?? { label: 'Unknown', color: '#666', icon: '—' }
               return (
                 <div key={job.id} className={styles.historyRow}>
@@ -397,6 +403,28 @@ function IndexingPanel({ projectId, hasGitUrl }: { projectId: string; hasGitUrl:
               )
             })}
           </div>
+          {/* Pagination */}
+          {(historyData?.totalPages ?? 1) > 1 && (
+            <div className={styles.pagination}>
+              <button
+                className={styles.paginationBtn}
+                disabled={historyPage <= 1}
+                onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
+              >
+                ← Prev
+              </button>
+              <span className={styles.paginationInfo}>
+                Page {historyPage} / {historyData?.totalPages ?? 1}
+              </span>
+              <button
+                className={styles.paginationBtn}
+                disabled={historyPage >= (historyData?.totalPages ?? 1)}
+                onClick={() => setHistoryPage(p => p + 1)}
+              >
+                Next →
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -622,16 +650,41 @@ function ProjectContent() {
       <IndexingPanel projectId={projectId} hasGitUrl={!!project.git_repo_url} />
 
 
-      {/* Activity placeholder */}
+      {/* Recent Activity */}
       <div className={`card ${styles.activityCard}`}>
         <h3 className={styles.infoTitle}>Recent Activity</h3>
-        <div className={styles.emptyActivity}>
-          <span className={styles.emptyActivityIcon}>📊</span>
-          <p>Activity data will appear here once agents start working in this project scope.</p>
-          <p className={styles.emptyActivityHint}>
-            Assign this project ID in your MCP config: <code>{project.id}</code>
-          </p>
-        </div>
+        {(project as Record<string, unknown>).activity && ((project as Record<string, unknown>).activity as Array<Record<string, unknown>>).length > 0 ? (
+          <div className={styles.activityList}>
+            {((project as Record<string, unknown>).activity as Array<Record<string, unknown>>).map((item, i) => {
+              const isQuery = item.type === 'query'
+              return (
+                <div key={i} className={styles.activityRow}>
+                  <span className={styles.activityIcon}>{isQuery ? '🔍' : '🤖'}</span>
+                  <div className={styles.activityInfo}>
+                    <span className={styles.activityDetail}>
+                      {isQuery ? (item.detail as string) || 'query' : (item.detail as string) || 'session'}
+                    </span>
+                    <span className={styles.activityAgent}>
+                      {(item.agent_id as string) || 'unknown'}
+                      {isQuery && item.latency_ms ? ` · ${item.latency_ms}ms` : ''}
+                    </span>
+                  </div>
+                  <span className={styles.activityTime}>
+                    {item.created_at ? new Date(item.created_at as string).toLocaleString() : ''}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div className={styles.emptyActivity}>
+            <span className={styles.emptyActivityIcon}>📊</span>
+            <p>Activity data will appear here once agents start working in this project scope.</p>
+            <p className={styles.emptyActivityHint}>
+              Assign this project ID in your MCP config: <code>{project.id}</code>
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Edit Git Dialog */}

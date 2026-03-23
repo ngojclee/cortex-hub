@@ -183,17 +183,49 @@ projectsRouter.get('/:id', (c) => {
          JOIN organizations o ON o.id = p.org_id
          WHERE p.id = ?`
       )
-      .get(id)
+      .get(id) as Record<string, unknown> | undefined
     if (!project) return c.json({ error: 'Project not found' }, 404)
 
-    // Get stats
-    const stats = {
-      apiKeys: (db.prepare('SELECT COUNT(*) as c FROM api_keys WHERE project_id = ?').get(id) as { c: number })?.c ?? 0,
-      queryLogs: (db.prepare('SELECT COUNT(*) as c FROM query_logs WHERE project_id = ?').get(id) as { c: number })?.c ?? 0,
-      sessions: (db.prepare('SELECT COUNT(*) as c FROM session_handoffs WHERE project_id = ?').get(id) as { c: number })?.c ?? 0,
-    }
+    // Build match patterns for project_id OR repo URL variants
+    const repoUrl = (project.git_repo_url as string) ?? ''
+    const cleanRepo = repoUrl.replace(/\.git$/, '').replace(/\/$/, '')
 
-    return c.json({ ...project as Record<string, unknown>, stats })
+    // Stats: match by project_id OR project column containing repo URL
+    const apiKeyCount = (db.prepare('SELECT COUNT(*) as c FROM api_keys WHERE project_id = ?').get(id) as { c: number })?.c ?? 0
+
+    // query_logs and session_handoffs store repo URL in 'project' or 'project_id' column
+    const queryCount = (db.prepare(
+      `SELECT COUNT(*) as c FROM query_logs 
+       WHERE project_id = ? OR project_id IN (?, ?, ?)`
+    ).get(id, cleanRepo, `${cleanRepo}.git`, repoUrl) as { c: number })?.c ?? 0
+
+    const sessionCount = (db.prepare(
+      `SELECT COUNT(*) as c FROM session_handoffs 
+       WHERE project_id = ? OR project IN (?, ?, ?)`
+    ).get(id, cleanRepo, `${cleanRepo}.git`, repoUrl) as { c: number })?.c ?? 0
+
+    const stats = { apiKeys: apiKeyCount, queryLogs: queryCount, sessions: sessionCount }
+
+    // Recent activity: merge query_logs + session_handoffs
+    const recentQueries = db.prepare(
+      `SELECT 'query' as type, agent_id, tool as detail, status, latency_ms, created_at
+       FROM query_logs 
+       WHERE project_id = ? OR project_id IN (?, ?, ?)
+       ORDER BY created_at DESC LIMIT 15`
+    ).all(id, cleanRepo, `${cleanRepo}.git`, repoUrl) as Array<Record<string, unknown>>
+
+    const recentSessions = db.prepare(
+      `SELECT 'session' as type, from_agent as agent_id, task_summary as detail, status, 0 as latency_ms, created_at
+       FROM session_handoffs 
+       WHERE project_id = ? OR project IN (?, ?, ?)
+       ORDER BY created_at DESC LIMIT 15`
+    ).all(id, cleanRepo, `${cleanRepo}.git`, repoUrl) as Array<Record<string, unknown>>
+
+    const activity = [...recentQueries, ...recentSessions]
+      .sort((a, b) => ((b.created_at as string) || '').localeCompare((a.created_at as string) || ''))
+      .slice(0, 15)
+
+    return c.json({ ...(project as Record<string, unknown>), stats, activity })
   } catch (error) {
     return c.json({ error: String(error) }, 500)
   }

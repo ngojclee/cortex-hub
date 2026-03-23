@@ -203,11 +203,75 @@
 }
 
 .projectFooter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
   padding-top: var(--space-2);
   border-top: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
 }
 
 .projectDate {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+}
+
+/* Enriched Project Card */
+.projectHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.providerIcon {
+  font-size: 1.25rem;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-glow);
+  border-radius: var(--radius-md);
+  flex-shrink: 0;
+}
+
+.indexStatusGrid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+}
+
+.indexStatusRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.8125rem;
+}
+
+.indexStatusLabel {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  min-width: 80px;
+}
+
+.indexStatusDetail {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  margin-left: auto;
+}
+
+.branchTag {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--accent-secondary);
+  background: rgba(108, 92, 231, 0.1);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.projectMeta2 {
   font-size: 0.6875rem;
   color: var(--text-tertiary);
 }

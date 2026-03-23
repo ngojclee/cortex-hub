@@ -10,7 +10,6 @@ import {
   getSystemMetrics,
   type ActivityEvent,
   type SystemMetrics,
-  type ProjectSummary,
 } from '@/lib/api'
 import styles from './page.module.css'
 
@@ -32,28 +31,6 @@ function timeAgo(dateStr: string): string {
   return `${Math.floor(hrs / 24)}d ago`
 }
 
-function providerIcon(provider: string | null): string {
-  switch (provider) {
-    case 'github': return '⬛'
-    case 'gitlab': return '🦊'
-    case 'bitbucket': return '🪣'
-    case 'azure': return '☁️'
-    case 'gitea': return '🍵'
-    default: return '📦'
-  }
-}
-
-function statusBadge(status: string): { label: string; className: string } {
-  switch (status) {
-    case 'done': return { label: '✓ Done', className: 'healthy' }
-    case 'indexing':
-    case 'embedding': return { label: '⏳ Processing', className: 'warning' }
-    case 'error': return { label: '✕ Error', className: 'error' }
-    case 'pending': return { label: '○ Pending', className: 'muted' }
-    default: return { label: '—', className: 'muted' }
-  }
-}
-
 // ── Stat Pill ──
 
 function StatPill({ icon, value, label }: { icon: string; value: string; label: string }) {
@@ -63,72 +40,6 @@ function StatPill({ icon, value, label }: { icon: string; value: string; label: 
       <div className={styles.statPillContent}>
         <span className={styles.statPillValue}>{value}</span>
         <span className={styles.statPillLabel}>{label}</span>
-      </div>
-    </div>
-  )
-}
-
-// ── Project Card ──
-
-function ProjectCard({ project }: { project: ProjectSummary }) {
-  const gnStatus = statusBadge(project.gitnexus.status)
-  const m9Status = statusBadge(project.mem9.status)
-
-  return (
-    <div className={`card ${styles.projectCard}`}>
-      <div className={styles.projectCardHeader}>
-        <div className={styles.projectCardTitle}>
-          <span className={styles.providerIcon}>{providerIcon(project.gitProvider)}</span>
-          <div>
-            <Link href={`/projects?id=${project.id}`} className={styles.projectCardName}>
-              {project.name}
-            </Link>
-            <span className={styles.projectCardSlug}>{project.slug}</span>
-          </div>
-        </div>
-        {project.activeSessions > 0 && (
-          <span className={styles.activeBadge}>
-            <span className={styles.liveDot} />
-            {project.activeSessions} active
-          </span>
-        )}
-      </div>
-
-      {/* Index + Mem9 status */}
-      <div className={styles.statusGrid}>
-        <div className={styles.statusRow}>
-          <span className={styles.statusLabel}>🔍 GitNexus</span>
-          <span className={`badge badge-${gnStatus.className}`}>{gnStatus.label}</span>
-          {project.gitnexus.status === 'done' && (
-            <span className={styles.statusDetail}>
-              {formatNumber(project.gitnexus.symbols)} symbols · {formatNumber(project.gitnexus.files)} files
-            </span>
-          )}
-        </div>
-        <div className={styles.statusRow}>
-          <span className={styles.statusLabel}>🧠 Mem9</span>
-          <span className={`badge badge-${m9Status.className}`}>{m9Status.label}</span>
-          {(project.mem9.status === 'done' || project.mem9.chunks > 0) && (
-            <span className={styles.statusDetail}>
-              {formatNumber(project.mem9.chunks)} chunks
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Footer */}
-      <div className={styles.projectCardFooter}>
-        {project.gitnexus.branch && (
-          <span className={styles.branchTag}>⎇ {project.gitnexus.branch}</span>
-        )}
-        <span className={styles.projectCardMeta}>
-          {project.weeklyQueries > 0 ? `${project.weeklyQueries} queries/wk` : 'No queries'}
-        </span>
-        {project.gitnexus.completedAt && (
-          <span className={styles.projectCardMeta}>
-            Indexed {timeAgo(project.gitnexus.completedAt)}
-          </span>
-        )}
       </div>
     </div>
   )
@@ -268,25 +179,6 @@ export default function DashboardPage() {
         </button>
       </div>
 
-      {/* ── Project Overview Cards ── */}
-      <section className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <h2 className={styles.sectionTitle}>Project Overview</h2>
-          <Link href="/orgs" className="btn btn-secondary btn-sm">Manage →</Link>
-        </div>
-        {overview?.projects && overview.projects.length > 0 ? (
-          <div className={styles.projectsGrid}>
-            {overview.projects.map((p) => (
-              <ProjectCard key={p.id} project={p} />
-            ))}
-          </div>
-        ) : (
-          <div className={`card ${styles.emptyState}`}>
-            <span>📁</span>
-            <p>No projects yet. Create one in <Link href="/orgs">Organizations</Link>.</p>
-          </div>
-        )}
-      </section>
 
       {/* ── Two Column: System Resources + Quality/Knowledge ── */}
       <div className={styles.twoColumn}>

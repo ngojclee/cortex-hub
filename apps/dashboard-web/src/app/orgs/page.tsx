@@ -11,10 +11,52 @@ import {
   getProjectsForOrg,
   createProject,
   deleteProject,
+  getDashboardOverview,
   type Organization,
   type Project,
+  type ProjectSummary,
 } from '@/lib/api'
 import styles from './page.module.css'
+
+// ── Helpers ──
+
+function formatNumber(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
+  return n.toString()
+}
+
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  return `${Math.floor(hrs / 24)}d ago`
+}
+
+function providerIcon(provider: string | null): string {
+  switch (provider) {
+    case 'github': return '⬛'
+    case 'gitlab': return '🦊'
+    case 'bitbucket': return '🪣'
+    case 'azure': return '☁️'
+    case 'gitea': return '🍵'
+    default: return '📦'
+  }
+}
+
+function statusBadge(status: string): { label: string; className: string } {
+  switch (status) {
+    case 'done': return { label: '✓ Done', className: 'healthy' }
+    case 'indexing':
+    case 'embedding': return { label: '⏳ Processing', className: 'warning' }
+    case 'error': return { label: '✕ Error', className: 'error' }
+    case 'pending': return { label: '○ Pending', className: 'muted' }
+    default: return { label: '—', className: 'muted' }
+  }
+}
 
 // ── Components ──
 function CreateDialog({
@@ -91,23 +133,31 @@ function CreateDialog({
 
 function ProjectCard({
   project,
+  enriched,
   onDelete,
 }: {
   project: Project
+  enriched?: ProjectSummary
   onDelete: () => void
 }) {
   const [showConfirm, setShowConfirm] = useState(false)
 
+  const gnStatus = enriched ? statusBadge(enriched.gitnexus.status) : null
+  const m9Status = enriched ? statusBadge(enriched.mem9.status) : null
+
   return (
     <div className={`card ${styles.projectCard}`}>
       <div className={styles.projectHeader}>
-        <div>
-          <h4 className={styles.projectName}>
-            <Link href={`/projects?id=${project.id}`} className={styles.projectLink}>
-              {project.name}
-            </Link>
-          </h4>
-          <code className={styles.projectSlug}>{project.slug}</code>
+        <div className={styles.projectHeaderLeft}>
+          <span className={styles.providerIcon}>{providerIcon(project.git_provider)}</span>
+          <div>
+            <h4 className={styles.projectName}>
+              <Link href={`/projects?id=${project.id}`} className={styles.projectLink}>
+                {project.name}
+              </Link>
+            </h4>
+            <code className={styles.projectSlug}>{project.slug}</code>
+          </div>
         </div>
         <button
           className={styles.deleteBtn}
@@ -117,28 +167,63 @@ function ProjectCard({
           ×
         </button>
       </div>
-      {project.description && (
-        <p className={styles.projectDesc}>{project.description}</p>
+
+      {/* GitNexus + Mem9 Status */}
+      {enriched ? (
+        <div className={styles.indexStatusGrid}>
+          <div className={styles.indexStatusRow}>
+            <span className={styles.indexStatusLabel}>🔍 GitNexus</span>
+            <span className={`badge badge-${gnStatus!.className}`}>{gnStatus!.label}</span>
+            {enriched.gitnexus.status === 'done' && (
+              <span className={styles.indexStatusDetail}>
+                {formatNumber(enriched.gitnexus.symbols)} symbols · {formatNumber(enriched.gitnexus.files)} files
+              </span>
+            )}
+          </div>
+          <div className={styles.indexStatusRow}>
+            <span className={styles.indexStatusLabel}>🧠 Mem9</span>
+            <span className={`badge badge-${m9Status!.className}`}>{m9Status!.label}</span>
+            {(enriched.mem9.status === 'done' || enriched.mem9.chunks > 0) && (
+              <span className={styles.indexStatusDetail}>
+                {formatNumber(enriched.mem9.chunks)} chunks
+              </span>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className={styles.projectMeta}>
+          {project.git_repo_url ? (
+            <span className={styles.projectGit}>
+              🔗 {project.git_provider ?? 'git'}: {project.git_repo_url}
+            </span>
+          ) : (
+            <span className={styles.projectNoGit}>No git repo linked</span>
+          )}
+          {project.indexed_at && (
+            <span className={styles.projectIndexed}>
+              📊 {project.indexed_symbols} symbols indexed
+            </span>
+          )}
+        </div>
       )}
-      <div className={styles.projectMeta}>
-        {project.git_repo_url ? (
-          <span className={styles.projectGit}>
-            🔗 {project.git_provider ?? 'git'}: {project.git_repo_url}
-          </span>
-        ) : (
-          <span className={styles.projectNoGit}>No git repo linked</span>
-        )}
-        {project.indexed_at && (
-          <span className={styles.projectIndexed}>
-            📊 {project.indexed_symbols} symbols indexed
-          </span>
-        )}
-      </div>
+
+      {/* Footer */}
       <div className={styles.projectFooter}>
-        <span className={styles.projectDate}>
-          Created {new Date(project.created_at).toLocaleDateString()}
-        </span>
+        {enriched?.gitnexus.branch && (
+          <span className={styles.branchTag}>⎇ {enriched.gitnexus.branch}</span>
+        )}
+        {enriched ? (
+          <span className={styles.projectMeta2}>
+            {enriched.weeklyQueries > 0 ? `${enriched.weeklyQueries} queries` : 'No queries'}
+          </span>
+        ) : null}
+        {enriched?.gitnexus.completedAt ? (
+          <span className={styles.projectDate}>Indexed {timeAgo(enriched.gitnexus.completedAt)}</span>
+        ) : (
+          <span className={styles.projectDate}>Created {new Date(project.created_at).toLocaleDateString()}</span>
+        )}
       </div>
+
       {showConfirm && (
         <div className={styles.inlineConfirm}>
           <span>Delete this project?</span>
@@ -158,7 +243,7 @@ function ProjectCard({
   )
 }
 
-function OrgSection({ org, onDeleted }: { org: Organization; onDeleted: () => void }) {
+function OrgSection({ org, enrichedMap, onDeleted }: { org: Organization; enrichedMap: Map<string, ProjectSummary>; onDeleted: () => void }) {
   const { data: projectData, mutate: mutateProjects } = useSWR(
     `projects-${org.id}`,
     () => getProjectsForOrg(org.id),
@@ -259,6 +344,7 @@ function OrgSection({ org, onDeleted }: { org: Organization; onDeleted: () => vo
             <ProjectCard
               key={p.id}
               project={p}
+              enriched={enrichedMap.get(p.id)}
               onDelete={() => handleDeleteProject(p.id)}
             />
           ))}
@@ -323,9 +409,20 @@ export default function OrganizationsPage() {
   const { data, error, isLoading, mutate } = useSWR('organizations', getOrganizations, {
     refreshInterval: 30000,
   })
+  const { data: overview } = useSWR('dashboard-overview', getDashboardOverview, {
+    refreshInterval: 15000,
+  })
   const [showCreateOrg, setShowCreateOrg] = useState(false)
 
   const orgs = data?.organizations ?? []
+
+  // Build project enrichment map from overview data
+  const enrichedMap = new Map<string, ProjectSummary>()
+  if (overview?.projects) {
+    for (const p of overview.projects) {
+      enrichedMap.set(p.id, p)
+    }
+  }
 
   const handleCreateOrg = useCallback(
     async (formData: Record<string, string>) => {
@@ -402,7 +499,7 @@ export default function OrganizationsPage() {
         </div>
       ) : (
         orgs.map((org) => (
-          <OrgSection key={org.id} org={org} onDeleted={() => mutate()} />
+          <OrgSection key={org.id} org={org} enrichedMap={enrichedMap} onDeleted={() => mutate()} />
         ))
       )}
 

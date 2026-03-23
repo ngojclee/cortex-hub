@@ -18,26 +18,32 @@ cortex_session_start({ repo: "<current repo URL>", mode: "development" })
 ```
 This creates a session record and returns project context. If it fails or hangs, note the error and continue.
 
-### 2. Load Context
-Read `STATE.md` at project root. Identify:
-- Current active phase
-- First `[/]` (in-progress) task, or first `[ ]` uncompleted task
-- Recent decisions that affect current work
+### 2. Recall Context
+- **`cortex_memory_search`** → search for memories about the current task
+- Read `STATE.md` at project root. Identify:
+  - Current active phase
+  - First `[/]` (in-progress) task, or first `[ ]` uncompleted task
+  - Recent decisions that affect current work
 
-### 2. Load Project Profile
+### 3. Load Project Profile
 Read `.cortex/project-profile.json` → note `verify.pre_commit` commands.
 
-### 3. Resume Task
+### 4. Resume Task
 Continue the identified task. Follow the appropriate workflow:
 - If task is code implementation → follow `/code` workflow
 - If task is infrastructure → follow direct execution
 - If task is documentation → write directly
 
-### 4. Post-Work Verification
+**During work, use Cortex tools:**
+- **`cortex_code_search`** before `grep_search` for finding code
+- **`cortex_code_impact`** before editing core files
+- **`cortex_memory_store`** when learning something new
+
+### 5. Post-Work Verification
 Run ALL commands from `project-profile.json` → `verify.pre_commit`:
 // turbo
 ```bash
-pnpm build --filter='@cortex/shared-*'
+pnpm build
 ```
 // turbo
 ```bash
@@ -48,15 +54,19 @@ pnpm typecheck
 pnpm lint
 ```
 
-### 5. Update STATE.md
+### 6. Update STATE.md
 - Mark completed tasks `[x]`
 - Add new decisions if any
 - Update blockers
 
-### 6. Report
+### 7. Report & Learn
+- **`cortex_quality_report`** → report build/typecheck/lint results
+- **`cortex_memory_store`** → store any new knowledge from this session
+
 ```
 ## Session Summary
 - Task: [what was done]
 - Build: ✅/❌ | Typecheck: ✅/❌ | Lint: ✅/❌
 - STATE.md updated: ✅
+- Cortex tools used: code_search ✅/❌ | memory ✅/❌ | quality_report ✅/❌
 ```

@@ -15,9 +15,12 @@ description: Write code following project-specific quality gates from project-pr
 - Read `STATE.md` → current phase + active tasks
 - Read `.cortex/project-profile.json` → verify commands + patterns
 - Read `.cortex/code-conventions.md` → naming, imports, error handling
+- **`cortex_memory_search`** → check for relevant past findings on this topic
 
-### 2. Plan
+### 2. Research & Plan
+- **`cortex_code_search`** → find related code, existing patterns, similar implementations
 - Identify files to create/modify/delete
+- **`cortex_code_impact`** → check blast radius on files you plan to modify
 - Check conventions: camelCase vars, PascalCase types, @cortex/* imports
 - Create implementation plan
 - **Get user approval before proceeding** (unless trivial fix)
@@ -62,10 +65,14 @@ If any verify step fails:
 - `git push` → Lefthook pre-push double-checks
 - Conventional prefix: `feat:`, `fix:`, `docs:`, `chore:`
 
-### 7. Report
+### 7. Report & Learn
+- **`cortex_quality_report`** → report gate results (build/typecheck/lint)
+- **`cortex_memory_store`** → store any debugging findings, architecture decisions, or deployment gotchas learned during this session
+
 ```
 ## Quality Report
 - Build: ✅/❌ | Typecheck: ✅/❌ | Lint: ✅/❌
 - Files changed: N
 - Conventions followed: ✅
+- Cortex tools used: code_search ✅/❌ | memory ✅/❌ | impact ✅/❌
 ```

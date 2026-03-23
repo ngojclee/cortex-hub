@@ -30,6 +30,26 @@
 3. **Update `STATE.md`** with progress, completed tasks, new decisions
 4. **Commit** with conventional prefix: `feat:`, `fix:`, `docs:`, `chore:`
 5. **Close session** — call `cortex_quality_report` with final gate status
+6. **Store memories** — call `cortex_memory_store` for any new knowledge learned during the session (debugging findings, architecture decisions, deployment gotchas, etc.)
+
+### During Session — Cortex Tool Integration (MANDATORY)
+
+> ⚠️ **Agents MUST use Cortex tools throughout the session, not just at start/end.**
+> These tools are the core value of Cortex Hub — skipping them defeats the purpose.
+
+| When | Tool | What to Do |
+|------|------|------------|
+| **Searching code** | `cortex_code_search` | Use FIRST before `grep_search` or `find_by_name`. It queries the GitNexus knowledge graph with AST-aware search, understanding execution flows and symbol relationships. Fall back to grep only if GitNexus is unavailable. |
+| **Before editing core code** | `cortex_code_impact` | Run blast radius analysis on the symbol/file you plan to change. This ensures you don't miss downstream breakages. |
+| **Recalling past knowledge** | `cortex_memory_search` | Search for memories about the topic before starting fresh research. Previous agents may have already solved this problem. |
+| **Learning something new** | `cortex_memory_store` | Store debugging findings, architecture decisions, deployment gotchas, and workarounds. Future sessions will benefit from this knowledge. |
+| **After pushing code changes** | `cortex_quality_report` | Report the final quality gate results. Include build/typecheck/lint status and a summary of changes made. |
+
+**Tool priority order for code discovery:**
+1. `cortex_memory_search` → check if already known
+2. `cortex_code_search` → search the indexed codebase
+3. `cortex_code_impact` → check blast radius before editing
+4. `grep_search` / `find_by_name` → only if Cortex tools are unavailable
 
 ### Before Deploy — ALWAYS do:
 

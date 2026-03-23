@@ -57,6 +57,141 @@ statsRouter.get('/overview', async (c) => {
   }
 })
 
+// ── Enriched Overview (v2) — single call for dashboard ──
+statsRouter.get('/overview-v2', async (c) => {
+  try {
+    // ── Basic counts ──
+    const keyCount = (db.prepare('SELECT COUNT(*) as count FROM api_keys').get() as { count: number }).count
+    const agentCount = (db.prepare('SELECT COUNT(DISTINCT agent_id) as count FROM query_logs').get() as { count: number }).count
+    const totalQueries = (db.prepare('SELECT COUNT(*) as count FROM query_logs').get() as { count: number }).count
+    const totalSessions = (db.prepare('SELECT COUNT(*) as count FROM session_handoffs').get() as { count: number }).count
+    const orgCount = (db.prepare('SELECT COUNT(*) as count FROM organizations').get() as { count: number }).count
+    const today = new Date().toISOString().split('T')[0]
+    const todayQueries = (db.prepare("SELECT COUNT(*) as count FROM query_logs WHERE created_at >= ?").get(`${today}T00:00:00`) as { count: number }).count
+    const todayTokens = (db.prepare("SELECT COALESCE(SUM(total_tokens), 0) as total FROM usage_logs WHERE created_at >= ?").get(`${today}T00:00:00`) as { total: number }).total
+
+    // ── Memory nodes from Qdrant ──
+    let memoryNodes = 0
+    try {
+      const res = await fetch(`${QDRANT_URL()}/collections`, { signal: AbortSignal.timeout(3000) })
+      if (res.ok) {
+        const data = (await res.json()) as { result?: { collections?: { name: string }[] } }
+        const collections = data.result?.collections ?? []
+        for (const col of collections) {
+          try {
+            const colRes = await fetch(`${QDRANT_URL()}/collections/${col.name}`, { signal: AbortSignal.timeout(2000) })
+            if (colRes.ok) {
+              const colData = (await colRes.json()) as { result?: { points_count?: number } }
+              memoryNodes += colData.result?.points_count ?? 0
+            }
+          } catch { /* skip */ }
+        }
+      }
+    } catch { /* qdrant offline */ }
+
+    // ── Per-project summaries with index/mem9 status ──
+    const projects = db.prepare(`
+      SELECT p.id, p.name, p.slug, p.git_provider, p.git_repo_url,
+             p.indexed_symbols, p.indexed_at, p.created_at
+      FROM projects p ORDER BY p.created_at DESC
+    `).all() as Array<{
+      id: string; name: string; slug: string; git_provider: string | null
+      git_repo_url: string | null; indexed_symbols: number | null
+      indexed_at: string | null; created_at: string
+    }>
+
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+
+    const projectSummaries = projects.map((p) => {
+      // Latest indexing job
+      const job = db.prepare(`
+        SELECT id, branch, status, mem9_status, mem9_chunks,
+               symbols_found, total_files, completed_at, created_at as started_at
+        FROM index_jobs WHERE project_id = ? ORDER BY completed_at DESC, created_at DESC LIMIT 1
+      `).get(p.id) as {
+        id: string; branch: string; status: string; mem9_status: string | null
+        mem9_chunks: number | null; symbols_found: number | null
+        total_files: number | null; completed_at: string | null; started_at: string
+      } | undefined
+
+      // Weekly query count
+      const weeklyQueries = (db.prepare(
+        'SELECT COUNT(*) as count FROM query_logs WHERE project_id = ? AND created_at >= ?'
+      ).get(p.id, weekAgo) as { count: number }).count
+
+      // Active sessions
+      const activeSessions = (db.prepare(
+        "SELECT COUNT(*) as count FROM session_handoffs WHERE project_id = ? AND status = 'active'"
+      ).get(p.id) as { count: number }).count
+
+      return {
+        id: p.id,
+        name: p.name,
+        slug: p.slug,
+        gitProvider: p.git_provider,
+        gitRepoUrl: p.git_repo_url,
+        gitnexus: job ? {
+          status: job.status,
+          symbols: job.symbols_found ?? p.indexed_symbols ?? 0,
+          files: job.total_files ?? 0,
+          branch: job.branch,
+          completedAt: job.completed_at,
+        } : { status: 'none', symbols: 0, files: 0, branch: null, completedAt: null },
+        mem9: job ? {
+          status: job.mem9_status ?? 'pending',
+          chunks: job.mem9_chunks ?? 0,
+        } : { status: 'none', chunks: 0 },
+        weeklyQueries,
+        activeSessions,
+        createdAt: p.created_at,
+      }
+    })
+
+    // ── Quality summary ──
+    const lastReport = db.prepare(
+      'SELECT grade, score_total, created_at FROM quality_reports ORDER BY created_at DESC LIMIT 1'
+    ).get() as { grade: string; score_total: number; created_at: string } | undefined
+
+    const reportsToday = (db.prepare(
+      "SELECT COUNT(*) as count FROM quality_reports WHERE created_at >= ?"
+    ).get(`${today}T00:00:00`) as { count: number }).count
+
+    const avgScore = (db.prepare(
+      'SELECT AVG(score_total) as avg FROM quality_reports'
+    ).get() as { avg: number | null }).avg ?? 0
+
+    // ── Knowledge stats ──
+    let knowledgeStats = { totalDocs: 0, totalChunks: 0, totalHits: 0 }
+    try {
+      const kDocs = (db.prepare('SELECT COUNT(*) as count FROM knowledge_docs').get() as { count: number }).count
+      const kChunks = (db.prepare('SELECT COALESCE(SUM(chunk_count), 0) as total FROM knowledge_docs').get() as { total: number }).total
+      const kHits = (db.prepare('SELECT COALESCE(SUM(hit_count), 0) as total FROM knowledge_docs').get() as { total: number }).total
+      knowledgeStats = { totalDocs: kDocs, totalChunks: kChunks, totalHits: kHits }
+    } catch { /* knowledge table may not exist */ }
+
+    return c.json({
+      activeKeys: keyCount,
+      totalAgents: agentCount,
+      memoryNodes,
+      uptime: Math.floor(process.uptime()),
+      totalQueries,
+      totalSessions,
+      organizations: orgCount,
+      today: { queries: todayQueries, tokens: todayTokens },
+      projects: projectSummaries,
+      quality: {
+        lastGrade: lastReport?.grade ?? 'N/A',
+        lastScore: lastReport?.score_total ?? 0,
+        reportsToday,
+        averageScore: Math.round(avgScore),
+      },
+      knowledge: knowledgeStats,
+    })
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
 // ── Activity Feed (recent events) ──
 statsRouter.get('/activity', (c) => {
   const limit = Number(c.req.query('limit') ?? 30)

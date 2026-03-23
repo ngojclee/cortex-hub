@@ -1,32 +1,20 @@
 'use client'
 
+import Link from 'next/link'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import useSWR from 'swr'
-import { checkHealth, getDashboardStats, getActivityFeed, getSystemMetrics, type ActivityEvent, type SystemMetrics } from '@/lib/api'
+import {
+  checkHealth,
+  getDashboardOverview,
+  getActivityFeed,
+  getSystemMetrics,
+  type ActivityEvent,
+  type SystemMetrics,
+  type ProjectSummary,
+} from '@/lib/api'
 import styles from './page.module.css'
 
-interface ServiceCardProps {
-  name: string
-  status: 'healthy' | 'warning' | 'error' | 'unknown' | 'muted'
-  description: string
-  endpoint: string
-}
-
-function ServiceCard({ name, status, description, endpoint }: ServiceCardProps) {
-  return (
-    <div className={`card ${styles.serviceCard}`}>
-      <div className={styles.serviceHeader}>
-        <span className={`status-dot ${status}`} />
-        <h3 className={styles.serviceName}>{name}</h3>
-        <span className={`badge badge-${status === 'unknown' || status === 'muted' ? 'warning' : status}`}>
-          {status}
-        </span>
-      </div>
-      <p className={styles.serviceDesc}>{description}</p>
-      <code className={styles.serviceEndpoint}>{endpoint}</code>
-    </div>
-  )
-}
+// ── Utilities ──
 
 function formatNumber(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
@@ -43,6 +31,110 @@ function timeAgo(dateStr: string): string {
   if (hrs < 24) return `${hrs}h ago`
   return `${Math.floor(hrs / 24)}d ago`
 }
+
+function providerIcon(provider: string | null): string {
+  switch (provider) {
+    case 'github': return '⬛'
+    case 'gitlab': return '🦊'
+    case 'bitbucket': return '🪣'
+    case 'azure': return '☁️'
+    case 'gitea': return '🍵'
+    default: return '📦'
+  }
+}
+
+function statusBadge(status: string): { label: string; className: string } {
+  switch (status) {
+    case 'done': return { label: '✓ Done', className: 'healthy' }
+    case 'indexing':
+    case 'embedding': return { label: '⏳ Processing', className: 'warning' }
+    case 'error': return { label: '✕ Error', className: 'error' }
+    case 'pending': return { label: '○ Pending', className: 'muted' }
+    default: return { label: '—', className: 'muted' }
+  }
+}
+
+// ── Stat Pill ──
+
+function StatPill({ icon, value, label }: { icon: string; value: string; label: string }) {
+  return (
+    <div className={styles.statPill}>
+      <span className={styles.statPillIcon}>{icon}</span>
+      <div className={styles.statPillContent}>
+        <span className={styles.statPillValue}>{value}</span>
+        <span className={styles.statPillLabel}>{label}</span>
+      </div>
+    </div>
+  )
+}
+
+// ── Project Card ──
+
+function ProjectCard({ project }: { project: ProjectSummary }) {
+  const gnStatus = statusBadge(project.gitnexus.status)
+  const m9Status = statusBadge(project.mem9.status)
+
+  return (
+    <div className={`card ${styles.projectCard}`}>
+      <div className={styles.projectCardHeader}>
+        <div className={styles.projectCardTitle}>
+          <span className={styles.providerIcon}>{providerIcon(project.gitProvider)}</span>
+          <div>
+            <Link href={`/projects?id=${project.id}`} className={styles.projectCardName}>
+              {project.name}
+            </Link>
+            <span className={styles.projectCardSlug}>{project.slug}</span>
+          </div>
+        </div>
+        {project.activeSessions > 0 && (
+          <span className={styles.activeBadge}>
+            <span className={styles.liveDot} />
+            {project.activeSessions} active
+          </span>
+        )}
+      </div>
+
+      {/* Index + Mem9 status */}
+      <div className={styles.statusGrid}>
+        <div className={styles.statusRow}>
+          <span className={styles.statusLabel}>🔍 GitNexus</span>
+          <span className={`badge badge-${gnStatus.className}`}>{gnStatus.label}</span>
+          {project.gitnexus.status === 'done' && (
+            <span className={styles.statusDetail}>
+              {formatNumber(project.gitnexus.symbols)} symbols · {formatNumber(project.gitnexus.files)} files
+            </span>
+          )}
+        </div>
+        <div className={styles.statusRow}>
+          <span className={styles.statusLabel}>🧠 Mem9</span>
+          <span className={`badge badge-${m9Status.className}`}>{m9Status.label}</span>
+          {(project.mem9.status === 'done' || project.mem9.chunks > 0) && (
+            <span className={styles.statusDetail}>
+              {formatNumber(project.mem9.chunks)} chunks
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div className={styles.projectCardFooter}>
+        {project.gitnexus.branch && (
+          <span className={styles.branchTag}>⎇ {project.gitnexus.branch}</span>
+        )}
+        <span className={styles.projectCardMeta}>
+          {project.weeklyQueries > 0 ? `${project.weeklyQueries} queries/wk` : 'No queries'}
+        </span>
+        {project.gitnexus.completedAt && (
+          <span className={styles.projectCardMeta}>
+            Indexed {timeAgo(project.gitnexus.completedAt)}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Activity Row ──
 
 function ActivityRow({ event }: { event: ActivityEvent }) {
   const icon = event.type === 'query' ? '🔍' : '📋'
@@ -65,14 +157,12 @@ function ActivityRow({ event }: { event: ActivityEvent }) {
   )
 }
 
+// ── Gauge Chart ──
+
 function GaugeChart({ value, label, subtitle, color, icon }: {
-  value: number
-  label: string
-  subtitle: string
-  color: string
-  icon: string
+  value: number; label: string; subtitle: string; color: string; icon: string
 }) {
-  const radius = 54
+  const radius = 42
   const circumference = 2 * Math.PI * radius
   const offset = circumference - (value / 100) * circumference
   const statusColor = value > 90 ? '#e74c3c' : value > 70 ? '#f5a623' : color
@@ -80,29 +170,13 @@ function GaugeChart({ value, label, subtitle, color, icon }: {
   return (
     <div className={styles.gaugeCard}>
       <div className={styles.gaugeContainer}>
-        <svg viewBox="0 0 128 128" className={styles.gaugeSvg}>
-          {/* Background ring */}
+        <svg viewBox="0 0 100 100" className={styles.gaugeSvg}>
+          <circle cx="50" cy="50" r={radius} fill="none" stroke="var(--border)" strokeWidth="6" opacity="0.3" />
           <circle
-            cx="64" cy="64" r={radius}
-            fill="none"
-            stroke="var(--border)"
-            strokeWidth="8"
-            opacity="0.3"
-          />
-          {/* Animated value ring */}
-          <circle
-            cx="64" cy="64" r={radius}
-            fill="none"
-            stroke={statusColor}
-            strokeWidth="8"
-            strokeLinecap="round"
-            strokeDasharray={circumference}
-            strokeDashoffset={offset}
-            transform="rotate(-90 64 64)"
-            className={styles.gaugeRing}
-            style={{
-              filter: `drop-shadow(0 0 6px ${statusColor}40)`,
-            }}
+            cx="50" cy="50" r={radius} fill="none" stroke={statusColor} strokeWidth="6"
+            strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={offset}
+            transform="rotate(-90 50 50)" className={styles.gaugeRing}
+            style={{ filter: `drop-shadow(0 0 6px ${statusColor}40)` }}
           />
         </svg>
         <div className={styles.gaugeCenter}>
@@ -115,6 +189,8 @@ function GaugeChart({ value, label, subtitle, color, icon }: {
     </div>
   )
 }
+
+// ── Container Row ──
 
 function ContainerRow({ container }: { container: SystemMetrics['containers'][0] }) {
   const isRunning = container.status === 'running'
@@ -132,173 +208,206 @@ function ContainerRow({ container }: { container: SystemMetrics['containers'][0]
   )
 }
 
+// ── Service Mini Card ──
+
+function ServiceMini({ name, status }: { name: string; status: string }) {
+  const cls = status === 'ok' ? 'healthy' : status === 'error' ? 'error' : 'warning'
+  return (
+    <div className={styles.serviceMini}>
+      <span className={`status-dot ${cls}`} />
+      <span className={styles.serviceMiniName}>{name}</span>
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════
+//  Main Dashboard
+// ══════════════════════════════════════════════
+
 export default function DashboardPage() {
-  const { data: healthData, error, mutate, isLoading } = useSWR('health', checkHealth, {
+  const { data: healthData, error: healthError, mutate, isLoading } = useSWR('health', checkHealth, {
     refreshInterval: 30000,
   })
-  const { data: statsData } = useSWR('dashboard-stats', getDashboardStats, {
-    refreshInterval: 30000,
+  const { data: overview } = useSWR('dashboard-overview', getDashboardOverview, {
+    refreshInterval: 15000,
   })
-  const { data: activityData } = useSWR('activity', () => getActivityFeed(20), {
+  const { data: activityData } = useSWR('activity', () => getActivityFeed(15), {
     refreshInterval: 15000,
   })
   const { data: systemData } = useSWR('system-metrics', getSystemMetrics, {
     refreshInterval: 5000,
   })
 
-  const svcStatus = (key: string): ServiceCardProps['status'] => {
-    if (isLoading) return 'muted'
-    if (error) return 'error'
-    const s = healthData?.services?.[key as keyof typeof healthData.services]
-    return s === 'ok' ? 'healthy' : s === 'error' ? 'error' : 'warning'
-  }
-
-  const services: ServiceCardProps[] = [
-    {
-      name: 'Hub Backend API',
-      description: `Core API for Cortex Hub operations ${healthData?.commit ? `(${healthData.commit.substring(0, 7)})` : ''}`,
-      endpoint: 'cortex-api.jackle.dev',
-      status: isLoading ? 'muted' : error ? 'error' : healthData?.status === 'ok' || healthData?.status === 'degraded' ? 'healthy' : 'error',
-    },
-    {
-      name: 'MCP Gateway',
-      description: 'Cloudflare Worker — MCP protocol endpoint',
-      endpoint: 'cortex-mcp.jackle.dev',
-      status: svcStatus('mcp'),
-    },
-    {
-      name: 'GitNexus',
-      description: 'Code intelligence — AST search & impact analysis',
-      endpoint: 'Local Docker :4848',
-      status: svcStatus('gitnexus'),
-    },
-    {
-      name: 'mem9',
-      description: 'Persistent memory — agent knowledge store',
-      endpoint: 'Local Docker :3100',
-      status: svcStatus('mem9'),
-    },
-    {
-      name: 'Qdrant Vector DB',
-      description: 'Vector database — semantic search',
-      endpoint: 'Local Docker :6333',
-      status: svcStatus('qdrant'),
-    },
-    {
-      name: 'CLIProxy (LLM)',
-      description: 'LLM gateway — OAuth proxy to AI providers',
-      endpoint: 'Local Docker :8317',
-      status: svcStatus('cliproxy'),
-    },
-  ]
-
-  const metrics = [
-    { label: 'Active Keys', value: statsData ? formatNumber(statsData.activeKeys) : '...', icon: '🔑' },
-    { label: 'Total Agents', value: statsData ? formatNumber(statsData.totalAgents) : '...', icon: '🤖' },
-    { label: 'Memory Nodes', value: statsData ? formatNumber(statsData.memoryNodes) : '...', icon: '🧠' },
-    { label: 'Uptime', value: statsData ? `${Math.floor(statsData.uptime / 3600)}h` : '...', icon: '⚡' },
-    { label: 'Queries Today', value: statsData ? formatNumber(statsData.today.queries) : '...', icon: '📊' },
-    { label: 'Organizations', value: statsData ? formatNumber(statsData.organizations) : '...', icon: '🏢' },
-  ]
+  const svcMap = healthData?.services as Record<string, string> | undefined
 
   return (
-    <DashboardLayout title="Dashboard" subtitle="System overview and service health">
-      {/* System Resources — top of page */}
-      <section className={styles.section}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
-          <h2 className={styles.sectionTitle} style={{ margin: 0 }}>System Resources</h2>
-          {systemData && (
-            <div className={styles.serverInfo}>
-              <span>🖥️ {systemData.hostname}</span>
-              <span>·</span>
-              <span>{systemData.cpu.cores} cores</span>
-              <span>·</span>
-              <span>{systemData.ip}</span>
-              <span>·</span>
-              <span>⏱️ {Math.floor(systemData.uptime / 3600)}h {Math.floor((systemData.uptime % 3600) / 60)}m</span>
-            </div>
-          )}
-        </div>
+    <DashboardLayout title="Dashboard" subtitle="System overview and project health">
 
-        {/* Gauge Charts */}
-        <div className={styles.gaugesGrid}>
-          <GaugeChart
-            value={systemData?.cpu.percent ?? 0}
-            label="CPU"
-            subtitle={systemData ? `Load: ${systemData.cpu.loadAvg.join(' / ')}` : 'Loading...'}
-            color="#4a90d9"
-            icon="⚡"
-          />
-          <GaugeChart
-            value={systemData?.memory.percent ?? 0}
-            label="Memory"
-            subtitle={systemData ? `${systemData.memory.usedHuman} / ${systemData.memory.totalHuman}` : 'Loading...'}
-            color="#9b59b6"
-            icon="🧠"
-          />
-          <GaugeChart
-            value={systemData?.disk[0]?.usedPercent ?? 0}
-            label="Disk"
-            subtitle={systemData?.disk[0] ? `${systemData.disk[0].used} / ${systemData.disk[0].size}` : 'Loading...'}
-            color="#27ae60"
-            icon="💾"
-          />
-        </div>
+      {/* ── Hero Stats Bar ── */}
+      <div className={styles.heroBar}>
+        <StatPill icon="📁" value={overview ? String(overview.projects.length) : '...'} label="Projects" />
+        <StatPill icon="🤖" value={overview ? formatNumber(overview.totalAgents) : '...'} label="Agents" />
+        <StatPill icon="📊" value={overview ? formatNumber(overview.today.queries) : '...'} label="Queries Today" />
+        <StatPill icon="🧠" value={overview ? formatNumber(overview.memoryNodes) : '...'} label="Vectors" />
+        <StatPill icon="🏆" value={overview?.quality.lastGrade ?? '...'} label="Quality" />
+        <StatPill icon="⚡" value={overview ? `${Math.floor(overview.uptime / 3600)}h` : '...'} label="Uptime" />
+      </div>
 
-        {/* Docker Containers */}
-        {systemData?.containers && systemData.containers.length > 0 && (
-          <div className={`card ${styles.containersCard}`}>
-            <div className={styles.containersHeader}>
-              <span>Container</span>
-              <span>CPU</span>
-              <span>Memory</span>
-              <span>Status</span>
-            </div>
-            {systemData.containers.map((c) => (
-              <ContainerRow key={c.name} container={c} />
+      {/* ── Services Health Strip ── */}
+      <div className={styles.servicesStrip}>
+        <div className={styles.servicesStripLeft}>
+          <h3 className={styles.stripTitle}>Services</h3>
+          <div className={styles.servicesInline}>
+            {['qdrant', 'cliproxy', 'gitnexus', 'mem9', 'mcp'].map((svc) => (
+              <ServiceMini key={svc} name={svc} status={svcMap?.[svc] ?? (isLoading ? 'loading' : healthError ? 'error' : 'unknown')} />
             ))}
+          </div>
+        </div>
+        <button className="btn btn-secondary btn-sm" onClick={() => mutate()} disabled={isLoading}>
+          {isLoading ? 'Checking...' : 'Refresh'}
+        </button>
+      </div>
+
+      {/* ── Project Overview Cards ── */}
+      <section className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <h2 className={styles.sectionTitle}>Project Overview</h2>
+          <Link href="/orgs" className="btn btn-secondary btn-sm">Manage →</Link>
+        </div>
+        {overview?.projects && overview.projects.length > 0 ? (
+          <div className={styles.projectsGrid}>
+            {overview.projects.map((p) => (
+              <ProjectCard key={p.id} project={p} />
+            ))}
+          </div>
+        ) : (
+          <div className={`card ${styles.emptyState}`}>
+            <span>📁</span>
+            <p>No projects yet. Create one in <Link href="/orgs">Organizations</Link>.</p>
           </div>
         )}
       </section>
 
-      {/* Stats Grid */}
-      <div className={styles.statsGrid}>
-        {metrics.map((stat) => (
-          <div key={stat.label} className={`card ${styles.statCard}`}>
-            <span className={styles.statIcon}>{stat.icon}</span>
-            <div>
-              <div className={styles.statValue}>{stat.value}</div>
-              <div className={styles.statLabel}>{stat.label}</div>
+      {/* ── Two Column: System Resources + Quality/Knowledge ── */}
+      <div className={styles.twoColumn}>
+
+        {/* Left: System Resources */}
+        <section className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <h2 className={styles.sectionTitle}>System Resources</h2>
+            {systemData && (
+              <span className={styles.serverTag}>
+                🖥️ {systemData.hostname} · {systemData.cpu.cores} cores
+              </span>
+            )}
+          </div>
+          <div className={styles.gaugesGrid}>
+            <GaugeChart
+              value={systemData?.cpu.percent ?? 0} label="CPU"
+              subtitle={systemData ? `Load: ${systemData.cpu.loadAvg.join(' / ')}` : '...'}
+              color="#4a90d9" icon="⚡"
+            />
+            <GaugeChart
+              value={systemData?.memory.percent ?? 0} label="Memory"
+              subtitle={systemData ? `${systemData.memory.usedHuman} / ${systemData.memory.totalHuman}` : '...'}
+              color="#9b59b6" icon="🧠"
+            />
+            <GaugeChart
+              value={systemData?.disk[0]?.usedPercent ?? 0} label="Disk"
+              subtitle={systemData?.disk[0] ? `${systemData.disk[0].used} / ${systemData.disk[0].size}` : '...'}
+              color="#27ae60" icon="💾"
+            />
+          </div>
+          {/* Docker Containers */}
+          {systemData?.containers && systemData.containers.length > 0 && (
+            <div className={`card ${styles.containersCard}`}>
+              <div className={styles.containersHeader}>
+                <span>Container</span><span>CPU</span><span>Memory</span><span>Status</span>
+              </div>
+              {systemData.containers.map((c) => (
+                <ContainerRow key={c.name} container={c} />
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Right: Quick Stats */}
+        <section className={styles.section}>
+          <h2 className={styles.sectionTitle}>Intelligence</h2>
+
+          {/* Quality */}
+          <div className={`card ${styles.intelCard}`}>
+            <div className={styles.intelHeader}>
+              <span>🏆 Quality Gates</span>
+              <Link href="/quality" className={styles.intelLink}>View →</Link>
+            </div>
+            <div className={styles.intelGrid}>
+              <div className={styles.intelStat}>
+                <span className={styles.intelValue} style={{ color: overview?.quality.lastGrade === 'A' ? '#22c55e' : overview?.quality.lastGrade === 'F' ? '#ef4444' : '#eab308' }}>
+                  {overview?.quality.lastGrade ?? '—'}
+                </span>
+                <span className={styles.intelLabel}>Last Grade</span>
+              </div>
+              <div className={styles.intelStat}>
+                <span className={styles.intelValue}>{overview?.quality.averageScore ?? '—'}</span>
+                <span className={styles.intelLabel}>Avg Score</span>
+              </div>
+              <div className={styles.intelStat}>
+                <span className={styles.intelValue}>{overview?.quality.reportsToday ?? 0}</span>
+                <span className={styles.intelLabel}>Today</span>
+              </div>
             </div>
           </div>
-        ))}
+
+          {/* Knowledge */}
+          <div className={`card ${styles.intelCard}`}>
+            <div className={styles.intelHeader}>
+              <span>📚 Knowledge Base</span>
+              <Link href="/knowledge" className={styles.intelLink}>View →</Link>
+            </div>
+            <div className={styles.intelGrid}>
+              <div className={styles.intelStat}>
+                <span className={styles.intelValue}>{overview?.knowledge.totalDocs ?? 0}</span>
+                <span className={styles.intelLabel}>Documents</span>
+              </div>
+              <div className={styles.intelStat}>
+                <span className={styles.intelValue}>{formatNumber(overview?.knowledge.totalChunks ?? 0)}</span>
+                <span className={styles.intelLabel}>Chunks</span>
+              </div>
+              <div className={styles.intelStat}>
+                <span className={styles.intelValue}>{formatNumber(overview?.knowledge.totalHits ?? 0)}</span>
+                <span className={styles.intelLabel}>Hits</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Sessions + Keys */}
+          <div className={`card ${styles.intelCard}`}>
+            <div className={styles.intelHeader}><span>🔑 Platform</span></div>
+            <div className={styles.intelGrid}>
+              <div className={styles.intelStat}>
+                <span className={styles.intelValue}>{overview?.activeKeys ?? '—'}</span>
+                <span className={styles.intelLabel}>API Keys</span>
+              </div>
+              <div className={styles.intelStat}>
+                <span className={styles.intelValue}>{overview?.totalSessions ?? '—'}</span>
+                <span className={styles.intelLabel}>Sessions</span>
+              </div>
+              <div className={styles.intelStat}>
+                <span className={styles.intelValue}>{overview?.organizations ?? '—'}</span>
+                <span className={styles.intelLabel}>Orgs</span>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
 
-      {/* Services */}
+      {/* ── Activity Feed ── */}
       <section className={styles.section}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
-          <h2 className={styles.sectionTitle} style={{ margin: 0 }}>System Status</h2>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={() => mutate()}
-            disabled={isLoading}
-          >
-            {isLoading ? 'Checking...' : 'Refresh Status'}
-          </button>
+        <div className={styles.sectionHeader}>
+          <h2 className={styles.sectionTitle}>Recent Activity</h2>
+          <Link href="/sessions" className="btn btn-secondary btn-sm">All Sessions →</Link>
         </div>
-
-        <div className={styles.servicesGrid}>
-          {services.map((service) => (
-            <ServiceCard key={service.name} {...service} />
-          ))}
-        </div>
-      </section>
-
-
-
-      {/* Activity Feed */}
-      <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>Recent Activity</h2>
         <div className={`card ${styles.activityCard}`}>
           {activityData?.activity && activityData.activity.length > 0 ? (
             <div className={styles.activityList}>
@@ -315,7 +424,7 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* Quick Connect */}
+      {/* ── Quick Connect ── */}
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>Quick Connect</h2>
         <div className={`card ${styles.connectCard}`}>

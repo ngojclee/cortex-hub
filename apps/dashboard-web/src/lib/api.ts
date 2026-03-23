@@ -363,6 +363,56 @@ export async function getDashboardStats() {
   return apiFetch<DashboardStats>('/api/metrics/overview')
 }
 
+// ── Dashboard Overview (enriched v2) ──
+export interface ProjectSummary {
+  id: string
+  name: string
+  slug: string
+  gitProvider: string | null
+  gitRepoUrl: string | null
+  gitnexus: {
+    status: string
+    symbols: number
+    files: number
+    branch: string | null
+    completedAt: string | null
+  }
+  mem9: {
+    status: string
+    chunks: number
+  }
+  weeklyQueries: number
+  activeSessions: number
+  createdAt: string
+}
+
+export interface DashboardOverview {
+  activeKeys: number
+  totalAgents: number
+  memoryNodes: number
+  uptime: number
+  totalQueries: number
+  totalSessions: number
+  organizations: number
+  today: { queries: number; tokens: number }
+  projects: ProjectSummary[]
+  quality: {
+    lastGrade: string
+    lastScore: number
+    reportsToday: number
+    averageScore: number
+  }
+  knowledge: {
+    totalDocs: number
+    totalChunks: number
+    totalHits: number
+  }
+}
+
+export async function getDashboardOverview() {
+  return apiFetch<DashboardOverview>('/api/metrics/overview-v2')
+}
+
 // ── Activity Feed ──
 export interface ActivityEvent {
   type: 'query' | 'session'

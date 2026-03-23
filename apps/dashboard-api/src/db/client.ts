@@ -53,6 +53,9 @@ try {
   db.exec('ALTER TABLE index_jobs ADD COLUMN mem9_chunks INTEGER DEFAULT 0')
 } catch (e) { /* ignore if exists */ }
 
+// Helper: SQLite-safe date normalization for ISO 8601 strings (2026-03-23T05:26:46.407Z → 2026-03-23 05:26:46)
+const ISO_TO_SQLITE = `substr(replace(replace(completed_at, 'T', ' '), 'Z', ''), 1, 19)`
+
 // Reset stale mem9 states: 'done' with 0 chunks means embedding never ran
 try {
   db.exec("UPDATE index_jobs SET mem9_status = 'pending' WHERE mem9_status = 'done' AND (mem9_chunks IS NULL OR mem9_chunks = 0)")
@@ -60,7 +63,14 @@ try {
 
 // Reset stuck mem9 embedding: if status is 'embedding' for >30 min, it crashed/timed out
 try {
-  db.exec("UPDATE index_jobs SET mem9_status = 'error' WHERE mem9_status = 'embedding' AND completed_at < datetime('now', '-30 minutes')")
+  const result = db.prepare(
+    `UPDATE index_jobs SET mem9_status = 'error'
+     WHERE mem9_status = 'embedding'
+     AND ${ISO_TO_SQLITE} < datetime('now', '-30 minutes')`
+  ).run()
+  if (result.changes > 0) {
+    console.warn(`[db:startup] Reset ${result.changes} stuck mem9 embedding job(s)`)
+  }
 } catch (e) { /* ignore */ }
 
 if (existsSync(schemaPath)) {
@@ -90,7 +100,8 @@ setInterval(() => {
   try {
     const result = db.prepare(
       `UPDATE index_jobs SET mem9_status = 'error'
-       WHERE mem9_status = 'embedding' AND completed_at < datetime('now', '-15 minutes')`
+       WHERE mem9_status = 'embedding'
+       AND ${ISO_TO_SQLITE} < datetime('now', '-15 minutes')`
     ).run()
     if (result.changes > 0) {
       console.warn(`[db] Reset ${result.changes} stuck mem9 embedding job(s)`)

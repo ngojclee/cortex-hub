@@ -14,6 +14,13 @@ RUN apt-get update && \
 # Install gitnexus globally
 RUN npm install -g gitnexus@latest
 
+# Patch eval-server to bind on 0.0.0.0 (instead of 127.0.0.1)
+# Required for Docker inter-container networking
+RUN sed -i "s/server\.listen(port, '127\.0\.0\.1'/server.listen(port, '0.0.0.0'/g" \
+      /usr/lib/node_modules/gitnexus/dist/cli/eval-server.js && \
+    sed -i "s/listening on http:\/\/127\.0\.0\.1/listening on http:\/\/0.0.0.0/g" \
+      /usr/lib/node_modules/gitnexus/dist/cli/eval-server.js
+
 WORKDIR /app/data
 
 # GitNexus stores its index in ~/.gitnexus

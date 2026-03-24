@@ -79,7 +79,7 @@ knowledgeRouter.get('/', (c) => {
   const tag = c.req.query('tag')
   const projectId = c.req.query('projectId')
   const status = c.req.query('status') ?? 'active'
-  const limit = Number(c.req.query('limit') ?? 50)
+  const limit = Number(c.req.query('limit') ?? 500)
   const offset = Number(c.req.query('offset') ?? 0)
 
   let sql = 'SELECT * FROM knowledge_documents WHERE status = ?'

@@ -34,7 +34,7 @@ export function registerCodeTools(server: McpServer, env: Env) {
             branch,
             limit: limit ?? 5,
           }),
-          signal: AbortSignal.timeout(10000),
+          signal: AbortSignal.timeout(15000),
         })
 
         if (!response.ok) {
@@ -50,7 +50,17 @@ export function registerCodeTools(server: McpServer, env: Env) {
           }
         }
 
-        const data = await response.json()
+        const data = (await response.json()) as { data?: { formatted?: string }; success?: boolean }
+
+        // Prefer formatted output from the API (human-readable report)
+        const formatted = data?.data?.formatted
+        if (formatted) {
+          return {
+            content: [{ type: 'text' as const, text: formatted }],
+          }
+        }
+
+        // Fallback to raw JSON
         return {
           content: [
             {
@@ -95,7 +105,7 @@ export function registerCodeTools(server: McpServer, env: Env) {
             branch,
             direction: direction ?? 'downstream',
           }),
-          signal: AbortSignal.timeout(10000),
+          signal: AbortSignal.timeout(15000),
         })
 
         if (!response.ok) {
@@ -128,6 +138,84 @@ export function registerCodeTools(server: McpServer, env: Env) {
               text: `Impact analysis error: ${error instanceof Error ? error.message : 'Unknown'}`,
             },
           ],
+          isError: true,
+        }
+      }
+    }
+  )
+
+  // code.detect_changes — pre-commit risk analysis
+  server.tool(
+    'cortex_detect_changes',
+    'Detect uncommitted changes and analyze their risk level across the indexed codebase. Shows changed symbols, affected processes, and risk assessment.',
+    {
+      scope: z.string().optional().describe('Scope of changes to detect: "all" (default), "staged", or "unstaged"'),
+      projectId: z.string().optional().describe('Project ID to scope analysis to'),
+    },
+    async ({ scope, projectId }) => {
+      try {
+        const apiUrl = env.DASHBOARD_API_URL || 'http://localhost:4000'
+        const response = await fetch(`${apiUrl}/api/intel/detect-changes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scope: scope ?? 'all', projectId }),
+          signal: AbortSignal.timeout(15000),
+        })
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          return {
+            content: [{ type: 'text' as const, text: `Detect changes failed: ${response.status} ${errorText}` }],
+            isError: true,
+          }
+        }
+
+        const data = await response.json()
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }],
+        }
+      } catch (error) {
+        return {
+          content: [{ type: 'text' as const, text: `Detect changes error: ${error instanceof Error ? error.message : 'Unknown'}` }],
+          isError: true,
+        }
+      }
+    }
+  )
+
+  // code.cypher — direct graph queries
+  server.tool(
+    'cortex_cypher',
+    'Run Cypher queries directly against the GitNexus knowledge graph. Supports MATCH, RETURN, WHERE, ORDER BY for exploring code relationships.',
+    {
+      query: z.string().describe('Cypher query to run (e.g., MATCH (n:Function) RETURN n.name LIMIT 10)'),
+      projectId: z.string().optional().describe('Project ID to scope query to'),
+    },
+    async ({ query, projectId }) => {
+      try {
+        const apiUrl = env.DASHBOARD_API_URL || 'http://localhost:4000'
+        const response = await fetch(`${apiUrl}/api/intel/cypher`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query, projectId }),
+          signal: AbortSignal.timeout(15000),
+        })
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          return {
+            content: [{ type: 'text' as const, text: `Cypher query failed: ${response.status} ${errorText}` }],
+            isError: true,
+          }
+        }
+
+        const data = await response.json()
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }],
+        }
+      } catch (error) {
+        return {
+          content: [{ type: 'text' as const, text: `Cypher query error: ${error instanceof Error ? error.message : 'Unknown'}` }],
           isError: true,
         }
       }

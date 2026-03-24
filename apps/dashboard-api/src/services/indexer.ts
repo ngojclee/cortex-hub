@@ -302,7 +302,7 @@ export async function startIndexing(projectId: string, jobId: string, branch: st
     let gitnexusSuccess = false
     try {
       const analyzeResult = await runCommand('gitnexus', [
-        'analyze', '.', '--force'
+        'analyze', '.', '--force', '--embeddings'
       ], repoDir, jobId)
 
       const symbolMatch = analyzeResult.stdout.match(/(\d+)\s*symbols?/i)

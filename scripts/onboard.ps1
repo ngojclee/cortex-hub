@@ -1,4 +1,4 @@
-# Cortex Hub — Windows Onboarding Script (PowerShell)
+# Cortex Hub - Windows Onboarding Script (PowerShell)
 # Equivalent of onboard.sh for Windows users.
 #
 # Usage:
@@ -18,20 +18,20 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# ── Colors ──
+# -- Colors --
 function Write-Step { param([string]$msg) Write-Host ">>> $msg" -ForegroundColor Blue }
 function Write-Ok   { param([string]$msg) Write-Host "    $msg" -ForegroundColor Green }
 function Write-Warn { param([string]$msg) Write-Host "    $msg" -ForegroundColor Yellow }
 function Write-Err  { param([string]$msg) Write-Host "    $msg" -ForegroundColor Red }
 
 Write-Host ""
-Write-Host "╔══════════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "║          Cortex Hub — Windows Setup          ║" -ForegroundColor Cyan
-Write-Host "║     Self-hosted AI Agent Intelligence        ║" -ForegroundColor Cyan
-Write-Host "╚══════════════════════════════════════════════╝" -ForegroundColor Cyan
+Write-Host "+----------------------------------------------+" -ForegroundColor Cyan
+Write-Host "|          Cortex Hub - Windows Setup          |" -ForegroundColor Cyan
+Write-Host "|     Self-hosted AI Agent Intelligence        |" -ForegroundColor Cyan
+Write-Host "+----------------------------------------------+" -ForegroundColor Cyan
 Write-Host ""
 
-# ── Step 1: MCP URL ──
+# -- Step 1: MCP URL --
 Write-Step "Connecting to Cortex Hub..."
 
 if ($McpUrl -eq "") {
@@ -41,7 +41,7 @@ if ($McpUrl -eq "") {
 }
 $McpUrl = $McpUrl.TrimEnd("/")
 
-# ── Step 2: API Key ──
+# -- Step 2: API Key --
 if ($ApiKey -eq "" -and $env:HUB_API_KEY) {
     $ApiKey = $env:HUB_API_KEY
 }
@@ -57,7 +57,7 @@ if (-not $ApiKey) {
     exit 1
 }
 
-# ── Step 3: Test MCP Connection ──
+# -- Step 3: Test MCP Connection --
 Write-Step "Testing MCP connection..."
 
 $headers = @{
@@ -84,14 +84,14 @@ try {
         Write-Err "Invalid API Key (401). Check your key and try again."
         exit 1
     } elseif ($null -eq $statusCode) {
-        Write-Err "Cannot reach $McpUrl — check your network and URL."
+        Write-Err "Cannot reach $McpUrl - check your network and URL."
         exit 1
     } else {
-        Write-Warn "MCP responded with HTTP $statusCode — continuing anyway..."
+        Write-Warn "MCP responded with HTTP $statusCode - continuing anyway..."
     }
 }
 
-# ── Step 4: Tool Detection ──
+# -- Step 4: Tool Detection --
 Write-Host ""
 Write-Step "Detecting installed AI tools..."
 
@@ -131,7 +131,7 @@ if ($detectedTools.Count -eq 0) {
     Write-Warn "No AI tools auto-detected."
 }
 
-# ── Tool Selection ──
+# -- Tool Selection --
 $selectedTools = @()
 if ($Tool -ne "") {
     $selectedTools = $Tool -split ","
@@ -167,15 +167,15 @@ if ($Tool -ne "") {
     }
 }
 
-# ── Step 5: Inject MCP Config ──
+# -- Step 5: Inject MCP Config --
 function Set-McpConfig {
     param([string]$ToolKey, [string]$ConfigPath, [string]$ConfigKey, [string]$DisplayName)
 
     if ($ToolKey -eq "bot") {
         Write-Host ""
-        Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Cyan
+        Write-Host "---------------------------------------" -ForegroundColor Cyan
         Write-Host "  Bot / API Connection Details" -ForegroundColor Cyan
-        Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Cyan
+        Write-Host "---------------------------------------" -ForegroundColor Cyan
         Write-Host ""
         Write-Host "  MCP Endpoint:  $McpUrl" -ForegroundColor Green
         Write-Host "  Auth Header:   Authorization: Bearer <API_KEY>" -ForegroundColor Green
@@ -244,7 +244,7 @@ foreach ($toolKey in $selectedTools) {
     }
 }
 
-# ── Step 6: Detect Project Stack & Generate project-profile.json ──
+# -- Step 6: Detect Project Stack & Generate project-profile.json --
 Write-Host ""
 Write-Step "Scanning project stack..."
 
@@ -310,10 +310,10 @@ if (-not (Test-Path $profilePath)) {
     $profile | ConvertTo-Json -Depth 5 | Out-File -FilePath $profilePath -Encoding utf8
     Write-Ok "Generated $profilePath"
 } else {
-    Write-Ok "Found existing $profilePath — skipping generation"
+    Write-Ok "Found existing $profilePath - skipping generation"
 }
 
-# ── Step 7: Generate Agent Rules ──
+# -- Step 7: Generate Agent Rules --
 Write-Step "Generating agent rules..."
 
 $agentRulesPath = ".cortex\agent-rules.md"
@@ -321,23 +321,23 @@ $gitRepoUrl = try { (git remote get-url origin 2>$null) } catch { "unknown" }
 
 $agentRulesContent = @"
 <!-- cortex-hub:agent-rules -->
-## Cortex Hub — MCP Tool Usage Guidelines
+## Cortex Hub - MCP Tool Usage Guidelines
 
 ### Session Protocol
 1. **Start**: Call ``cortex_session_start`` with repo URL, agentId, mode
-2. **During**: Use Cortex tools BEFORE grep/find (priority: memory → knowledge → code_search → code_impact)
+2. **During**: Use Cortex tools BEFORE grep/find (priority: memory   knowledge   code_search   code_impact)
 3. **Before commit**: Run ``cortex_detect_changes`` for risk analysis
-4. **End**: ``cortex_quality_report`` → ``cortex_memory_store`` → ``cortex_session_end``
+4. **End**: ``cortex_quality_report``   ``cortex_memory_store``   ``cortex_session_end``
 
 ### Tool Priority Order
-1. ``cortex_memory_search`` → recall past decisions
-2. ``cortex_knowledge_search`` → search shared knowledge
-3. ``cortex_code_search`` → AST-aware code search
-4. ``cortex_code_impact`` → blast radius before editing
-5. ``cortex_detect_changes`` → pre-commit risk
-6. ``cortex_cypher`` → graph queries
-7. ``cortex_list_repos`` → find project IDs
-8. ``grep_search`` / ``find_by_name`` → fallback only
+1. ``cortex_memory_search``   recall past decisions
+2. ``cortex_knowledge_search``   search shared knowledge
+3. ``cortex_code_search``   AST-aware code search
+4. ``cortex_code_impact``   blast radius before editing
+5. ``cortex_detect_changes``   pre-commit risk
+6. ``cortex_cypher``   graph queries
+7. ``cortex_list_repos``   find project IDs
+8. ``grep_search`` / ``find_by_name``   fallback only
 
 ### Bug Protocol (MANDATORY)
 1. Search ``cortex_knowledge_search`` for the error first
@@ -351,7 +351,7 @@ $agentRulesContent = @"
 | ``cortex_session_end`` | Close session with summary |
 | ``cortex_changes`` | Check for other agents' changes |
 | ``cortex_code_search`` | AST-aware semantic code search |
-| ``cortex_code_context`` | 360° symbol view (callers/callees/flows) |
+| ``cortex_code_context`` | 360  symbol view (callers/callees/flows) |
 | ``cortex_code_impact`` | Blast radius analysis |
 | ``cortex_code_reindex`` | Re-index after push |
 | ``cortex_list_repos`` | List indexed repos with project mapping |
@@ -370,7 +370,7 @@ $agentRulesContent = @"
 $agentRulesContent | Out-File -FilePath $agentRulesPath -Encoding utf8
 Write-Ok "Generated $agentRulesPath"
 
-# ── Step 8: Generate IDE instruction files ──
+# -- Step 8: Generate IDE instruction files --
 $cortexMarker = "<!-- cortex-hub:auto-mcp -->"
 
 function Set-InstructionFile {
@@ -379,7 +379,7 @@ function Set-InstructionFile {
     $instructions = @"
 
 $cortexMarker
-## Cortex Hub — Auto MCP (MANDATORY — every conversation)
+## Cortex Hub - Auto MCP (MANDATORY - every conversation)
 
 At the START of every conversation:
 1. Call ``cortex_session_start`` with repo: "$gitRepoUrl", agentId: "$AgentId", mode: "development"
@@ -392,12 +392,12 @@ At the START of every conversation:
 3. Store non-obvious fixes: ``cortex_knowledge_store``
 
 ### Session End
-``cortex_quality_report`` → ``cortex_memory_store`` → ``cortex_session_end``
+``cortex_quality_report``   ``cortex_memory_store``   ``cortex_session_end``
 $cortexMarker
 "@
 
     if ((Test-Path $FilePath) -and (Get-Content $FilePath -Raw) -match [regex]::Escape($cortexMarker)) {
-        Write-Ok "$Label already has Cortex instructions — skipping"
+        Write-Ok "$Label already has Cortex instructions - skipping"
     } else {
         Add-Content -Path $FilePath -Value $instructions -Encoding utf8
         Write-Ok "$Label updated (agentId: $AgentId)"
@@ -417,7 +417,7 @@ foreach ($toolKey in $selectedTools) {
     }
 }
 
-# ── Step 9: Deploy Workflow Templates ──
+# -- Step 9: Deploy Workflow Templates --
 Write-Step "Deploying workflow templates..."
 
 $workflowDir = ".agents\workflows"
@@ -436,18 +436,18 @@ foreach ($wf in $workflows) {
             Invoke-WebRequest -Uri "$templatesUrl/$wf" -OutFile $wfPath -UseBasicParsing -TimeoutSec 5 -ErrorAction SilentlyContinue
             Write-Ok "Downloaded $wf"
         } catch {
-            Write-Warn "Could not download $wf — will be available after git pull"
+            Write-Warn "Could not download $wf - will be available after git pull"
         }
     } else {
         Write-Ok "$wf already exists"
     }
 }
 
-# ── Done ──
+# -- Done --
 Write-Host ""
-Write-Host "╔══════════════════════════════════════════════╗" -ForegroundColor Green
-Write-Host "║         Cortex Hub Setup Complete! ✓         ║" -ForegroundColor Green
-Write-Host "╚══════════════════════════════════════════════╝" -ForegroundColor Green
+Write-Host "+----------------------------------------------+" -ForegroundColor Green
+Write-Host "|         Cortex Hub Setup Complete! v         |" -ForegroundColor Green
+Write-Host "+----------------------------------------------+" -ForegroundColor Green
 Write-Host ""
 $configuredStr = $selectedTools -join ', '
 Write-Host "  Configured tools: $configuredStr" -ForegroundColor Cyan
@@ -458,5 +458,5 @@ Write-Host ""
 Write-Host "  Next steps:" -ForegroundColor Yellow
 Write-Host "    1. Restart your IDE to load MCP config" -ForegroundColor White
 Write-Host "    2. Ask your agent: 'cortex_health' to verify" -ForegroundColor White
-Write-Host "    3. Start working — Cortex will guide your agent" -ForegroundColor White
+Write-Host "    3. Start working - Cortex will guide your agent" -ForegroundColor White
 Write-Host ""

@@ -171,8 +171,17 @@ else {
 }
 
 # -- Step 5: Inject MCP Config --
+# Uses python3 for JSON manipulation to avoid PowerShell 5.1 bugs with
+# ConvertFrom-Json/ConvertTo-Json/Add-Member pipeline binding.
 function Set-McpConfig {
-    param([string]$ToolKey, [string]$ConfigPath, [string]$ConfigKey, [string]$DisplayName)
+    param(
+        [string]$ToolKey,
+        [string]$ConfigPath,
+        [string]$ConfigKey,
+        [string]$DisplayName,
+        [string]$McpEndpoint,
+        [string]$Key
+    )
 
     if ($ToolKey -eq "bot") {
         Write-Host ""
@@ -180,7 +189,7 @@ function Set-McpConfig {
         Write-Host "  Bot / API Connection Details" -ForegroundColor Cyan
         Write-Host "---------------------------------------" -ForegroundColor Cyan
         Write-Host ""
-        Write-Host "  MCP Endpoint:  $McpUrl" -ForegroundColor Green
+        Write-Host "  MCP Endpoint:  $McpEndpoint" -ForegroundColor Green
         Write-Host "  Auth Header:   Authorization: Bearer [API_KEY]" -ForegroundColor Green
         Write-Host ""
         return
@@ -200,47 +209,66 @@ function Set-McpConfig {
         Write-Ok "Created $ConfigPath"
     }
 
-    # Read existing config safely
-    $configContent = Get-Content $ConfigPath -Raw
-    $config = $null
-    if ($configContent -and $configContent.Trim() -ne '') {
-        try { $config = $configContent | ConvertFrom-Json } catch { }
-    }
-    if ($null -eq $config) {
-        $config = [PSCustomObject]@{ }
-    }
+    # Use python3 for reliable JSON manipulation (avoids PS 5.1 Add-Member bugs)
+    $pyScript = @"
+import json, sys
+path = sys.argv[1]
+config_key = sys.argv[2]
+mcp_url = sys.argv[3]
+api_key = sys.argv[4]
+tool_key = sys.argv[5]
 
-    # Extract or create the target container (e.g. mcpServers)
-    if ($ConfigKey -eq "") {
-        $targetContainer = $config
+with open(path, 'r', encoding='utf-8') as f:
+    try:
+        config = json.load(f)
+    except:
+        config = {}
+
+if config_key:
+    if config_key not in config or config[config_key] is None:
+        config[config_key] = {}
+    target = config[config_key]
+else:
+    target = config
+
+entry = {
+    'command': 'npx',
+    'args': ['-y', 'mcp-remote', mcp_url, '--header', 'Authorization: Bearer ' + api_key],
+    'env': {
+        'HUB_API_KEY': api_key
     }
-    else {
-        $targetContainer = $config.$ConfigKey
-        if ($null -eq $targetContainer) {
-            $targetContainer = [PSCustomObject]@{ }
-            $config | Add-Member -MemberType NoteProperty -Name $ConfigKey -Value $targetContainer -Force
+}
+
+if tool_key == 'vscode':
+    entry['type'] = 'stdio'
+
+target['cortex-hub'] = entry
+
+with open(path, 'w', encoding='utf-8') as f:
+    json.dump(config, f, indent=2)
+
+print('    Injected cortex-hub into ' + (config_key if config_key else 'root'))
+"@
+
+    $pyFile = [System.IO.Path]::GetTempFileName() + ".py"
+    $pyScript | Out-File -FilePath $pyFile -Encoding utf8
+
+    try {
+        python3 $pyFile $ConfigPath $ConfigKey $McpEndpoint $Key $ToolKey
+    }
+    catch {
+        try {
+            python $pyFile $ConfigPath $ConfigKey $McpEndpoint $Key $ToolKey
+        }
+        catch {
+            Write-Err "python3/python not found. Cannot write JSON config."
+            Write-Err "Please install Python 3 and try again."
         }
     }
-
-    # Build MCP entry
-    $mcpEntry = [PSCustomObject]@{
-        command = "npx"
-        args    = @("-y", "mcp-remote", $McpUrl, "--header", "Authorization: Bearer $ApiKey")
-        env     = [PSCustomObject]@{
-            HUB_API_KEY = $ApiKey
-        }
+    finally {
+        Remove-Item $pyFile -ErrorAction SilentlyContinue
     }
 
-    # Add type for VS Code
-    if ($ToolKey -eq "vscode") {
-        $mcpEntry | Add-Member -MemberType NoteProperty -Name "type" -Value "stdio" -Force
-    }
-
-    # Set the cortex-hub entry into the target container
-    $targetContainer | Add-Member -MemberType NoteProperty -Name "cortex-hub" -Value $mcpEntry -Force
-
-    # Write back
-    $config | ConvertTo-Json -Depth 10 | Out-File -FilePath $ConfigPath -Encoding utf8
     Write-Ok "$DisplayName configured at $ConfigPath"
 }
 
@@ -257,7 +285,7 @@ $configMap = @{
 foreach ($toolKey in $selectedTools) {
     if ($configMap.ContainsKey($toolKey)) {
         $cfg = $configMap[$toolKey]
-        Set-McpConfig -ToolKey $toolKey -ConfigPath $cfg.Path -ConfigKey $cfg.Key -DisplayName $cfg.Name
+        Set-McpConfig -ToolKey $toolKey -ConfigPath $cfg.Path -ConfigKey $cfg.Key -DisplayName $cfg.Name -McpEndpoint $McpUrl -Key $ApiKey
     }
 }
 

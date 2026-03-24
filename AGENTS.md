@@ -41,6 +41,8 @@
 |------|------|------------|
 | **Searching code** | `cortex_code_search` | Use FIRST before `grep_search` or `find_by_name`. Queries GitNexus knowledge graph with AST-aware search. Fall back to grep only if unavailable. |
 | **Before editing core code** | `cortex_code_impact` | Run blast radius analysis on the symbol/file you plan to change. |
+| **Before committing** | `cortex_detect_changes` | Detect uncommitted changes and assess risk level — shows affected symbols, processes, and risk rating. Use before `git commit`. |
+| **Exploring code graph** | `cortex_cypher` | Run Cypher queries against the knowledge graph. Useful for: finding all callers of a function, listing classes by community, tracing dependency chains. |
 | **Encountering an error/bug** | `cortex_knowledge_search` | **MANDATORY**: Search if this is a known bug or has a documented workaround before debugging from scratch. |
 | **Fixing a new error/bug** | `cortex_knowledge_store` | **MANDATORY**: If you spend time fixing a frustrating or non-obvious bug, store the solution so other agents won't repeat your mistake. |
 | **Recalling past context** | `cortex_memory_search` | Search agent memories for past decisions, debugging findings, and session context. |
@@ -52,7 +54,9 @@
 2. `cortex_knowledge_search` → search the shared knowledge base
 3. `cortex_code_search` → search the indexed codebase (GitNexus AST graph)
 4. `cortex_code_impact` → check blast radius before editing
-5. `grep_search` / `find_by_name` → only if Cortex tools are unavailable
+5. `cortex_detect_changes` → pre-commit risk analysis
+6. `cortex_cypher` → advanced graph queries (Cypher syntax)
+7. `grep_search` / `find_by_name` → only if Cortex tools are unavailable
 
 **Bug/Error Protocol (NEVER skip):**
 If you encounter a compilation error, runtime error, or failing test:

@@ -89,10 +89,14 @@ if [ -d "$REPOS_DIR" ]; then
             continue
         fi
 
-        echo "  → Analyzing ${repo_name} (with embeddings)..."
-        cd "$repo_dir" && gitnexus analyze --force --embeddings 2>&1 && {
+        echo "  → Analyzing ${repo_name}..."
+        # Note: --embeddings omitted for auto-discovery to avoid LadybugDB WAL
+        # corruption on large repos (observed with C# repos >10K symbols).
+        # Embeddings can be enabled per-repo manually:
+        #   docker exec cortex-gitnexus bash -c 'cd /app/data/repos/<id> && gitnexus analyze --embeddings'
+        cd "$repo_dir" && gitnexus analyze --force 2>&1 && {
             ANALYZED=$((ANALYZED + 1))
-            echo "  ✓ ${repo_name} — indexed with embeddings"
+            echo "  ✓ ${repo_name} — indexed successfully"
         } || {
             echo "  ✗ ${repo_name} — analyze failed (skipping)"
         }

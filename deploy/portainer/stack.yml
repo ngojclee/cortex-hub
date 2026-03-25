@@ -6,32 +6,57 @@ services:
     container_name: cortex-qdrant
     restart: unless-stopped
     volumes:
-      - /home/Docker/cortex-hub/qdrant-data:/qdrant/storage
+      - ${STACK_DATA_ROOT:-/home/Docker/cortex-hub}/qdrant-data:/qdrant/storage
     environment:
+      TZ: ${TZ:-Europe/Paris}
       QDRANT__SERVICE__GRPC_PORT: 6334
+
+  llm-proxy:
+    image: eceasy/cli-proxy-api:latest
+    container_name: cortex-llm-proxy
+    restart: unless-stopped
+    volumes:
+      - ${STACK_DATA_ROOT:-/home/Docker/cortex-hub}/cliproxy-auth:/CLIProxyAPI/auth
+    configs:
+      - source: cliproxy-config
+        target: /CLIProxyAPI/config.yaml
+    environment:
+      TZ: ${TZ:-Europe/Paris}
+      MANAGEMENT_PASSWORD: ${CLIPROXY_MANAGEMENT_KEY}
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8317/').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   gitnexus:
     image: ghcr.io/ngojclee/cortex-gitnexus:latest
     container_name: cortex-gitnexus
     restart: unless-stopped
     volumes:
-      - /home/Docker/cortex-hub/gitnexus-data:/root/.gitnexus
-      - /home/Docker/cortex-hub/api-data:/app/data
+      - ${STACK_DATA_ROOT:-/home/Docker/cortex-hub}/gitnexus-data:/root/.gitnexus
+      - ${STACK_DATA_ROOT:-/home/Docker/cortex-hub}/api-data:/app/data
     environment:
       TZ: ${TZ:-Europe/Paris}
       PORT: 4848
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:4848/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
 
   cortex-api:
     image: ghcr.io/ngojclee/cortex-api:latest
     container_name: cortex-api
     restart: unless-stopped
     ports:
-      - "4000:4000"
-      - "3000:4000"
+      - "${API_BIND_HOST:-127.0.0.1}:${API_PORT:-4000}:4000"
     volumes:
-      - /home/Docker/cortex-hub/api-data:/app/data
-      - /home/Docker/cortex-hub/gitnexus-data:/root/.gitnexus
-      - /home/Docker/cortex-hub/cliproxy-auth:/app/cliproxy-auth
+      - ${STACK_DATA_ROOT:-/home/Docker/cortex-hub}/api-data:/app/data
+      - ${STACK_DATA_ROOT:-/home/Docker/cortex-hub}/gitnexus-data:/root/.gitnexus
+      - ${STACK_DATA_ROOT:-/home/Docker/cortex-hub}/cliproxy-auth:/app/cliproxy-auth
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       TZ: ${TZ:-Europe/Paris}
@@ -39,39 +64,57 @@ services:
       NODE_ENV: ${NODE_ENV:-production}
       DATABASE_PATH: /app/data/cortex.db
       QDRANT_URL: http://qdrant:6333
-      LLM_PROXY_URL: ${LLM_PROXY_URL:-http://llm-proxy:8317}
-      CLIPROXY_MANAGEMENT_KEY: ${CLIPROXY_MANAGEMENT_KEY:-cortex2026}
+      LLM_PROXY_URL: http://llm-proxy:8317
+      CLIPROXY_AUTH_DIR: /app/cliproxy-auth
+      CLIPROXY_MANAGEMENT_KEY: ${CLIPROXY_MANAGEMENT_KEY}
       GITNEXUS_URL: http://gitnexus:4848
       DASHBOARD_URL: ${DASHBOARD_URL}
     depends_on:
       qdrant:
         condition: service_started
+      llm-proxy:
+        condition: service_healthy
       gitnexus:
         condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:4000/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
   cortex-mcp:
     image: ghcr.io/ngojclee/cortex-mcp:latest
     container_name: cortex-mcp
     restart: unless-stopped
     ports:
-      - "8318:8317"
+      - "${MCP_BIND_HOST:-127.0.0.1}:${MCP_PORT:-8318}:8317"
     environment:
       TZ: ${TZ:-Europe/Paris}
       PORT: 8317
       NODE_ENV: ${NODE_ENV:-production}
       DASHBOARD_API_URL: http://cortex-api:4000
       QDRANT_URL: http://qdrant:6333
-      CLIPROXY_URL: ${LLM_PROXY_URL:-http://llm-proxy:8317}
+      CLIPROXY_URL: http://llm-proxy:8317
       GITNEXUS_URL: http://gitnexus:4848
       MCP_SERVER_NAME: cortex-hub
       MCP_SERVER_VERSION: "0.1.0"
+      MCP_AUTH_REQUIRED: "true"
     depends_on:
       cortex-api:
-        condition: service_started
+        condition: service_healthy
       qdrant:
         condition: service_started
+      llm-proxy:
+        condition: service_healthy
       gitnexus:
         condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8317/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   watchtower:
     image: containrrr/watchtower:latest
@@ -80,7 +123,12 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
+      TZ: ${TZ:-Europe/Paris}
       WATCHTOWER_CLEANUP: "true"
       WATCHTOWER_POLL_INTERVAL: 300
       WATCHTOWER_LABEL_ENABLE: "false"
       DOCKER_API_VERSION: "1.43"
+
+configs:
+  cliproxy-config:
+    file: ./cliproxy-config.yaml

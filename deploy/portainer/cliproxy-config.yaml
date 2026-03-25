@@ -1,0 +1,26 @@
+# CLIProxy API configuration for Portainer deployments.
+# OAuth tokens are stored in the mounted auth directory.
+
+port: 8317
+host: ""
+auth-dir: /CLIProxyAPI/auth
+debug: false
+
+remote-management:
+  allow-remote: true
+  secret-key: ${MANAGEMENT_PASSWORD}
+
+# Keep one OpenAI-compatible entry so the proxy can expose a stable /v1 surface.
+# Real credentials are expected to be added through the Cortex Hub UI / OAuth flow.
+openai-compatibility:
+  - name: "cortex-openai"
+    base-url: "https://api.openai.com/v1"
+    api-key-entries:
+      - api-key: "placeholder"
+    models:
+      - name: "text-embedding-3-small"
+        alias: "text-embedding-3-small"
+      - name: "text-embedding-3-large"
+        alias: "text-embedding-3-large"
+      - name: "gpt-5.4-mini"
+        alias: "gpt-5.4-mini"

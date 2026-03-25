@@ -787,8 +787,32 @@ export async function searchKnowledge(query: string, opts?: { tags?: string[]; p
     { method: 'POST', body: { query, ...opts } }
   )
 }
-
 export async function getKnowledgeTags() {
   return apiFetch<{ tags: string[] }>('/api/knowledge/tags')
 }
 
+// ── Agent Memories ──
+export interface AgentMemory {
+  id: string
+  payload: {
+    content: string
+    messages: unknown[]
+    agentId?: string
+    userId?: string
+    project_id?: string
+    metadata?: Record<string, unknown>
+    createdAt: string
+  }
+}
+
+export async function getMemories(projectId?: string, limit: number = 50) {
+  const query = new URLSearchParams()
+  if (projectId) query.append('projectId', projectId)
+  query.append('limit', limit.toString())
+  
+  return apiFetch<{ memories: AgentMemory[]; total: number }>(`/api/mem9-proxy/list?${query.toString()}`)
+}
+
+export async function deleteMemory(id: string) {
+  return apiFetch<{ success: boolean }>(`/api/mem9-proxy/${id}`, { method: 'DELETE' })
+}

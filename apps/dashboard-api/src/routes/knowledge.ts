@@ -12,6 +12,7 @@ import type { VectorStoreConfig } from '@cortex/shared-mem9'
 import { db } from '../db/client.js'
 import { createLogger } from '@cortex/shared-utils'
 import { resolveEmbeddingConfig } from '../services/embedding-config.js'
+import { ensureProjectExists } from '../db/utils.js'
 
 const logger = createLogger('knowledge')
 
@@ -121,15 +122,10 @@ knowledgeRouter.post('/', async (c) => {
     const tagList = tags ?? []
     const contentPreview = content.slice(0, 500)
 
-    // Normalize project_id: resolve proj-* to slug, and lowercase
+    // Normalize project_id: resolve proj-* to slug, and lowercase, and auto-register project
     let normalizedProjectId = projectId ?? null
     if (normalizedProjectId) {
-      if (normalizedProjectId.startsWith('proj-')) {
-        // Resolve project ID to slug for consistent grouping
-        const proj = db.prepare('SELECT slug FROM projects WHERE id = ?').get(normalizedProjectId) as { slug: string } | undefined
-        if (proj?.slug) normalizedProjectId = proj.slug
-      }
-      normalizedProjectId = normalizedProjectId.toLowerCase()
+      normalizedProjectId = ensureProjectExists(normalizedProjectId)
     }
 
     // Chunk content

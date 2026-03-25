@@ -14,6 +14,7 @@ import { Mem9, Embedder } from '@cortex/shared-mem9'
 import type { Mem9Config, ModelSlot } from '@cortex/shared-mem9'
 import { db } from '../db/client.js'
 import { resolveEmbeddingConfig } from '../services/embedding-config.js'
+import { ensureProjectExists } from '../db/utils.js'
 
 export const mem9ProxyRouter = new Hono()
 
@@ -167,7 +168,7 @@ mem9ProxyRouter.post('/store', async (c) => {
       return c.json({ error: 'messages and userId are required' }, 400)
     }
 
-    const mem9 = getMem9()
+    if (metadata?.project_id) { metadata.project_id = ensureProjectExists(metadata.project_id); } const mem9 = getMem9()
     const result = await mem9.add({ messages, userId, agentId, metadata })
 
     c.header('X-Cortex-Compute-Tokens', String(result.tokensUsed || 0))
@@ -254,5 +255,56 @@ mem9ProxyRouter.get('/health', async (c) => {
       status: 'error',
       error: String(error),
     }, 500)
+  }
+})
+
+/**
+ * GET /list — List/filter raw memories in Qdrant VectorStore
+ * Query: ?projectId=camera-connect&limit=50
+ */
+mem9ProxyRouter.get('/list', async (c) => {
+  try {
+    const projectId = c.req.query('projectId')
+    const limit = Number(c.req.query('limit') || 50)
+
+    const filter = projectId ? { must: [{ key: 'project_id', match: { value: projectId } }] } : {}
+
+    const config = getMem9Config()
+    const { VectorStore } = await import('@cortex/shared-mem9')
+    const store = new VectorStore(config.vectorStore)
+
+    const points = await store.list(filter, limit)
+    
+    // Sort by createdAt descending implicitly since payload has it
+    points.sort((a, b) => {
+      const ta = (a.payload['createdAt'] as string) || ''
+      const tb = (b.payload['createdAt'] as string) || ''
+      return tb.localeCompare(ta)
+    })
+
+    return c.json({ memories: points, total: points.length })
+  } catch (error) {
+    console.error('[mem9-proxy] list error:', error)
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+/**
+ * DELETE /:id — Delete a specific memory point
+ */
+mem9ProxyRouter.delete('/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    if (!id) return c.json({ error: 'id required' }, 400)
+
+    const config = getMem9Config()
+    const { VectorStore } = await import('@cortex/shared-mem9')
+    const store = new VectorStore(config.vectorStore)
+
+    await store.delete(id)
+    return c.json({ success: true })
+  } catch (error) {
+    console.error('[mem9-proxy] delete error:', error)
+    return c.json({ error: String(error) }, 500)
   }
 })

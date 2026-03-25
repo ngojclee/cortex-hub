@@ -11,6 +11,7 @@ const navItems = [
   { href: '/', label: 'Dashboard', icon: '◈' },
   { href: '/orgs', label: 'Organizations', icon: '🏢' },
   { href: '/knowledge', label: 'Knowledge', icon: '📚' },
+  { href: '/memories', label: 'Memories', icon: '🧠' },
   { href: '/keys', label: 'API Keys', icon: '⚿' },
   { href: '/providers', label: 'LLM Providers', icon: '⬡' },
   { href: '/usage', label: 'Usage', icon: '📊' },

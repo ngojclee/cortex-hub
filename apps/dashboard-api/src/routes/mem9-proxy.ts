@@ -11,7 +11,7 @@
 
 import { Hono } from 'hono'
 import { Mem9, Embedder } from '@cortex/shared-mem9'
-import type { Mem9Config, EmbedderConfig } from '@cortex/shared-mem9'
+import type { Mem9Config, ModelSlot } from '@cortex/shared-mem9'
 import { db } from '../db/client.js'
 import { resolveEmbeddingConfig } from '../services/embedding-config.js'
 
@@ -20,61 +20,100 @@ export const mem9ProxyRouter = new Hono()
 /** Lazily initialize Mem9 instance (singleton) */
 let mem9Instance: Mem9 | null = null
 let embedderInstance: Embedder | null = null
+let activeLlmModel = 'gpt-4.1-mini'
 
-/**
- * Resolve the Gemini API key from multiple sources (priority order):
- * 1. provider_accounts table in SQLite (Providers UI)
- * 2. Optional env fallback (legacy only, gated by ALLOW_ENV_PROVIDER_FALLBACK=true)
- */
-function resolveGeminiApiKey(): string {
-  // 1. Providers DB — look for a Gemini provider with an API key
+const DEFAULT_LLM_BASE = 'http://llm-proxy:8317/v1'
+const DEFAULT_LLM_MODEL = 'gpt-4.1-mini'
+const DEFAULT_QDRANT_URL = 'http://qdrant:6333'
+
+function normalizeOpenAIBase(baseUrl: string): string {
+  const trimmed = baseUrl.replace(/\/$/, '')
+  return trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`
+}
+
+function resolveLlmChain(): ModelSlot[] {
   try {
     const row = db.prepare(
-      "SELECT api_key FROM provider_accounts WHERE type = 'gemini' AND status = 'enabled' AND api_key IS NOT NULL LIMIT 1"
-    ).get() as { api_key: string } | undefined
-    if (row?.api_key) return row.api_key
+      "SELECT chain FROM model_routing WHERE purpose = 'chat'"
+    ).get() as { chain: string } | undefined
+    if (!row?.chain) return []
+
+    const parsedChain = JSON.parse(row.chain) as Array<{ accountId: string; model: string }>
+    const slots: ModelSlot[] = []
+
+    for (const slot of parsedChain) {
+      const account = db.prepare(
+        "SELECT id, api_base, api_key, type FROM provider_accounts WHERE id = ? AND status = 'enabled'"
+      ).get(slot.accountId) as { id: string; api_base: string; api_key: string | null; type: string } | undefined
+      if (!account) continue
+
+      const isGemini =
+        account.type === 'gemini' ||
+        account.api_base.includes('generativelanguage.googleapis.com')
+      if (isGemini) continue
+
+      slots.push({
+        accountId: account.id,
+        baseUrl: normalizeOpenAIBase(account.api_base),
+        apiKey: account.api_key ?? undefined,
+        model: slot.model,
+      })
+    }
+
+    return slots
   } catch {
-    // DB might not be ready yet
+    return []
   }
+}
 
-  // 2. Optional legacy env fallback
-  if ((process.env['ALLOW_ENV_PROVIDER_FALLBACK'] ?? 'false').toLowerCase() === 'true') {
-    const envKey = process.env['GEMINI_API_KEY']
-    if (envKey) return envKey
-  }
-
-  return ''
+function resolveLlmBaseFromEnv(): string {
+  const raw = process.env['LLM_PROXY_URL'] || DEFAULT_LLM_BASE
+  return normalizeOpenAIBase(raw)
 }
 
 function getMem9Config(): Mem9Config {
+  const llmChain = resolveLlmChain()
+  const { config: embedderConfig, chain: embedderChain } = resolveEmbeddingConfig()
+  const llmPrimary = llmChain[0]
+
+  activeLlmModel = llmPrimary?.model || DEFAULT_LLM_MODEL
+
   return {
     llm: {
-      baseUrl: `${process.env['LLM_PROXY_URL'] || 'http://llm-proxy:8317'}/v1`,
-      model: process.env['MEM9_LLM_MODEL'] || 'gpt-4.1-mini',
+      baseUrl: llmPrimary?.baseUrl || resolveLlmBaseFromEnv(),
+      model: llmPrimary?.model || DEFAULT_LLM_MODEL,
     },
-    embedder: {
-      provider: 'gemini' as const,
-      apiKey: resolveGeminiApiKey(),
-      model: process.env['MEM9_EMBEDDING_MODEL'] || 'gemini-embedding-exp-03-07',
-    },
+    llmChain: llmChain.length > 0 ? llmChain : undefined,
+    embedder: embedderConfig,
+    embedderChain: embedderChain.length > 0 ? embedderChain : undefined,
     vectorStore: {
-      url: process.env['QDRANT_URL'] || 'http://qdrant:6333',
+      url: process.env['QDRANT_URL'] || DEFAULT_QDRANT_URL,
       collection: 'cortex_memories',
     },
   }
 }
 
-/** Track the API key used to create singletons — invalidate if it changes */
-let lastApiKey = ''
+/** Track config signature to recreate clients when provider routing changes */
+let lastMem9Signature = ''
 let lastEmbedSignature = ''
 
 function getMem9(): Mem9 {
-  const currentKey = resolveGeminiApiKey()
-  if (!mem9Instance || currentKey !== lastApiKey) {
-    lastApiKey = currentKey
-    mem9Instance = new Mem9(getMem9Config())
-    embedderInstance = null // also invalidate embedder
+  const config = getMem9Config()
+  const signature = JSON.stringify({
+    llm: config.llm,
+    llmChain: (config.llmChain ?? []).map((s) => ({ id: s.accountId, model: s.model, baseUrl: s.baseUrl })),
+    embedder: { ...config.embedder, apiKey: config.embedder.apiKey ? 'set' : '' },
+    embedderChain: (config.embedderChain ?? []).map((s) => ({ id: s.accountId, model: s.model, baseUrl: s.baseUrl })),
+    vectorStore: config.vectorStore,
+  })
+
+  if (!mem9Instance || signature !== lastMem9Signature) {
+    lastMem9Signature = signature
+    mem9Instance = new Mem9(config)
+    embedderInstance = null
+    lastEmbedSignature = ''
   }
+
   return mem9Instance
 }
 
@@ -111,7 +150,7 @@ mem9ProxyRouter.post('/store', async (c) => {
     const result = await mem9.add({ messages, userId, agentId, metadata })
 
     c.header('X-Cortex-Compute-Tokens', String(result.tokensUsed || 0))
-    c.header('X-Cortex-Compute-Model', process.env['MEM9_LLM_MODEL'] || 'gpt-4.1-mini')
+    c.header('X-Cortex-Compute-Model', activeLlmModel)
 
     return c.json({
       success: true,
@@ -141,7 +180,7 @@ mem9ProxyRouter.post('/search', async (c) => {
     const result = await mem9.search({ query, userId, agentId, limit })
 
     c.header('X-Cortex-Compute-Tokens', String(result.tokensUsed || 0))
-    c.header('X-Cortex-Compute-Model', process.env['MEM9_LLM_MODEL'] || 'gpt-4.1-mini')
+    c.header('X-Cortex-Compute-Model', activeLlmModel)
 
     return c.json({
       memories: result.memories,

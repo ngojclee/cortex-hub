@@ -32,7 +32,31 @@ import { knowledgeRouter } from './routes/knowledge.js'
 const app = new Hono()
 const logger = createLogger('dashboard-api')
 
-app.use('*', cors())
+const corsOrigins = (() => {
+  const origins = new Set<string>([
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:4000',
+    'http://127.0.0.1:4000',
+  ])
+
+  const dashboardUrl = process.env['DASHBOARD_URL']
+  if (dashboardUrl) {
+    try {
+      origins.add(new URL(dashboardUrl).origin)
+    } catch {
+      logger.warn(`Invalid DASHBOARD_URL for CORS: ${dashboardUrl}`)
+    }
+  }
+
+  return Array.from(origins)
+})()
+
+app.use('/api/*', cors({
+  origin: corsOrigins,
+  allowHeaders: ['Content-Type', 'Authorization'],
+  allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+}))
 app.use('*', honoLogger())
 
 app.get('/health', async (c) => {

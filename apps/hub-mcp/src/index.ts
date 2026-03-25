@@ -28,7 +28,7 @@ const authRequired = (process.env['MCP_AUTH_REQUIRED'] ?? 'true').toLowerCase() 
 app.use('*', async (c, next) => {
   const envKeys: (keyof Env)[] = [
     'QDRANT_URL', 'CLIPROXY_URL',
-    'DASHBOARD_API_URL', 'MCP_SERVER_NAME', 'MCP_SERVER_VERSION', 'API_KEYS',
+    'DASHBOARD_API_URL', 'MCP_SERVER_NAME', 'MCP_SERVER_VERSION',
   ]
   for (const key of envKeys) {
     if (!c.env[key] && process.env[key]) {

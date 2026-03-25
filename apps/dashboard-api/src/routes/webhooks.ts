@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { randomUUID } from 'crypto'
+import { randomUUID, createHash } from 'crypto'
 import { db } from '../db/client.js'
 import { startIndexing } from '../services/indexer.js'
 import { createLogger } from '@cortex/shared-utils'
@@ -11,9 +11,26 @@ export const webhooksRouter = new Hono()
 // ── Auth: validate API key on protected endpoints ──
 function validateWebhookAuth(authHeader: string | undefined): boolean {
   if (!authHeader) return false
-  const token = authHeader.replace('Bearer ', '')
-  const validKeys = (process.env['MCP_API_KEYS'] ?? '').split(',').map((k) => k.trim()).filter(Boolean)
-  return validKeys.includes(token)
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim()
+  if (!token) return false
+
+  try {
+    const tokenHash = createHash('sha256').update(token).digest('hex')
+    const key = db.prepare(
+      `SELECT id
+       FROM api_keys
+       WHERE key_hash = ?
+         AND (expires_at IS NULL OR datetime(expires_at) > datetime('now'))
+       LIMIT 1`
+    ).get(tokenHash) as { id: string } | undefined
+
+    if (!key?.id) return false
+
+    db.prepare('UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?').run(key.id)
+    return true
+  } catch {
+    return false
+  }
 }
 
 /**

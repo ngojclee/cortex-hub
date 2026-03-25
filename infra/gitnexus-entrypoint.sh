@@ -46,29 +46,33 @@ if has_indexed_repos; then
     BEFORE=$(count_registered_repos)
     echo "GitNexus: Found ${BEFORE} indexed repo(s) in registry."
 else
-    echo "GitNexus: No indexed repos found. Bootstrapping default repo..."
+    REPO_URL="${DEFAULT_REPO:-}"
+    if [ -n "$REPO_URL" ]; then
+        echo "GitNexus: No indexed repos found. Bootstrapping default repo..."
 
-    REPO_URL="${DEFAULT_REPO:-https://github.com/ngojclee/cortex-hub.git}"
-    REPO_NAME=$(basename "$REPO_URL" .git)
-    REPO_PATH="${REPOS_DIR}/${REPO_NAME}"
+        REPO_NAME=$(basename "$REPO_URL" .git)
+        REPO_PATH="${REPOS_DIR}/${REPO_NAME}"
 
-    mkdir -p "$REPOS_DIR"
+        mkdir -p "$REPOS_DIR"
 
-    if [ ! -d "$REPO_PATH/.git" ]; then
-        echo "GitNexus: Cloning $REPO_URL..."
-        git clone --depth 1 "$REPO_URL" "$REPO_PATH" 2>&1 || {
-            echo "GitNexus: Clone failed, starting eval-server with no repos..."
-            exec gitnexus eval-server --port "$PORT" --idle-timeout 0 2>&1
+        if [ ! -d "$REPO_PATH/.git" ]; then
+            echo "GitNexus: Cloning $REPO_URL..."
+            git clone --depth 1 "$REPO_URL" "$REPO_PATH" 2>&1 || {
+                echo "GitNexus: Clone failed, starting eval-server with no repos..."
+                exec gitnexus eval-server --port "$PORT" --idle-timeout 0 2>&1
+            }
+        else
+            echo "GitNexus: Repo already cloned at $REPO_PATH"
+            cd "$REPO_PATH" && git pull --ff-only 2>/dev/null || true
+        fi
+
+        echo "GitNexus: Analyzing $REPO_PATH (with embeddings)..."
+        cd "$REPO_PATH" && gitnexus analyze --embeddings 2>&1 || {
+            echo "GitNexus: Analyze failed for default repo."
         }
     else
-        echo "GitNexus: Repo already cloned at $REPO_PATH"
-        cd "$REPO_PATH" && git pull --ff-only 2>/dev/null || true
+        echo "GitNexus: No indexed repos found and DEFAULT_REPO is empty. Skipping bootstrap clone."
     fi
-
-    echo "GitNexus: Analyzing $REPO_PATH (with embeddings)..."
-    cd "$REPO_PATH" && gitnexus analyze --embeddings 2>&1 || {
-        echo "GitNexus: Analyze failed for default repo."
-    }
 fi
 
 # ── Step 2: Auto-discover repos from shared volume ──

@@ -208,7 +208,3 @@ ON quality_reports(agent_id, created_at DESC);
 
 -- Insert default uncompleted setup status
 INSERT OR IGNORE INTO setup_status (id, completed) VALUES (1, 0);
-
--- Insert default organization
-INSERT OR IGNORE INTO organizations (id, name, slug, description) 
-VALUES ('org-default', 'Personal', 'personal', 'Default personal organization');

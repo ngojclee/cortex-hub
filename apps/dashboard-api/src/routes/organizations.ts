@@ -89,10 +89,6 @@ orgsRouter.put('/:id', async (c) => {
 orgsRouter.delete('/:id', (c) => {
   const { id } = c.req.param()
   try {
-    if (id === 'org-default') {
-      return c.json({ error: 'Cannot delete default organization' }, 403)
-    }
-
     const projectCount = db
       .prepare('SELECT COUNT(*) as count FROM projects WHERE org_id = ?')
       .get(id) as { count: number } | undefined

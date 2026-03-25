@@ -55,9 +55,9 @@ export class Mem9 {
   private initialized = false
 
   constructor(private readonly config: Mem9Config) {
-    this.embedder = new Embedder(config.embedder)
+    this.embedder = new Embedder(config.embedder, config.embedderChain)
     this.vectorStore = new VectorStore(config.vectorStore)
-    this.llm = new LlmClient(config.llm)
+    this.llm = new LlmClient(config.llm, config.llmChain)
   }
 
   /** Initialize collection with correct vector dimensions */

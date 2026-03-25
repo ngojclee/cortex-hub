@@ -5,7 +5,7 @@ export const setupRouter = new Hono()
 
 // ── Helpers ──
 const CLIPROXY_URL = () =>
-  process.env.LLM_PROXY_URL || process.env.CLIPROXY_URL || 'http://localhost:8317'
+  process.env.LLM_PROXY_URL || process.env.CLIPROXY_URL || 'http://llm-proxy:8317'
 const MANAGEMENT_KEY = () =>
   process.env.CLIPROXY_MANAGEMENT_KEY || process.env.MANAGEMENT_PASSWORD || 'cortex2026'
 const QDRANT_URL = () =>

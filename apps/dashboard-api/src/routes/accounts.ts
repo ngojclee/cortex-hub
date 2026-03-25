@@ -26,7 +26,7 @@ interface RoutingRow {
 }
 
 const CLIPROXY_URL = () =>
-  process.env.LLM_PROXY_URL || process.env.CLIPROXY_URL || 'http://localhost:8317'
+  process.env.LLM_PROXY_URL || process.env.CLIPROXY_URL || 'http://llm-proxy:8317'
 const MANAGEMENT_KEY = () =>
   process.env.CLIPROXY_MANAGEMENT_KEY || process.env.MANAGEMENT_PASSWORD || 'cortex2026'
 
@@ -42,22 +42,8 @@ function seedExistingProviders() {
       return // already have providers
     }
 
-    // Seed CLIProxy (OpenAI via OAuth)
-    db.prepare(
-      `INSERT OR IGNORE INTO provider_accounts (id, name, type, auth_type, api_base, status, capabilities)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      'pa-cliproxy-openai',
-      'CLIProxy (OpenAI OAuth)',
-      'openai_compat',
-      'oauth',
-      `${CLIPROXY_URL()}/v1`,
-      'enabled',
-      '["chat","embedding","code"]'
-    )
-
     seeded = true
-    console.log('[accounts] Auto-seeded default provider accounts')
+    console.log('[accounts] No providers auto-seeded. Configure providers in UI.')
   } catch (err) {
     // Table might not exist yet — will retry on next request
     console.warn('[accounts] Seed failed (will retry):', String(err).slice(0, 100))

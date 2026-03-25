@@ -33,7 +33,11 @@ export interface VectorStoreConfig {
 
 export interface Mem9Config {
   llm: LlmConfig
+  /** Optional fallback chain from provider routing for chat/LLM */
+  llmChain?: ModelSlot[]
   embedder: EmbedderConfig
+  /** Optional fallback chain from provider routing for embeddings */
+  embedderChain?: ModelSlot[]
   vectorStore: VectorStoreConfig
 }
 

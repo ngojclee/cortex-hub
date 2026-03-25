@@ -61,7 +61,7 @@ export function resolveEmbeddingConfig(): { config: EmbedderConfig; chain: Model
   }
 
   const geminiKey = resolveGeminiApiKey()
-  const fallbackModel = process.env['MEM9_EMBEDDING_MODEL'] || 'gemini-embedding-exp-03-07'
+  const fallbackModel = 'gemini-embedding-2-preview'
 
   const fallbackConfig: EmbedderConfig = geminiKey
     ? {
@@ -71,8 +71,8 @@ export function resolveEmbeddingConfig(): { config: EmbedderConfig; chain: Model
       }
     : {
         provider: 'openai',
-        apiKey: process.env['OPENAI_API_KEY'] ?? '',
-        model: process.env['OPENAI_EMBEDDING_MODEL'] ?? 'text-embedding-3-small',
+        apiKey: '',
+        model: 'text-embedding-3-small',
       }
 
   return { config: fallbackConfig, chain: chainSlots }

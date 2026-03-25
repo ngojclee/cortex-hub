@@ -146,6 +146,7 @@ function SetupWizard() {
 
   // Auth state
   const [apiKeyInput, setApiKeyInput] = useState('')
+  const [customBaseUrl, setCustomBaseUrl] = useState('')
   const [isAuthenticating, setIsAuthenticating] = useState(false)
   const [authError, setAuthError] = useState('')
   const [_oauthState, setOauthState] = useState('')
@@ -216,6 +217,7 @@ function SetupWizard() {
     setAuthError('')
     setApiKeyInput('')
     const provider = providers.find((p) => p.id === id)
+    setCustomBaseUrl(provider?.defaultBase || '')
     setAuthMethod(provider?.supportsOAuth ? 'oauth' : 'apikey')
   }
 
@@ -362,6 +364,7 @@ function SetupWizard() {
       const res = await configureProvider({
         provider: selectedProvider,
         apiKey: apiKeyInput.trim(),
+        ...(customBaseUrl.trim() ? { apiBase: customBaseUrl.trim() } : {}),
       })
 
       if (res.success) {
@@ -671,6 +674,37 @@ function SetupWizard() {
           {/* API Key Method */}
           {(authMethod === 'apikey' || !currentProvider.supportsOAuth) && (
             <div className={`card ${styles.authCard}`}>
+              {/* Base URL field for Custom Provider / Ollama */}
+              {(selectedProvider === 'custom' || selectedProvider === 'ollama') && (
+                <>
+                  <p
+                    style={{
+                      color: 'var(--text-secondary)',
+                      fontSize: '0.875rem',
+                      marginBottom: 'var(--space-2)',
+                    }}
+                  >
+                    Base URL {selectedProvider === 'custom' ? '(OpenAI-compatible endpoint)' : '(Ollama server)'}
+                  </p>
+                  <input
+                    type="text"
+                    value={customBaseUrl}
+                    onChange={(e) => setCustomBaseUrl(e.target.value)}
+                    placeholder={selectedProvider === 'custom' ? 'https://your-proxy.example.com/v1' : 'http://localhost:11434/v1'}
+                    style={{
+                      width: '100%',
+                      padding: 'var(--space-3) var(--space-4)',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--border)',
+                      background: 'var(--bg-secondary)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.9rem',
+                      fontFamily: 'monospace',
+                      marginBottom: 'var(--space-4)',
+                    }}
+                  />
+                </>
+              )}
               <p
                 style={{
                   color: 'var(--text-secondary)',

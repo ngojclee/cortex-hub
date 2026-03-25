@@ -132,7 +132,7 @@ export async function pollOAuthStatus(state: string) {
 }
 
 // ── API Key Configuration ──
-export async function configureProvider(data: { provider: string; apiKey: string }) {
+export async function configureProvider(data: { provider: string; apiKey: string; apiBase?: string }) {
   return apiFetch<{
     success: boolean
     provider: string

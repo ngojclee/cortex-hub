@@ -57,6 +57,12 @@ app.use('/api/*', cors({
   allowHeaders: ['Content-Type', 'Authorization'],
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 }))
+// CORS for /mcp — allow any origin (agents use Bearer auth, not cookies)
+app.use('/mcp', cors({
+  origin: '*',
+  allowHeaders: ['Content-Type', 'Authorization'],
+  allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+}))
 app.use('*', honoLogger())
 
 app.get('/health', async (c) => {
@@ -113,6 +119,72 @@ app.route('/api/indexing', indexingRouter)
 app.route('/api/mem9', mem9ProxyRouter)
 app.route('/api/knowledge', knowledgeRouter)
 app.route('/api/webhooks', webhooksRouter)
+
+// ─── MCP Reverse Proxy ────────────────────────────────────────────
+// Forward /mcp requests to the internal cortex-mcp container.
+// This allows agents to reach MCP through the same domain/port as
+// the dashboard, which is critical for Cloudflare Tunnel setups
+// where MCP must be reachable without a separate port or VPN.
+const MCP_UPSTREAM = process.env['MCP_INTERNAL_URL'] || 'http://cortex-mcp:8317'
+
+app.all('/mcp', async (c) => {
+  const upstream = `${MCP_UPSTREAM}/mcp`
+
+  try {
+    const headers = new Headers(c.req.raw.headers)
+    // Remove hop-by-hop headers that shouldn't be forwarded
+    headers.delete('host')
+    headers.delete('connection')
+
+    const upstreamRes = await fetch(upstream, {
+      method: c.req.method,
+      headers,
+      body: ['GET', 'HEAD'].includes(c.req.method) ? undefined : c.req.raw.body,
+      // @ts-ignore — duplex required for streaming request bodies in Node 18+
+      duplex: 'half',
+      signal: AbortSignal.timeout(120_000),
+    })
+
+    // Stream the response back to the client
+    const responseHeaders = new Headers(upstreamRes.headers)
+    responseHeaders.delete('transfer-encoding') // let Hono handle this
+
+    return new Response(upstreamRes.body, {
+      status: upstreamRes.status,
+      headers: responseHeaders,
+    })
+  } catch (err: any) {
+    logger.error(`[MCP Proxy] Failed to reach upstream: ${err.message}`)
+    return c.json({
+      jsonrpc: '2.0',
+      error: { code: -32603, message: `MCP proxy error: ${err.message}` },
+      id: null,
+    }, 502)
+  }
+})
+
+// Forward MCP OAuth discovery endpoints too (mcp-remote probes these)
+for (const oauthPath of [
+  '/.well-known/oauth-protected-resource/mcp',
+  '/.well-known/oauth-protected-resource',
+  '/.well-known/oauth-authorization-server',
+  '/.well-known/openid-configuration',
+]) {
+  app.all(oauthPath, async (c) => {
+    try {
+      const upstream = `${MCP_UPSTREAM}${oauthPath}`
+      const res = await fetch(upstream, {
+        method: c.req.method,
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(5_000),
+      })
+      const data = await res.json() as Record<string, unknown>
+      return c.json(data, res.status as 200)
+    } catch {
+      return c.json({ error: 'MCP upstream unreachable' }, 502)
+    }
+  })
+}
 
 // Serve Dashboard Web static files (Next.js static export)
 // Clean URLs: /keys → /keys.html, / → /index.html

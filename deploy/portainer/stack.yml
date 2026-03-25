@@ -69,6 +69,7 @@ services:
       CLIPROXY_MANAGEMENT_KEY: ${CLIPROXY_MANAGEMENT_KEY}
       GITNEXUS_URL: http://gitnexus:4848
       DASHBOARD_URL: ${DASHBOARD_URL}
+      MCP_INTERNAL_URL: http://cortex-mcp:8317
     depends_on:
       qdrant:
         condition: service_started
@@ -87,8 +88,7 @@ services:
     image: ghcr.io/ngojclee/cortex-mcp:latest
     container_name: cortex-mcp
     restart: unless-stopped
-    ports:
-      - "${MCP_BIND_HOST:-127.0.0.1}:${MCP_PORT:-8318}:8317"
+    # No ports exposed — reached via cortex-api reverse proxy on /mcp
     environment:
       TZ: ${TZ:-Europe/Paris}
       PORT: 8317

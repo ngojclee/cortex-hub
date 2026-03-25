@@ -26,6 +26,12 @@ const DEFAULT_LLM_BASE = 'http://llm-proxy:8317/v1'
 const DEFAULT_LLM_MODEL = 'gpt-4.1-mini'
 const DEFAULT_QDRANT_URL = 'http://qdrant:6333'
 
+function keyFingerprint(apiKey?: string): string {
+  if (!apiKey) return ''
+  const tail = apiKey.slice(-4)
+  return `${apiKey.length}:${tail}`
+}
+
 function normalizeOpenAIBase(baseUrl: string): string {
   const trimmed = baseUrl.replace(/\/$/, '')
   return trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`
@@ -101,9 +107,19 @@ function getMem9(): Mem9 {
   const config = getMem9Config()
   const signature = JSON.stringify({
     llm: config.llm,
-    llmChain: (config.llmChain ?? []).map((s) => ({ id: s.accountId, model: s.model, baseUrl: s.baseUrl })),
+    llmChain: (config.llmChain ?? []).map((s) => ({
+      id: s.accountId,
+      model: s.model,
+      baseUrl: s.baseUrl,
+      key: keyFingerprint(s.apiKey),
+    })),
     embedder: { ...config.embedder, apiKey: config.embedder.apiKey ? 'set' : '' },
-    embedderChain: (config.embedderChain ?? []).map((s) => ({ id: s.accountId, model: s.model, baseUrl: s.baseUrl })),
+    embedderChain: (config.embedderChain ?? []).map((s) => ({
+      id: s.accountId,
+      model: s.model,
+      baseUrl: s.baseUrl,
+      key: keyFingerprint(s.apiKey),
+    })),
     vectorStore: config.vectorStore,
   })
 
@@ -123,7 +139,12 @@ function getEmbedder(): Embedder {
     provider: config.provider,
     model: config.model,
     hasKey: Boolean(config.apiKey),
-    chain: chain.map((s) => ({ id: s.accountId, model: s.model, baseUrl: s.baseUrl })),
+    chain: chain.map((s) => ({
+      id: s.accountId,
+      model: s.model,
+      baseUrl: s.baseUrl,
+      key: keyFingerprint(s.apiKey),
+    })),
   })
 
   if (!embedderInstance || signature !== lastEmbedSignature) {

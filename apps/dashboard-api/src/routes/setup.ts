@@ -144,8 +144,43 @@ setupRouter.post('/configure-mem9', async (c) => {
   }
 })
 
-// ── Models (proxy CLIProxy) ──
+// ── Models (proxy CLIProxy or custom provider) ──
 setupRouter.get('/models', async (c) => {
+  // Try custom/external provider first (from DB)
+  try {
+    const provider = db.prepare(
+      "SELECT api_base, api_key, type FROM provider_accounts WHERE status = 'enabled' ORDER BY rowid DESC LIMIT 1"
+    ).get() as { api_base: string; api_key: string; type: string } | undefined
+
+    if (provider?.api_base && !provider.api_base.includes('llm-proxy')) {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (provider.api_key) headers['Authorization'] = `Bearer ${provider.api_key}`
+
+      if (provider.type === 'gemini') {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models?key=${provider.api_key}`,
+          { signal: AbortSignal.timeout(10000) }
+        )
+        if (res.ok) {
+          const gData = (await res.json()) as { models?: { name: string }[] }
+          const models = (gData.models ?? []).map((m) => ({
+            id: m.name.replace('models/', ''),
+            object: 'model',
+          }))
+          return c.json({ data: models })
+        }
+      } else {
+        const modelsUrl = provider.api_base.replace(/\/$/, '') + '/models'
+        const res = await fetch(modelsUrl, { headers, signal: AbortSignal.timeout(10000) })
+        if (res.ok) {
+          const data = await res.json()
+          return c.json(data)
+        }
+      }
+    }
+  } catch { /* fallback to CLIProxy below */ }
+
+  // Fallback: internal CLIProxy
   try {
     const res = await fetch(`${CLIPROXY_URL()}/v1/models`, {
       signal: AbortSignal.timeout(5000),

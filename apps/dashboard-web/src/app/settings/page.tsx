@@ -119,6 +119,23 @@ export default function SettingsPage() {
     { containerName: 'cortex-qdrant', label: 'Qdrant Vector DB', icon: '🔮' },
     { containerName: 'cortex-gitnexus', label: 'GitNexus (Code Intelligence)', icon: '🧬' },
   ]
+  const dashboardUrl = typeof window !== 'undefined' ? window.location.origin : config.api.base
+  const endpointLinks = [
+    { label: 'Dashboard', url: dashboardUrl },
+    { label: 'API', url: config.api.base },
+    { label: 'MCP', url: config.mcp.base },
+    { label: 'LLM Proxy', url: config.services.cliproxy },
+  ]
+  const mcpConfigSnippet = `{
+  "mcpServers": {
+    "cortex-hub": {
+      "url": "${config.mcp.endpoint}",
+      "headers": {
+        "Authorization": "Bearer <your-api-key>"
+      }
+    }
+  }
+}`
 
   async function handleRestart(containerName: string) {
     setRestartingService(containerName)
@@ -221,50 +238,19 @@ export default function SettingsPage() {
         <h2 className={styles.sectionTitle}>Cloudflare Tunnel</h2>
         <div className={`card ${styles.tunnelCard}`}>
           <div className={styles.tunnelGrid}>
-            <div className={styles.tunnelItem}>
-              <span className={styles.tunnelLabel}>Dashboard</span>
-              <a
-                href="https://hub.jackle.dev"
-                target="_blank"
-                rel="noreferrer"
-                className={styles.tunnelLink}
-              >
-                hub.jackle.dev
-              </a>
-            </div>
-            <div className={styles.tunnelItem}>
-              <span className={styles.tunnelLabel}>API</span>
-              <a
-                href="https://cortex-api.jackle.dev"
-                target="_blank"
-                rel="noreferrer"
-                className={styles.tunnelLink}
-              >
-                cortex-api.jackle.dev
-              </a>
-            </div>
-            <div className={styles.tunnelItem}>
-              <span className={styles.tunnelLabel}>MCP</span>
-              <a
-                href="https://cortex-mcp.jackle.dev"
-                target="_blank"
-                rel="noreferrer"
-                className={styles.tunnelLink}
-              >
-                cortex-mcp.jackle.dev
-              </a>
-            </div>
-            <div className={styles.tunnelItem}>
-              <span className={styles.tunnelLabel}>LLM Proxy</span>
-              <a
-                href="https://cortex-llm.jackle.dev"
-                target="_blank"
-                rel="noreferrer"
-                className={styles.tunnelLink}
-              >
-                cortex-llm.jackle.dev
-              </a>
-            </div>
+            {endpointLinks.map((endpoint) => (
+              <div key={endpoint.label} className={styles.tunnelItem}>
+                <span className={styles.tunnelLabel}>{endpoint.label}</span>
+                <a
+                  href={endpoint.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={styles.tunnelLink}
+                >
+                  {endpoint.url}
+                </a>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -324,16 +310,7 @@ export default function SettingsPage() {
             Copy this snippet into your AI agent&apos;s MCP client configuration:
           </p>
           <pre className={styles.codeBlock}>
-{`{
-  "mcpServers": {
-    "cortex-hub": {
-      "url": "https://cortex-mcp.jackle.dev/mcp",
-      "headers": {
-        "Authorization": "Bearer <your-api-key>"
-      }
-    }
-  }
-}`}
+{mcpConfigSnippet}
           </pre>
         </div>
       </div>
@@ -393,13 +370,13 @@ export default function SettingsPage() {
             </div>
           </div>
           <div className={styles.aboutLinks}>
-            <a href="https://github.com/jackle-dev/cortex-hub" target="_blank" rel="noreferrer" className={styles.aboutLink}>
+            <a href="https://github.com/ngojclee/cortex-hub" target="_blank" rel="noreferrer" className={styles.aboutLink}>
               GitHub
             </a>
             <a href="/docs" className={styles.aboutLink}>
               Documentation
             </a>
-            <a href="https://hub.jackle.dev" className={styles.aboutLink}>
+            <a href={dashboardUrl} className={styles.aboutLink}>
               Dashboard
             </a>
           </div>

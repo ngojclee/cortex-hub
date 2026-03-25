@@ -48,7 +48,7 @@ if has_indexed_repos; then
 else
     echo "GitNexus: No indexed repos found. Bootstrapping default repo..."
 
-    REPO_URL="${DEFAULT_REPO:-https://github.com/lktiep/cortex-hub.git}"
+    REPO_URL="${DEFAULT_REPO:-https://github.com/ngojclee/cortex-hub.git}"
     REPO_NAME=$(basename "$REPO_URL" .git)
     REPO_PATH="${REPOS_DIR}/${REPO_NAME}"
 

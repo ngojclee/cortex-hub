@@ -1,8 +1,20 @@
-const browserHost = typeof window !== 'undefined' ? window.location.hostname : ''
+const hasWindow = typeof window !== 'undefined'
+const browserHost = hasWindow ? window.location.hostname : ''
+const browserProtocol = hasWindow ? window.location.protocol : 'http:'
+const browserPort = hasWindow ? window.location.port : ''
+const browserOrigin = hasWindow ? window.location.origin : ''
 const isLocalHost = browserHost === 'localhost' || browserHost === '127.0.0.1'
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? (isLocalHost ? 'http://localhost:4000' : 'https://cortex-api.jackle.dev')
-const MCP_BASE = process.env.NEXT_PUBLIC_MCP_URL ?? (isLocalHost ? 'http://localhost:8318' : 'https://cortex-mcp.jackle.dev')
+const inferPortUrl = (port: number) => `${browserProtocol}//${browserHost || 'localhost'}:${port}`
+
+const localApiBase = hasWindow
+  ? (browserPort === '3000' ? inferPortUrl(4000) : browserOrigin || 'http://localhost:4000')
+  : 'http://localhost:4000'
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? (isLocalHost ? localApiBase : browserOrigin || 'http://localhost:4000')
+const MCP_BASE = process.env.NEXT_PUBLIC_MCP_URL ?? (hasWindow ? inferPortUrl(8318) : 'http://localhost:8318')
+const CLIPROXY_BASE = process.env.NEXT_PUBLIC_CLIPROXY_URL ?? (hasWindow ? inferPortUrl(8317) : 'http://localhost:8317')
+const QDRANT_BASE = process.env.NEXT_PUBLIC_QDRANT_URL ?? (hasWindow ? inferPortUrl(6333) : 'http://localhost:6333')
 
 export const config = {
   api: {
@@ -15,7 +27,7 @@ export const config = {
       health: `${MCP_BASE}/health`,
     },
     llmProxy: {
-      models: `${process.env.NEXT_PUBLIC_CLIPROXY_URL || (isLocalHost ? 'http://localhost:8317' : 'https://cortex-llm.jackle.dev')}/v1/models`,
+      models: `${CLIPROXY_BASE}/v1/models`,
     }
   },
   mcp: {
@@ -24,7 +36,7 @@ export const config = {
     health: `${MCP_BASE}/health`,
   },
   services: {
-    cliproxy: process.env.NEXT_PUBLIC_CLIPROXY_URL ?? (isLocalHost ? 'http://localhost:8317' : 'https://cortex-llm.jackle.dev'),
-    qdrant: process.env.NEXT_PUBLIC_QDRANT_URL ?? (isLocalHost ? 'http://localhost:6333' : 'https://qdrant.hub.jackle.dev'),
+    cliproxy: CLIPROXY_BASE,
+    qdrant: QDRANT_BASE,
   },
 }

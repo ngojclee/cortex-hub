@@ -10,8 +10,17 @@ const MANAGEMENT_KEY = () =>
   process.env.CLIPROXY_MANAGEMENT_KEY || process.env.MANAGEMENT_PASSWORD || 'cortex2026'
 const QDRANT_URL = () =>
   process.env.QDRANT_URL || 'http://localhost:6333'
-const DASHBOARD_URL = () =>
-  process.env.DASHBOARD_URL || 'https://hub.jackle.dev'
+const DASHBOARD_URL = (requestUrl?: string) => {
+  if (process.env.DASHBOARD_URL) return process.env.DASHBOARD_URL
+  if (requestUrl) {
+    try {
+      return new URL(requestUrl).origin
+    } catch {
+      // Ignore malformed request URL and use fallback.
+    }
+  }
+  return 'http://localhost:4000'
+}
 
 function managementHeaders() {
   return {
@@ -168,8 +177,89 @@ setupRouter.get('/settings', (c) => {
     },
     geminiApiKey: process.env.GEMINI_API_KEY ? 'configured' : 'not set',
     database: process.env.DATABASE_PATH || 'data/cortex.db',
-    version: '0.1.0',
+    version: process.env.APP_VERSION || process.env.npm_package_version || '0.1.0',
   })
+})
+
+// ── Reset Setup Wizard (preserve keys + data) ──
+setupRouter.post('/reset', (c) => {
+  try {
+    db.prepare(
+      "UPDATE setup_status SET completed = 0, completed_at = NULL WHERE id = 1"
+    ).run()
+    return c.json({
+      success: true,
+      message: 'Setup wizard state has been reset.',
+    })
+  } catch (error) {
+    return c.json({
+      success: false,
+      error: `Failed to reset setup status: ${String(error)}`,
+    }, 500)
+  }
+})
+
+// ── Clear Runtime Data (preserve API keys + provider configs) ──
+setupRouter.post('/clear-data', async (c) => {
+  try {
+    const cleared = {
+      queryLogs: 0,
+      sessionHandoffs: 0,
+      qualityReports: 0,
+      usageLogs: 0,
+      changeEvents: 0,
+      acknowledgements: 0,
+      indexJobs: 0,
+      knowledgeChunks: 0,
+      knowledgeDocs: 0,
+    }
+
+    const runClear = db.transaction(() => {
+      cleared.queryLogs = db.prepare('DELETE FROM query_logs').run().changes
+      cleared.sessionHandoffs = db.prepare('DELETE FROM session_handoffs').run().changes
+      cleared.qualityReports = db.prepare('DELETE FROM quality_reports').run().changes
+      cleared.usageLogs = db.prepare('DELETE FROM usage_logs').run().changes
+      cleared.changeEvents = db.prepare('DELETE FROM change_events').run().changes
+      cleared.acknowledgements = db.prepare('DELETE FROM agent_ack').run().changes
+      cleared.indexJobs = db.prepare('DELETE FROM index_jobs').run().changes
+      cleared.knowledgeChunks = db.prepare('DELETE FROM knowledge_chunks').run().changes
+      cleared.knowledgeDocs = db.prepare('DELETE FROM knowledge_documents').run().changes
+      db.prepare('UPDATE projects SET indexed_at = NULL, indexed_symbols = 0').run()
+    })
+
+    runClear()
+
+    // Best-effort Qdrant cleanup for cached vector data.
+    const qdrantStatus: Record<string, 'cleared' | 'missing' | 'error'> = {}
+    const qdrantUrl = QDRANT_URL().replace(/\/$/, '')
+    await Promise.all(
+      ['knowledge', 'cortex_memories'].map(async (collection) => {
+        try {
+          const res = await fetch(`${qdrantUrl}/collections/${collection}`, {
+            method: 'DELETE',
+            signal: AbortSignal.timeout(5000),
+          })
+          if (res.ok) qdrantStatus[collection] = 'cleared'
+          else if (res.status === 404) qdrantStatus[collection] = 'missing'
+          else qdrantStatus[collection] = 'error'
+        } catch {
+          qdrantStatus[collection] = 'error'
+        }
+      })
+    )
+
+    return c.json({
+      success: true,
+      message: 'Runtime data cleared. API keys and provider configuration were preserved.',
+      cleared,
+      qdrant: qdrantStatus,
+    })
+  } catch (error) {
+    return c.json({
+      success: false,
+      error: `Failed to clear runtime data: ${String(error)}`,
+    }, 500)
+  }
 })
 
 // ═══════════════════════════════════════════════════
@@ -248,7 +338,7 @@ setupRouter.get('/oauth/start/:provider', async (c) => {
     const callbackUrl = originalRedirectUri
 
     // Rewrite redirect_uri to point to our Dashboard callback page
-    const dashboardCallbackUrl = `${DASHBOARD_URL()}/setup/callback`
+    const dashboardCallbackUrl = `${DASHBOARD_URL(c.req.url)}/setup/callback`
     oauthUrl.searchParams.set('redirect_uri', dashboardCallbackUrl)
 
     // Store the mapping for later relay

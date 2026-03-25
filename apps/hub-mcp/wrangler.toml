@@ -7,15 +7,15 @@ compatibility_flags = ["nodejs_compat"]
 # Enable workers.dev subdomain
 workers_dev = true
 
-# Custom domain route (jackle.dev zone must be on this CF account)
-# routes = [{ pattern = "mcp.hub.jackle.dev", custom_domain = true }]
+# Optional custom domain route (set this for your Cloudflare zone)
+# routes = [{ pattern = "mcp.your-domain.tld", custom_domain = true }]
 
 [vars]
-# Backend service URLs (via Cloudflare Tunnel → server)
-QDRANT_URL = "https://qdrant.hub.jackle.dev"
-MEM9_URL = "https://mem9.hub.jackle.dev"
-CLIPROXY_URL = "https://llm.hub.jackle.dev"
-DASHBOARD_API_URL = "https://api.hub.jackle.dev"
+# Backend service URLs (override for your deployment)
+QDRANT_URL = "https://qdrant.your-domain.tld"
+MEM9_URL = "https://mem9.your-domain.tld"
+CLIPROXY_URL = "https://llm.your-domain.tld"
+DASHBOARD_API_URL = "https://api.your-domain.tld"
 
 # MCP Server metadata
 MCP_SERVER_NAME = "cortex-hub"

@@ -52,7 +52,7 @@ app.get('/health', async (c) => {
     checkService('cliproxy', `${process.env['LLM_PROXY_URL'] || 'http://llm-proxy:8317'}/v1/models`),
     checkService('gitnexus', `${process.env['GITNEXUS_URL'] || 'http://gitnexus:4848'}/health`),
     checkService('mem9', `http://localhost:${process.env.PORT || 4000}/api/mem9/health`),
-    checkService('mcp', `${process.env['MCP_HEALTH_URL'] || 'https://cortex-mcp.jackle.dev/health'}`),
+    checkService('mcp', `${process.env['MCP_HEALTH_URL'] || 'http://cortex-mcp:8317/health'}`),
   ])
 
   const services = { qdrant, cliproxy, gitnexus, mem9, mcp }
@@ -64,7 +64,7 @@ app.get('/health', async (c) => {
     version: appVersion,
     commit: process.env['COMMIT_SHA'] || 'dev',
     buildDate: process.env['BUILD_DATE'] || 'unknown',
-    image: `ghcr.io/lktiep/cortex-hub:${(process.env['COMMIT_SHA'] || 'dev').slice(0, 7)}`,
+    image: `${process.env['IMAGE_REPO'] || 'ghcr.io/ngojclee/cortex-api'}:${(process.env['COMMIT_SHA'] || 'dev').slice(0, 7)}`,
     timestamp: new Date().toISOString(),
     uptime: Math.floor(process.uptime()),
     responseTime: Date.now() - startTime,

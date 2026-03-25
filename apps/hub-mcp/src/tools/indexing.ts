@@ -52,7 +52,7 @@ export function registerIndexingTools(server: McpServer, env: Env) {
                 text: JSON.stringify({
                   status: 'error',
                   message: `No project found for repo: ${repo}. Register the project in the Cortex Hub dashboard first.`,
-                  suggestion: 'Go to hub.jackle.dev/projects to add the project.',
+                  suggestion: 'Open your Cortex Hub dashboard /projects page and add the project first.',
                 }, null, 2),
               },
             ],

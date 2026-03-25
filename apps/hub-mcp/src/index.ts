@@ -20,6 +20,7 @@ import type { Env } from './types.js'
 
 
 const app = new Hono<{ Bindings: Env }>()
+const authRequired = (process.env['MCP_AUTH_REQUIRED'] ?? 'true').toLowerCase() !== 'false'
 
 // Bridge process.env → c.env for Node.js runtime
 // (In Cloudflare Workers, c.env is auto-populated from wrangler bindings.
@@ -67,19 +68,21 @@ app.get('/health', (c) => {
 
 // RFC 9728: Protected Resource Metadata (path-aware for /mcp)
 app.get('/.well-known/oauth-protected-resource/mcp', (c) => {
+  const docsUrl = new URL(c.req.url).origin
   return c.json({
     resource: `${c.req.url.replace('/.well-known/oauth-protected-resource/mcp', '/mcp')}`,
     bearer_methods_supported: ['header'],
-    resource_documentation: 'https://cortex-mcp.jackle.dev',
+    resource_documentation: docsUrl,
   })
 })
 
 // Fallback: root-level Protected Resource Metadata
 app.get('/.well-known/oauth-protected-resource', (c) => {
+  const docsUrl = new URL(c.req.url).origin
   return c.json({
     resource: c.req.url.replace('/.well-known/oauth-protected-resource', '/'),
     bearer_methods_supported: ['header'],
-    resource_documentation: 'https://cortex-mcp.jackle.dev',
+    resource_documentation: docsUrl,
   })
 })
 
@@ -111,11 +114,13 @@ app.get('/', (c) => {
       'cortex_list_repos',
       'cortex_cypher',
       'cortex_detect_changes',
+      'cortex_code_read',
       'cortex_quality_report',
       'cortex_session_start',
       'cortex_session_end',
       'cortex_changes',
       'cortex_plan_quality',
+      'cortex_tool_stats',
     ],
   })
 })
@@ -145,19 +150,30 @@ function createMcpServer(env: Env) {
 // Stateless mode: each request gets a fresh transport + server.
 // enableJsonResponse: true allows simple request/response without SSE.
 app.all('/mcp', async (c) => {
-  // ─── Auth: resolve API key owner (non-blocking) ────────────────
-  // Per-request auth was previously skipped due to mcp-remote header
-  // forwarding bugs. Now we attempt auth to resolve identity, but
-  // don't block requests on failure (backward compatibility).
+  // ─── Auth: resolve API key owner (strict by default) ───────────
   const envWithOwner = { ...c.env } as Env & { API_KEY_OWNER?: string }
 
+  let authResult: { valid: boolean; error?: string; agentId?: string; scope?: string } = { valid: false, error: 'Unauthorized' }
   try {
-    const authResult = await validateApiKey(c.req.raw, c.env)
-    if (authResult.valid && authResult.agentId) {
-      envWithOwner.API_KEY_OWNER = authResult.agentId
+    authResult = await validateApiKey(c.req.raw, c.env)
+  } catch (error) {
+    authResult = {
+      valid: false,
+      error: `Authentication check failed: ${error instanceof Error ? error.message : String(error)}`
     }
-  } catch {
-    // Auth resolution failed silently — tools will use self-reported agent_id
+  }
+
+  if (authRequired && !authResult.valid) {
+    c.header('WWW-Authenticate', 'Bearer realm="cortex-hub"')
+    return c.json({
+      jsonrpc: '2.0',
+      error: { code: -32001, message: authResult.error ?? 'Unauthorized' },
+      id: null,
+    }, 401)
+  }
+
+  if (authResult.valid && authResult.agentId) {
+    envWithOwner.API_KEY_OWNER = authResult.agentId
   }
 
   const mcpServer = createMcpServer(envWithOwner)

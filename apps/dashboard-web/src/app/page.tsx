@@ -11,6 +11,7 @@ import {
   type ActivityEvent,
   type SystemMetrics,
 } from '@/lib/api'
+import { config } from '@/lib/config'
 import styles from './page.module.css'
 
 // ── Utilities ──
@@ -150,6 +151,16 @@ export default function DashboardPage() {
   })
 
   const svcMap = healthData?.services as Record<string, string> | undefined
+  const mcpConfigSnippet = `{
+  "mcpServers": {
+    "cortex-hub": {
+      "url": "${config.mcp.endpoint}",
+      "headers": {
+        "Authorization": "Bearer <your-api-key>"
+      }
+    }
+  }
+}`
 
   return (
     <DashboardLayout title="Dashboard" subtitle="System overview and project health">
@@ -362,16 +373,7 @@ export default function DashboardPage() {
             Add Cortex Hub to your AI agent&apos;s MCP config:
           </p>
           <pre className={styles.codeBlock}>
-{`{
-  "mcpServers": {
-    "cortex-hub": {
-      "url": "https://cortex-mcp.jackle.dev/mcp",
-      "headers": {
-        "Authorization": "Bearer <your-api-key>"
-      }
-    }
-  }
-}`}
+{mcpConfigSnippet}
           </pre>
           <a href="/keys" className="btn btn-primary btn-sm" style={{ marginTop: 'var(--space-4)', display: 'inline-flex' }}>
             Generate API Key →

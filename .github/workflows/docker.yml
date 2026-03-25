@@ -49,7 +49,7 @@ jobs:
       - uses: docker/metadata-action@v5
         id: meta
         with:
-          images: ${{ env.REGISTRY }}/lktiep/cortex-api
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/cortex-api
           tags: |
             type=raw,value=latest
             type=raw,value=v${{ needs.version.outputs.version }}
@@ -89,7 +89,7 @@ jobs:
       - uses: docker/metadata-action@v5
         id: meta
         with:
-          images: ${{ env.REGISTRY }}/lktiep/cortex-mcp
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/cortex-mcp
           tags: |
             type=raw,value=latest
             type=raw,value=v${{ needs.version.outputs.version }}
@@ -129,7 +129,7 @@ jobs:
       - uses: docker/metadata-action@v5
         id: meta
         with:
-          images: ${{ env.REGISTRY }}/lktiep/cortex-gitnexus
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/cortex-gitnexus
           tags: |
             type=raw,value=latest
             type=raw,value=v${{ needs.version.outputs.version }}

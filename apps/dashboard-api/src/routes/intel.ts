@@ -3,8 +3,8 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'fs'
 import { join, relative } from 'path'
 import { createLogger } from '@cortex/shared-utils'
 import { Embedder } from '@cortex/shared-mem9'
-import type { EmbedderConfig } from '@cortex/shared-mem9'
 import { db } from '../db/client.js'
+import { resolveEmbeddingConfig } from '../services/embedding-config.js'
 
 const logger = createLogger('intel')
 
@@ -16,19 +16,6 @@ const REPOS_DIR = process.env.REPOS_DIR ?? '/app/data/repos'
 
 /** Max file size for code_read (512KB) */
 const MAX_READ_SIZE = 512 * 1024
-
-/** Resolve Gemini API key for embedding */
-function resolveGeminiApiKey(): string {
-  const envKey = process.env['GEMINI_API_KEY']
-  if (envKey) return envKey
-  try {
-    const row = db.prepare(
-      "SELECT api_key FROM provider_accounts WHERE type = 'gemini' AND status = 'enabled' AND api_key IS NOT NULL LIMIT 1"
-    ).get() as { api_key: string } | undefined
-    if (row?.api_key) return row.api_key
-  } catch { /* DB might not be ready */ }
-  return ''
-}
 
 /**
  * Call GitNexus eval-server HTTP API.
@@ -744,12 +731,8 @@ intelRouter.post('/code-search', async (c) => {
     const collectionName = `cortex-project-${projectId}`
 
     // Embed the query
-    const config: EmbedderConfig = {
-      provider: 'gemini' as const,
-      apiKey: resolveGeminiApiKey(),
-      model: process.env['MEM9_EMBEDDING_MODEL'] || 'gemini-embedding-exp-03-07',
-    }
-    const embedder = new Embedder(config)
+    const { config, chain } = resolveEmbeddingConfig()
+    const embedder = new Embedder(config, chain, { maxRetries: 2, retryDelayMs: 1000 })
     const vector = await embedder.embed(query)
 
     // Build Qdrant filter

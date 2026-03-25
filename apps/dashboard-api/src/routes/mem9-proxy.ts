@@ -13,6 +13,7 @@ import { Hono } from 'hono'
 import { Mem9, Embedder } from '@cortex/shared-mem9'
 import type { Mem9Config, EmbedderConfig } from '@cortex/shared-mem9'
 import { db } from '../db/client.js'
+import { resolveEmbeddingConfig } from '../services/embedding-config.js'
 
 export const mem9ProxyRouter = new Hono()
 
@@ -63,6 +64,7 @@ function getMem9Config(): Mem9Config {
 
 /** Track the API key used to create singletons — invalidate if it changes */
 let lastApiKey = ''
+let lastEmbedSignature = ''
 
 function getMem9(): Mem9 {
   const currentKey = resolveGeminiApiKey()
@@ -75,11 +77,17 @@ function getMem9(): Mem9 {
 }
 
 function getEmbedder(): Embedder {
-  const currentKey = resolveGeminiApiKey()
-  if (!embedderInstance || currentKey !== lastApiKey) {
-    lastApiKey = currentKey
-    const config = getMem9Config()
-    embedderInstance = new Embedder(config.embedder)
+  const { config, chain } = resolveEmbeddingConfig()
+  const signature = JSON.stringify({
+    provider: config.provider,
+    model: config.model,
+    hasKey: Boolean(config.apiKey),
+    chain: chain.map((s) => ({ id: s.accountId, model: s.model, baseUrl: s.baseUrl })),
+  })
+
+  if (!embedderInstance || signature !== lastEmbedSignature) {
+    lastEmbedSignature = signature
+    embedderInstance = new Embedder(config, chain, { maxRetries: 2, retryDelayMs: 1000 })
   }
   return embedderInstance
 }

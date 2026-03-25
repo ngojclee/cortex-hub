@@ -3,7 +3,9 @@
 import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://cortex-api.jackle.dev'
+const browserHost = typeof window !== 'undefined' ? window.location.hostname : ''
+const isLocalHost = browserHost === 'localhost' || browserHost === '127.0.0.1'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || (isLocalHost ? 'http://localhost:4000' : 'https://cortex-api.jackle.dev')
 
 function CallbackContent() {
   const searchParams = useSearchParams()

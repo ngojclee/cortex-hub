@@ -32,6 +32,10 @@
 
 ---
 
+> Fork note (ngojclee/cortex-hub): this fork includes stability/debug fixes for issues observed in the upstream project, especially around local dashboard routing and embedding provider configuration.
+
+---
+
 ## Why Cortex?
 
 Every AI coding agent today works in **isolation** — no shared memory, no knowledge transfer, no quality tracking. When you switch between Claude Code, Cursor, Gemini, or a headless bot, each starts from zero.

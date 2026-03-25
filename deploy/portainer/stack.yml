@@ -1,0 +1,96 @@
+version: "3.9"
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.13.6
+    container_name: cortex-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - /home/Docker/cortex-hub/qdrant-data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: 6334
+
+  gitnexus:
+    image: ghcr.io/lktiep/cortex-gitnexus:latest
+    container_name: cortex-gitnexus
+    restart: unless-stopped
+    ports:
+      - "4848:4848"
+    volumes:
+      - /home/Docker/cortex-hub/gitnexus-data:/root/.gitnexus
+      - /home/Docker/cortex-hub/api-data:/app/data
+    environment:
+      TZ: ${TZ:-Europe/Paris}
+      PORT: 4848
+
+  cortex-api:
+    image: ${CORTEX_API_IMAGE}
+    container_name: cortex-api
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+      - "3000:4000"
+    volumes:
+      - /home/Docker/cortex-hub/api-data:/app/data
+      - /home/Docker/cortex-hub/gitnexus-data:/root/.gitnexus
+      - /home/Docker/cortex-hub/cliproxy-auth:/app/cliproxy-auth
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      TZ: ${TZ:-Europe/Paris}
+      PORT: 4000
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_PATH: /app/data/cortex.db
+      QDRANT_URL: http://qdrant:6333
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_API_BASE: ${OPENAI_API_BASE}
+      LLM_PROXY_URL: ${LLM_PROXY_URL}
+      CLIPROXY_MANAGEMENT_KEY: ${CLIPROXY_MANAGEMENT_KEY}
+      GITNEXUS_URL: http://gitnexus:4848
+      DASHBOARD_URL: ${DASHBOARD_URL}
+      MEM9_LLM_MODEL: ${MEM9_LLM_MODEL:-gpt-5.1-codex-mini}
+      MEM9_EMBEDDING_MODEL: ${MEM9_EMBEDDING_MODEL:-text-embedding-3-small}
+    depends_on:
+      qdrant:
+        condition: service_started
+      gitnexus:
+        condition: service_started
+
+  cortex-mcp:
+    image: ${CORTEX_MCP_IMAGE}
+    container_name: cortex-mcp
+    restart: unless-stopped
+    ports:
+      - "8318:8317"
+    environment:
+      TZ: ${TZ:-Europe/Paris}
+      PORT: 8317
+      NODE_ENV: ${NODE_ENV:-production}
+      DASHBOARD_API_URL: http://cortex-api:4000
+      QDRANT_URL: http://qdrant:6333
+      CLIPROXY_URL: ${LLM_PROXY_URL}
+      GITNEXUS_URL: http://gitnexus:4848
+      MCP_SERVER_NAME: cortex-hub
+      MCP_SERVER_VERSION: "0.1.0"
+      API_KEYS: ${MCP_API_KEYS}
+    depends_on:
+      cortex-api:
+        condition: service_started
+      qdrant:
+        condition: service_started
+      gitnexus:
+        condition: service_started
+
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: cortex-watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_POLL_INTERVAL: 300
+      WATCHTOWER_LABEL_ENABLE: "false"
+      DOCKER_API_VERSION: "1.43"

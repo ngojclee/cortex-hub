@@ -8,9 +8,10 @@
 import { Hono } from 'hono'
 import { randomUUID } from 'crypto'
 import { Embedder, VectorStore } from '@cortex/shared-mem9'
-import type { EmbedderConfig, VectorStoreConfig } from '@cortex/shared-mem9'
+import type { VectorStoreConfig } from '@cortex/shared-mem9'
 import { db } from '../db/client.js'
 import { createLogger } from '@cortex/shared-utils'
+import { resolveEmbeddingConfig } from '../services/embedding-config.js'
 
 const logger = createLogger('knowledge')
 
@@ -45,25 +46,9 @@ function chunkText(text: string): string[] {
   return chunks
 }
 
-function resolveGeminiApiKey(): string {
-  const envKey = process.env['GEMINI_API_KEY']
-  if (envKey) return envKey
-  try {
-    const row = db.prepare(
-      "SELECT api_key FROM provider_accounts WHERE type = 'gemini' AND status = 'enabled' AND api_key IS NOT NULL LIMIT 1"
-    ).get() as { api_key: string } | undefined
-    if (row?.api_key) return row.api_key
-  } catch { /* DB might not be ready */ }
-  return ''
-}
-
 function getEmbedder(): Embedder {
-  const config: EmbedderConfig = {
-    provider: 'gemini' as const,
-    apiKey: resolveGeminiApiKey(),
-    model: process.env['MEM9_EMBEDDING_MODEL'] || 'gemini-embedding-exp-03-07',
-  }
-  return new Embedder(config)
+  const { config, chain } = resolveEmbeddingConfig()
+  return new Embedder(config, chain, { maxRetries: 2, retryDelayMs: 1000 })
 }
 
 function getVectorStore(): VectorStore {

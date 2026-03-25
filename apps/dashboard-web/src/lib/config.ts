@@ -1,5 +1,8 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'https://cortex-api.jackle.dev'
-const MCP_BASE = process.env.NEXT_PUBLIC_MCP_URL ?? 'https://cortex-mcp.jackle.dev'
+const browserHost = typeof window !== 'undefined' ? window.location.hostname : ''
+const isLocalHost = browserHost === 'localhost' || browserHost === '127.0.0.1'
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? (isLocalHost ? 'http://localhost:4000' : 'https://cortex-api.jackle.dev')
+const MCP_BASE = process.env.NEXT_PUBLIC_MCP_URL ?? (isLocalHost ? 'http://localhost:8318' : 'https://cortex-mcp.jackle.dev')
 
 export const config = {
   api: {
@@ -12,7 +15,7 @@ export const config = {
       health: `${MCP_BASE}/health`,
     },
     llmProxy: {
-      models: `${process.env.NEXT_PUBLIC_CLIPROXY_URL || 'https://cortex-llm.jackle.dev'}/v1/models`,
+      models: `${process.env.NEXT_PUBLIC_CLIPROXY_URL || (isLocalHost ? 'http://localhost:8317' : 'https://cortex-llm.jackle.dev')}/v1/models`,
     }
   },
   mcp: {
@@ -21,7 +24,7 @@ export const config = {
     health: `${MCP_BASE}/health`,
   },
   services: {
-    cliproxy: process.env.NEXT_PUBLIC_CLIPROXY_URL ?? 'https://cortex-llm.jackle.dev',
-    qdrant: process.env.NEXT_PUBLIC_QDRANT_URL ?? 'https://qdrant.hub.jackle.dev',
+    cliproxy: process.env.NEXT_PUBLIC_CLIPROXY_URL ?? (isLocalHost ? 'http://localhost:8317' : 'https://cortex-llm.jackle.dev'),
+    qdrant: process.env.NEXT_PUBLIC_QDRANT_URL ?? (isLocalHost ? 'http://localhost:6333' : 'https://qdrant.hub.jackle.dev'),
   },
 }

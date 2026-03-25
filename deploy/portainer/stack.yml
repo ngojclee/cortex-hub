@@ -14,7 +14,7 @@ services:
       QDRANT__SERVICE__GRPC_PORT: 6334
 
   gitnexus:
-    image: ghcr.io/lktiep/cortex-gitnexus:latest
+    image: ghcr.io/ngojclee/cortex-gitnexus:latest
     container_name: cortex-gitnexus
     restart: unless-stopped
     ports:
@@ -27,7 +27,7 @@ services:
       PORT: 4848
 
   cortex-api:
-    image: ${CORTEX_API_IMAGE}
+    image: ghcr.io/ngojclee/cortex-api:latest
     container_name: cortex-api
     restart: unless-stopped
     ports:
@@ -42,13 +42,13 @@ services:
       TZ: ${TZ:-Europe/Paris}
       PORT: 4000
       NODE_ENV: ${NODE_ENV:-production}
-      DATABASE_PATH: ${DATABASE_PATH:-/app/data/cortex.db}
-      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
+      DATABASE_PATH: /app/data/cortex.db
+      QDRANT_URL: http://qdrant:6333
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_API_BASE: ${OPENAI_API_BASE}
       LLM_PROXY_URL: ${LLM_PROXY_URL}
       CLIPROXY_MANAGEMENT_KEY: ${CLIPROXY_MANAGEMENT_KEY}
-      GITNEXUS_URL: ${GITNEXUS_URL:-http://gitnexus:4848}
+      GITNEXUS_URL: http://gitnexus:4848
       DASHBOARD_URL: ${DASHBOARD_URL}
       MEM9_LLM_MODEL: ${MEM9_LLM_MODEL:-gpt-5.1-codex-mini}
       MEM9_EMBEDDING_MODEL: ${MEM9_EMBEDDING_MODEL:-text-embedding-3-small}
@@ -59,7 +59,7 @@ services:
         condition: service_started
 
   cortex-mcp:
-    image: ${CORTEX_MCP_IMAGE}
+    image: ghcr.io/ngojclee/cortex-mcp:latest
     container_name: cortex-mcp
     restart: unless-stopped
     ports:
@@ -69,9 +69,9 @@ services:
       PORT: 8317
       NODE_ENV: ${NODE_ENV:-production}
       DASHBOARD_API_URL: http://cortex-api:4000
-      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
+      QDRANT_URL: http://qdrant:6333
       CLIPROXY_URL: ${LLM_PROXY_URL}
-      GITNEXUS_URL: ${GITNEXUS_URL:-http://gitnexus:4848}
+      GITNEXUS_URL: http://gitnexus:4848
       MCP_SERVER_NAME: cortex-hub
       MCP_SERVER_VERSION: "0.1.0"
       API_KEYS: ${MCP_API_KEYS}

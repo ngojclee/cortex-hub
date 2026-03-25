@@ -17,9 +17,9 @@ services:
     image: eceasy/cli-proxy-api:latest
     container_name: cortex-llm-proxy
     restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c", "printf 'server:\\n  port: 8317\\n' > /CLIProxyAPI/config.yaml && exec /CLIProxyAPI/CLIProxyAPI"]
     volumes:
       - ${STACK_DATA_ROOT:-/home/Docker/cortex-hub}/cliproxy-auth:/CLIProxyAPI/auth
-      - ${STACK_DATA_ROOT:-/home/Docker/cortex-hub}/cliproxy-config/config.yaml:/CLIProxyAPI/config.yaml
     environment:
       TZ: ${TZ:-Europe/Paris}
       MANAGEMENT_PASSWORD: ${CLIPROXY_MANAGEMENT_KEY:-cortex2026}

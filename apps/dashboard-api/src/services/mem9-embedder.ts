@@ -13,6 +13,7 @@ import { Embedder, VectorStore } from '@cortex/shared-mem9'
 import type { EmbedderConfig, ModelSlot, VectorStoreConfig } from '@cortex/shared-mem9'
 import { db } from '../db/client.js'
 import { createLogger } from '@cortex/shared-utils'
+import { resolveEmbeddingConfig } from './embedding-config.js'
 
 const logger = createLogger('mem9-embedder')
 
@@ -140,6 +141,8 @@ function collectSourceFiles(dir: string): Array<{ path: string; relativePath: st
 // ── Build Embedding Chain from model_routing ──
 
 function buildEmbeddingChain(): { config: EmbedderConfig; chain: ModelSlot[] } {
+  const resolved = resolveEmbeddingConfig()
+
   // Get embedding routing
   const routing = db.prepare(
     "SELECT chain FROM model_routing WHERE purpose = 'embedding'"
@@ -166,15 +169,8 @@ function buildEmbeddingChain(): { config: EmbedderConfig; chain: ModelSlot[] } {
     }
   }
 
-  // Default fallback config (Gemini)
-  const geminiKey = process.env.GEMINI_API_KEY ?? ''
-  const defaultConfig: EmbedderConfig = {
-    provider: 'gemini',
-    apiKey: geminiKey,
-    model: 'gemini-embedding-001',
-  }
-
-  return { config: defaultConfig, chain: chainSlots }
+  // Keep fallback config aligned with shared embedding resolver.
+  return { config: resolved.config, chain: chainSlots }
 }
 
 // ── Main Embedding Pipeline ──

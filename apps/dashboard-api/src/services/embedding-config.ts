@@ -9,9 +9,6 @@ interface AccountRow {
 }
 
 function resolveGeminiApiKey(): string {
-  const envKey = process.env['GEMINI_API_KEY']
-  if (envKey) return envKey
-
   try {
     const row = db.prepare(
       "SELECT api_key FROM provider_accounts WHERE type = 'gemini' AND status = 'enabled' AND api_key IS NOT NULL LIMIT 1"
@@ -19,6 +16,12 @@ function resolveGeminiApiKey(): string {
     if (row?.api_key) return row.api_key
   } catch {
     // DB may not be ready yet
+  }
+
+  // Optional legacy fallback for older deployments that still rely on env-based keys.
+  if ((process.env['ALLOW_ENV_PROVIDER_FALLBACK'] ?? 'false').toLowerCase() === 'true') {
+    const envKey = process.env['GEMINI_API_KEY']
+    if (envKey) return envKey
   }
 
   return ''

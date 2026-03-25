@@ -56,26 +56,8 @@ function seedExistingProviders() {
       '["chat","embedding","code"]'
     )
 
-    // Seed Gemini (if API key exists in env)
-    const geminiKey = process.env.GEMINI_API_KEY
-    if (geminiKey) {
-      db.prepare(
-        `INSERT OR IGNORE INTO provider_accounts (id, name, type, auth_type, api_base, api_key, status, capabilities)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-      ).run(
-        'pa-gemini-gcp',
-        'Google Gemini (GCP)',
-        'gemini',
-        'api_key',
-        'https://generativelanguage.googleapis.com/v1beta',
-        geminiKey,
-        'enabled',
-        '["chat","embedding"]'
-      )
-    }
-
     seeded = true
-    console.log('[accounts] Auto-seeded existing providers from environment')
+    console.log('[accounts] Auto-seeded default provider accounts')
   } catch (err) {
     // Table might not exist yet — will retry on next request
     console.warn('[accounts] Seed failed (will retry):', String(err).slice(0, 100))

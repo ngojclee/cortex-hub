@@ -29,6 +29,17 @@ function managementHeaders() {
   }
 }
 
+function hasGeminiProviderKey(): boolean {
+  try {
+    const row = db.prepare(
+      "SELECT id FROM provider_accounts WHERE type = 'gemini' AND status = 'enabled' AND api_key IS NOT NULL LIMIT 1"
+    ).get() as { id: string } | undefined
+    return Boolean(row?.id)
+  } catch {
+    return false
+  }
+}
+
 // ── Setup Status ──
 setupRouter.get('/status', (c) => {
   const stmt = db.prepare('SELECT completed FROM setup_status WHERE id = 1')
@@ -68,7 +79,7 @@ setupRouter.post('/complete', async (c) => {
         status: mem9Status,
         qdrant: qdrantOk,
         cliproxy: cliproxyOk,
-        geminiKey: !!process.env.GEMINI_API_KEY,
+        geminiKey: hasGeminiProviderKey(),
         message: mem9Status === 'ok'
           ? 'mem9 dependencies are ready'
           : 'Some mem9 dependencies are not yet available',
@@ -103,13 +114,27 @@ setupRouter.post('/configure-mem9', async (c) => {
       return c.json({ success: false, error: `Gemini API key test failed: ${err}` }, 400)
     }
 
-    // Store the key as env var
-    process.env.GEMINI_API_KEY = geminiApiKey
-    console.log('[Setup] Gemini API key configured and tested successfully')
+    // Persist key in provider_accounts (preferred over env-based secret config)
+    db.prepare(
+      `INSERT OR REPLACE INTO provider_accounts
+       (id, name, type, auth_type, api_base, api_key, status, capabilities, models, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`
+    ).run(
+      'pa-gemini-gcp',
+      'Google Gemini (API Key)',
+      'gemini',
+      'api_key',
+      'https://generativelanguage.googleapis.com/v1beta',
+      geminiApiKey,
+      'enabled',
+      '["chat","embedding"]',
+      '[]'
+    )
+    console.log('[Setup] Gemini API key configured and stored in provider_accounts')
 
     return c.json({
       success: true,
-      message: 'Gemini embedding API key configured successfully',
+      message: 'Gemini embedding API key configured successfully in Providers',
       provider: 'gemini',
       model: 'gemini-embedding-2-preview',
     })
@@ -175,7 +200,7 @@ setupRouter.get('/settings', (c) => {
       mem9: 'in-process (Gemini + CLIProxy)',
       dashboardApi: `http://localhost:${process.env.PORT || 4000}`,
     },
-    geminiApiKey: process.env.GEMINI_API_KEY ? 'configured' : 'not set',
+    geminiApiKey: hasGeminiProviderKey() ? 'configured' : 'not set',
     database: process.env.DATABASE_PATH || 'data/cortex.db',
     version: process.env.APP_VERSION || process.env.npm_package_version || '0.1.0',
   })

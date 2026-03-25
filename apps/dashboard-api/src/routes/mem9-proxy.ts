@@ -23,15 +23,11 @@ let embedderInstance: Embedder | null = null
 
 /**
  * Resolve the Gemini API key from multiple sources (priority order):
- * 1. GEMINI_API_KEY env var (direct config)
- * 2. provider_accounts table in SQLite (Providers UI)
+ * 1. provider_accounts table in SQLite (Providers UI)
+ * 2. Optional env fallback (legacy only, gated by ALLOW_ENV_PROVIDER_FALLBACK=true)
  */
 function resolveGeminiApiKey(): string {
-  // 1. Environment variable (highest priority)
-  const envKey = process.env['GEMINI_API_KEY']
-  if (envKey) return envKey
-
-  // 2. Providers DB — look for a Gemini provider with an API key
+  // 1. Providers DB — look for a Gemini provider with an API key
   try {
     const row = db.prepare(
       "SELECT api_key FROM provider_accounts WHERE type = 'gemini' AND status = 'enabled' AND api_key IS NOT NULL LIMIT 1"
@@ -39,6 +35,12 @@ function resolveGeminiApiKey(): string {
     if (row?.api_key) return row.api_key
   } catch {
     // DB might not be ready yet
+  }
+
+  // 2. Optional legacy env fallback
+  if ((process.env['ALLOW_ENV_PROVIDER_FALLBACK'] ?? 'false').toLowerCase() === 'true') {
+    const envKey = process.env['GEMINI_API_KEY']
+    if (envKey) return envKey
   }
 
   return ''

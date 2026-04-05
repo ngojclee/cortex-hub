@@ -112,10 +112,10 @@ export function registerSessionTools(server: McpServer, env: Env) {
 
   server.tool(
     'cortex_session_start',
-    'Start a development session. Creates a session record and returns project context, recent quality logs, session history, and unseen code changes from other agents.',
+    'Start or refresh a session. Creates or reuses a session record and returns project context, recent quality logs, session history, and unseen code changes from other agents.',
     {
       repo: z.string().describe('The URL of the repository being worked on'),
-      mode: z.string().optional().describe('Session mode: development, onboarding, review'),
+      mode: z.string().optional().describe('Session mode: development, production, onboarding, review'),
       agentId: z.string().describe('Your agent identifier for change tracking (e.g., "claude-code", "antigravity", "cursor")'),
     },
     async ({ repo, mode, agentId }) => {

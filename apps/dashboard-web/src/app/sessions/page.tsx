@@ -32,6 +32,17 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`badge badge-${variant}`}>{status}</span>
 }
 
+function ModeBadge({ mode }: { mode?: string }) {
+  const normalized = (mode ?? 'development').toLowerCase()
+  const variant =
+    normalized === 'production'
+      ? 'healthy'
+      : normalized === 'review' || normalized === 'onboarding'
+        ? 'warning'
+        : 'healthy'
+  return <span className={`badge badge-${variant}`}>{normalized}</span>
+}
+
 function TimeAgo({ date }: { date: string }) {
   const now = new Date()
   const past = new Date(date)
@@ -71,6 +82,12 @@ function SessionCard({
         <div className={styles.metaItem}>
           <span className={styles.metaLabel}>From</span>
           <code className={styles.agentName}>{session.from_agent}</code>
+        </div>
+        <div className={styles.metaItem}>
+          <span className={styles.metaLabel}>Mode</span>
+          <div className={styles.modeValue}>
+            <ModeBadge mode={session.mode} />
+          </div>
         </div>
         <div className={styles.metaItem}>
           <span className={styles.metaLabel}>To</span>
@@ -134,6 +151,12 @@ function SessionDetail({
           <div className={styles.detailRow}>
             <span className={styles.detailLabel}>From Agent</span>
             <code className={styles.detailValue}>{session.from_agent}</code>
+          </div>
+          <div className={styles.detailRow}>
+            <span className={styles.detailLabel}>Mode</span>
+            <div className={styles.detailModeValue}>
+              <ModeBadge mode={session.mode} />
+            </div>
           </div>
           {session.api_key_name && (
             <div className={styles.detailRow}>

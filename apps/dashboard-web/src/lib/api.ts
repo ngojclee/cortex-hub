@@ -240,6 +240,7 @@ export interface SessionHandoff {
   from_agent: string
   to_agent: string | null
   project: string
+  mode?: string
   task_summary: string
   context: string
   priority: number
@@ -322,6 +323,125 @@ export async function getProjectsForOrg(orgId: string) {
 
 export async function getAllProjects() {
   return apiFetch<{ projects: Project[] }>('/api/projects')
+}
+
+// ── Intel Resource Layer ──
+export interface IntelProjectResourceSummary {
+  projectId: string
+  slug: string
+  name: string
+  description: string | null
+  branch: string | null
+  indexedAt: string | null
+  symbols: number | null
+  staleness: {
+    status: string
+    basedOn: string
+    indexedAt: string | null
+    ageHours: number | null
+    latestJobStatus: string | null
+  }
+  gitnexus: {
+    registered: boolean
+    repoName: string | null
+    path: string | null
+    indexedAt: string | null
+    stats: {
+      symbols: number | null
+      relationships: number | null
+      processes: number | null
+    }
+  }
+  latestIndexJob: {
+    id: string
+    branch: string | null
+    status: string | null
+    progress: number | null
+    startedAt: string | null
+    completedAt: string | null
+    commitHash: string | null
+    commitMessage: string | null
+    mem9Status: string | null
+    docsKnowledgeStatus: string | null
+  } | null
+}
+
+export interface IntelClusterResource {
+  id: string | null
+  name: string
+  label: string | null
+  heuristicLabel: string | null
+  cohesion: number | null
+  symbols: number
+  subCommunities?: number
+}
+
+export interface IntelProcessResource {
+  id: string | null
+  name: string
+  label: string | null
+  heuristicLabel: string | null
+  type: string | null
+  steps: number
+}
+
+export async function getIntelProjectsResource() {
+  return apiFetch<{
+    success: boolean
+    data: {
+      uri: string
+      total: number
+      indexed: number
+      items: IntelProjectResourceSummary[]
+    }
+  }>('/api/intel/resources/projects')
+}
+
+export async function getIntelProjectContext(projectId: string) {
+  return apiFetch<{
+    success: boolean
+    data: {
+      uri: string
+      project: IntelProjectResourceSummary
+      stats: {
+        files: number | null
+        symbols: number | null
+        relationships: number | null
+        processes: number | null
+      }
+      toolsAvailable: string[]
+      resourcesAvailable: string[]
+      hint: string | null
+    }
+  }>(`/api/intel/resources/project/${projectId}/context`)
+}
+
+export async function getIntelProjectClusters(projectId: string, limit = 12) {
+  return apiFetch<{
+    success: boolean
+    data: {
+      uri: string
+      repo?: string
+      project: IntelProjectResourceSummary
+      total: number
+      clusters: IntelClusterResource[]
+      hint: string | null
+    }
+  }>(`/api/intel/resources/project/${projectId}/clusters?limit=${limit}`)
+}
+
+export async function getIntelProjectProcesses(projectId: string, limit = 12) {
+  return apiFetch<{
+    success: boolean
+    data: {
+      uri: string
+      repo?: string
+      project: IntelProjectResourceSummary
+      total: number
+      processes: IntelProcessResource[]
+      hint: string | null
+    }
+  }>(`/api/intel/resources/project/${projectId}/processes?limit=${limit}`)
 }
 
 export async function createProject(orgId: string, data: {

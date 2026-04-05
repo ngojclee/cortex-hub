@@ -15,6 +15,24 @@ import {
 
 export const qualityRouter = new Hono()
 
+function parseSessionContext(raw: unknown): Record<string, unknown> | null {
+  if (typeof raw !== 'string' || !raw.trim()) return null
+  try {
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object'
+      ? parsed as Record<string, unknown>
+      : null
+  } catch {
+    return null
+  }
+}
+
+function normalizeSessionMode(value: unknown): string {
+  return typeof value === 'string' && value.trim()
+    ? value.trim()
+    : 'development'
+}
+
 // ── Server-side session validation ──
 // Warns (but doesn't block) if agent hasn't started a session.
 // This provides enforcement for IDEs that don't support hooks (Cursor, Windsurf, etc.)
@@ -366,6 +384,7 @@ sessionsRouter.post('/start', async (c) => {
   try {
     const body = await c.req.json()
     const { repo, mode, agentId: bodyAgentId, shared_metadata } = body
+    const resolvedMode = normalizeSessionMode(mode)
 
     // Identity resolution: keep self-reported agentId, API key name tracked separately
     const agentId = bodyAgentId
@@ -417,13 +436,18 @@ sessionsRouter.post('/start', async (c) => {
 
     if (existingSession) {
       sessionId = existingSession.id
+      const nextContext = JSON.stringify({ repo, mode: resolvedMode, agentId, projectId: project?.id })
       db.prepare(
         `UPDATE session_handoffs
          SET created_at = datetime('now'),
+             task_summary = ?,
+             context = ?,
              project_id = COALESCE(?, project_id),
              shared_metadata = COALESCE(?, shared_metadata)
          WHERE id = ?`
       ).run(
+        `Session started: mode=${resolvedMode}`,
+        nextContext,
         (project?.id as string | undefined) ?? null,
         normalizedSharedMetadata ? JSON.stringify(normalizedSharedMetadata) : null,
         sessionId,
@@ -459,8 +483,8 @@ sessionsRouter.post('/start', async (c) => {
         sessionId,
         agentId,
         normalizedRepo,
-        `Session started: mode=${mode ?? 'development'}`,
-        JSON.stringify({ repo, mode, agentId, projectId: project?.id }),
+        `Session started: mode=${resolvedMode}`,
+        JSON.stringify({ repo, mode: resolvedMode, agentId, projectId: project?.id }),
         'active',
         apiKeyName,
         (project?.id as string | undefined) ?? null,
@@ -471,7 +495,7 @@ sessionsRouter.post('/start', async (c) => {
     return c.json({
       sessionId,
       status: 'active',
-      mode: mode ?? 'development',
+      mode: resolvedMode,
       project: project ? {
         id: project.id,
         name: projectName,
@@ -507,6 +531,7 @@ sessionsRouter.get('/all', (c) => {
 
     // Enrich each session with token savings from query_logs
     const sessionsWithSavings = rawSessions.map((session) => {
+      const sessionContext = parseSessionContext(session.context)
       try {
         const agentId = session.from_agent as string
         const sessionCreatedAt = session.created_at as string
@@ -525,6 +550,7 @@ sessionsRouter.get('/all', (c) => {
 
         return {
           ...session,
+          mode: normalizeSessionMode(sessionContext?.mode),
           sharedMetadata: parseSharedProjectMetadataJson(session.shared_metadata, {
             projectId: typeof session.project_id === 'string' ? session.project_id : undefined,
           }),
@@ -537,6 +563,7 @@ sessionsRouter.get('/all', (c) => {
       } catch {
         return {
           ...session,
+          mode: normalizeSessionMode(sessionContext?.mode),
           sharedMetadata: parseSharedProjectMetadataJson(session.shared_metadata, {
             projectId: typeof session.project_id === 'string' ? session.project_id : undefined,
           }),

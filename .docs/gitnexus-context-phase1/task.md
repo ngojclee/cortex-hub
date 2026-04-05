@@ -47,8 +47,8 @@
 
 ### Phase 5: Deferred Follow-Ups
 - [ ] Design `cortex_code_rename` as preview-first, apply-second workflow
-- [ ] Decide whether a visual graph explorer is still needed after resources and prompts are live
-- [ ] If needed, scope a lightweight graph page around clusters and process traces instead of a full generic graph canvas
+- [x] Decide whether a visual graph explorer is still needed after resources and prompts are live
+- [x] If needed, scope a lightweight graph page around clusters and process traces instead of a full generic graph canvas
 
 ### Phase 5A: Runtime Health & Release Verification
 - [x] Re-check whether the earlier `/health` degraded mismatch still reproduces on the refreshed `0.4.4` host
@@ -70,7 +70,8 @@
 
 ### Phase 5D: UX Follow-Ups After Data Quality Stabilizes
 - [ ] Re-evaluate the need for a visual graph explorer after process and cluster quality improves
-- [ ] If still needed, scope a lightweight graph/process explorer instead of a generic graph canvas
+- [x] If still needed, scope a lightweight graph/process explorer instead of a generic graph canvas
+- [x] Refresh reused sessions so `mode` and session context update when `cortex_session_start` is called again
 - [ ] Keep `cortex_code_rename` deferred until the resource and process contracts are stable
 
 ## Verification Notes
@@ -107,3 +108,6 @@
 - [x] 2026-04-05: refreshed host `GET /api/intel/resources/projects` shows `projectId=proj-44576c69`, `gitnexus.registered=true`, and `indexed=1`
 - [x] 2026-04-05: refreshed host still shows stale intel-resource freshness based on the older `gitnexus.indexedAt`, so metadata reconciliation remains the next code fix
 - [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-api typecheck` after preparing the intel staleness reconciliation patch and native GitNexus CLI indexing path
+- [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-api typecheck` after refreshing reused session `mode/context`
+- [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-web typecheck` after adding the lightweight `/graph` explorer and Sessions mode badges
+- [x] 2026-04-05: local `pnpm --filter @cortex/hub-mcp typecheck` after widening `cortex_session_start` session-mode guidance to include `production`

@@ -183,6 +183,11 @@
   color: var(--accent-primary);
 }
 
+.modeValue {
+  display: flex;
+  align-items: center;
+}
+
 .sessionFooter {
   display: flex;
   justify-content: space-between;
@@ -297,6 +302,12 @@
   max-width: 60%;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.detailModeValue {
+  display: flex;
+  justify-content: flex-end;
+  max-width: 60%;
 }
 
 .detailSection {

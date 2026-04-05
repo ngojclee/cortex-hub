@@ -3,6 +3,7 @@ import { randomUUID, createHash } from 'crypto'
 import { db } from '../db/client.js'
 import { startIndexing } from '../services/indexer.js'
 import { createLogger } from '@cortex/shared-utils'
+import { normalizeSharedProjectMetadata, parseSharedProjectMetadataJson } from '@cortex/shared-types'
 
 const logger = createLogger('webhooks')
 
@@ -47,7 +48,7 @@ webhooksRouter.post('/push', async (c) => {
     }
 
     const body = await c.req.json()
-    const { repo, branch, agentId, commitSha, commitMessage, filesChanged } = body
+    const { repo, branch, agentId, commitSha, commitMessage, filesChanged, sharedMetadata, shared_metadata } = body
 
     if (!repo || !branch) {
       return c.json({ error: 'repo and branch are required' }, 400)
@@ -62,11 +63,17 @@ webhooksRouter.post('/push', async (c) => {
       return c.json({ ignored: true, reason: 'No matching project found' })
     }
 
+    const normalizedSharedMetadata = normalizeSharedProjectMetadata(sharedMetadata ?? shared_metadata, {
+      projectId: project.id,
+      branch,
+      filesTouched: Array.isArray(filesChanged) ? filesChanged : undefined,
+    })
+
     // Record change event
     const eventId = `chg-${randomUUID().slice(0, 12)}`
     db.prepare(
-      `INSERT INTO change_events (id, project_id, branch, agent_id, commit_sha, commit_message, files_changed)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO change_events (id, project_id, branch, agent_id, commit_sha, commit_message, files_changed, shared_metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       eventId,
       project.id,
@@ -74,7 +81,8 @@ webhooksRouter.post('/push', async (c) => {
       agentId ?? 'local',
       commitSha ?? '',
       commitMessage ?? '',
-      JSON.stringify(filesChanged ?? [])
+      JSON.stringify(filesChanged ?? []),
+      normalizedSharedMetadata ? JSON.stringify(normalizedSharedMetadata) : null,
     )
 
     logger.info(`Change event ${eventId}: ${(filesChanged ?? []).length} files on ${branch} by ${agentId ?? 'local'}`)
@@ -142,7 +150,15 @@ webhooksRouter.get('/changes', (c) => {
       ).all(projectId, agentId, limit)
     }
 
-    return c.json({ events, count: (events as unknown[]).length })
+    const normalizedEvents = (events as Array<Record<string, unknown>>).map((event) => ({
+      ...event,
+      sharedMetadata: parseSharedProjectMetadataJson(event.shared_metadata, {
+        projectId,
+        branch: typeof event.branch === 'string' ? event.branch : undefined,
+      }),
+    }))
+
+    return c.json({ events: normalizedEvents, count: normalizedEvents.length })
   } catch (error) {
     return c.json({ error: String(error) }, 500)
   }

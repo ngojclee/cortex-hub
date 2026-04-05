@@ -8,6 +8,9 @@ import {
   type VerificationResults,
   type Grade,
   type PlanInput,
+  normalizeSharedProjectMetadata,
+  mergeSharedProjectMetadata,
+  parseSharedProjectMetadataJson,
 } from '@cortex/shared-types'
 
 export const qualityRouter = new Hono()
@@ -54,6 +57,7 @@ qualityRouter.post('/report', async (c) => {
       score,
       details,
       results, // VerificationResults (new format)
+      shared_metadata,
     } = body
 
     if (!gate_name) return c.json({ error: 'gate_name is required' }, 400)
@@ -66,6 +70,9 @@ qualityRouter.post('/report', async (c) => {
     const sessionCheck = validateSession(agentId, session_id)
 
     const reportId = `qr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+    const normalizedSharedMetadata = normalizeSharedProjectMetadata(shared_metadata, {
+      projectId: project_id || undefined,
+    })
 
     let scoreBuild = 0
     let scoreRegression = 0
@@ -114,20 +121,30 @@ qualityRouter.post('/report', async (c) => {
     const stmt = db.prepare(`
       INSERT INTO quality_reports (id, project_id, agent_id, session_id, gate_name,
         score_build, score_regression, score_standards, score_traceability,
-        score_total, grade, passed, details, api_key_name)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        score_total, grade, passed, details, api_key_name, shared_metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
     stmt.run(
       reportId, project_id || null, agentId, session_id || null, gate_name,
       scoreBuild, scoreRegression, scoreStandards, scoreTraceability,
       scoreTotal, grade, reportPassed ? 1 : 0,
       details ? (typeof details === 'string' ? details : JSON.stringify(details)) : null,
-      apiKeyName
+      apiKeyName,
+      normalizedSharedMetadata ? JSON.stringify(normalizedSharedMetadata) : null,
     )
 
     // Also log to query_logs for backward compatibility
-    const logStmt = db.prepare('INSERT INTO query_logs (agent_id, tool, params, status) VALUES (?, ?, ?, ?)')
-    logStmt.run(agentId, gate_name, JSON.stringify({ score: scoreTotal, grade, details }), reportPassed ? 'ok' : 'error')
+    const logStmt = db.prepare(
+      'INSERT INTO query_logs (agent_id, tool, params, status, project_id, shared_metadata) VALUES (?, ?, ?, ?, ?, ?)',
+    )
+    logStmt.run(
+      agentId,
+      gate_name,
+      JSON.stringify({ score: scoreTotal, grade, details }),
+      reportPassed ? 'ok' : 'error',
+      project_id || null,
+      normalizedSharedMetadata ? JSON.stringify(normalizedSharedMetadata) : null,
+    )
 
     return c.json({
       success: true,
@@ -142,6 +159,7 @@ qualityRouter.post('/report', async (c) => {
         score_total: scoreTotal,
         grade,
         passed: reportPassed,
+        shared_metadata: normalizedSharedMetadata,
       },
     })
   } catch (error) {
@@ -178,10 +196,17 @@ qualityRouter.get('/reports', (c) => {
     const total = (db.prepare(`SELECT COUNT(*) as count FROM quality_reports ${where}`).get(...params) as { count: number }).count
     const reports = db.prepare(
       `SELECT * FROM quality_reports ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
-    ).all(...params, limit, offset)
+    ).all(...params, limit, offset) as Array<Record<string, unknown>>
+
+    const normalizedReports = reports.map((report) => ({
+      ...report,
+      sharedMetadata: parseSharedProjectMetadataJson(report.shared_metadata, {
+        projectId: typeof report.project_id === 'string' ? report.project_id : undefined,
+      }),
+    }))
 
     return c.json({
-      reports,
+      reports: normalizedReports,
       total,
       page,
       limit,
@@ -200,14 +225,26 @@ qualityRouter.get('/reports/latest', (c) => {
     if (projectId) {
       const report = db.prepare(
         'SELECT * FROM quality_reports WHERE project_id = ? ORDER BY created_at DESC LIMIT 1'
-      ).get(projectId)
-      return c.json({ report: report || null })
+      ).get(projectId) as Record<string, unknown> | undefined
+      return c.json({
+        report: report ? {
+          ...report,
+          sharedMetadata: parseSharedProjectMetadataJson(report.shared_metadata, { projectId }),
+        } : null,
+      })
     }
 
     const report = db.prepare(
       'SELECT * FROM quality_reports ORDER BY created_at DESC LIMIT 1'
-    ).get()
-    return c.json({ report: report || null })
+    ).get() as Record<string, unknown> | undefined
+    return c.json({
+      report: report ? {
+        ...report,
+        sharedMetadata: parseSharedProjectMetadataJson(report.shared_metadata, {
+          projectId: typeof report.project_id === 'string' ? report.project_id : undefined,
+        }),
+      } : null,
+    })
   } catch (error) {
     return c.json({ error: String(error) }, 500)
   }
@@ -302,10 +339,16 @@ qualityRouter.get('/logs', (c) => {
     const offset = (page - 1) * limit
 
     const total = (db.prepare('SELECT COUNT(*) as count FROM query_logs').get() as { count: number }).count
-    const logs = db.prepare('SELECT * FROM query_logs ORDER BY created_at DESC LIMIT ? OFFSET ?').all(limit, offset)
+    const logs = db.prepare('SELECT * FROM query_logs ORDER BY created_at DESC LIMIT ? OFFSET ?').all(limit, offset) as Array<Record<string, unknown>>
+    const normalizedLogs = logs.map((log) => ({
+      ...log,
+      sharedMetadata: parseSharedProjectMetadataJson(log.shared_metadata, {
+        projectId: typeof log.project_id === 'string' ? log.project_id : undefined,
+      }),
+    }))
 
     return c.json({
-      logs,
+      logs: normalizedLogs,
       total,
       page,
       limit,
@@ -322,7 +365,7 @@ export const sessionsRouter = new Hono()
 sessionsRouter.post('/start', async (c) => {
   try {
     const body = await c.req.json()
-    const { repo, mode, agentId: bodyAgentId } = body
+    const { repo, mode, agentId: bodyAgentId, shared_metadata } = body
 
     // Identity resolution: keep self-reported agentId, API key name tracked separately
     const agentId = bodyAgentId
@@ -355,6 +398,10 @@ sessionsRouter.post('/start', async (c) => {
       ) as Record<string, unknown> | undefined
     }
 
+    const normalizedSharedMetadata = normalizeSharedProjectMetadata(shared_metadata, {
+      projectId: (project?.id as string | undefined) ?? undefined,
+    })
+
     let sessionId: string
     const existingSession = db.prepare(
       `SELECT id FROM session_handoffs
@@ -371,8 +418,16 @@ sessionsRouter.post('/start', async (c) => {
     if (existingSession) {
       sessionId = existingSession.id
       db.prepare(
-        `UPDATE session_handoffs SET created_at = datetime('now') WHERE id = ?`
-      ).run(sessionId)
+        `UPDATE session_handoffs
+         SET created_at = datetime('now'),
+             project_id = COALESCE(?, project_id),
+             shared_metadata = COALESCE(?, shared_metadata)
+         WHERE id = ?`
+      ).run(
+        (project?.id as string | undefined) ?? null,
+        normalizedSharedMetadata ? JSON.stringify(normalizedSharedMetadata) : null,
+        sessionId,
+      )
     } else {
       sessionId = `sess_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
     }
@@ -396,7 +451,9 @@ sessionsRouter.post('/start', async (c) => {
 
     if (!existingSession) {
       const insertStmt = db.prepare(
-        'INSERT INTO session_handoffs (id, from_agent, project, task_summary, context, status, api_key_name) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        `INSERT INTO session_handoffs
+          (id, from_agent, project, task_summary, context, status, api_key_name, project_id, shared_metadata)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       insertStmt.run(
         sessionId,
@@ -405,7 +462,9 @@ sessionsRouter.post('/start', async (c) => {
         `Session started: mode=${mode ?? 'development'}`,
         JSON.stringify({ repo, mode, agentId, projectId: project?.id }),
         'active',
-        apiKeyName
+        apiKeyName,
+        (project?.id as string | undefined) ?? null,
+        normalizedSharedMetadata ? JSON.stringify(normalizedSharedMetadata) : null,
       )
     }
 
@@ -422,6 +481,7 @@ sessionsRouter.post('/start', async (c) => {
         indexedAt: project.indexed_at,
         indexedSymbols: project.indexed_symbols,
       } : null,
+      sharedMetadata: normalizedSharedMetadata,
       standards: [
         'SOLID Principles',
         'Clean Architecture',
@@ -465,6 +525,9 @@ sessionsRouter.get('/all', (c) => {
 
         return {
           ...session,
+          sharedMetadata: parseSharedProjectMetadataJson(session.shared_metadata, {
+            projectId: typeof session.project_id === 'string' ? session.project_id : undefined,
+          }),
           savings: {
             toolCalls: savings.tool_calls,
             tokensSaved: Math.round(savings.output_bytes / 4),
@@ -472,7 +535,13 @@ sessionsRouter.get('/all', (c) => {
           },
         }
       } catch {
-        return { ...session, savings: { toolCalls: 0, tokensSaved: 0, dataBytes: 0 } }
+        return {
+          ...session,
+          sharedMetadata: parseSharedProjectMetadataJson(session.shared_metadata, {
+            projectId: typeof session.project_id === 'string' ? session.project_id : undefined,
+          }),
+          savings: { toolCalls: 0, tokensSaved: 0, dataBytes: 0 },
+        }
       }
     })
 
@@ -486,18 +555,75 @@ sessionsRouter.patch('/:id/complete', async (c) => {
   const { id } = c.req.param()
   try {
     const body = await c.req.json().catch(() => ({}))
-    const { task_summary, status } = body as { task_summary?: string; status?: string }
+    const { task_summary, status, shared_metadata } = body as {
+      task_summary?: string
+      status?: string
+      shared_metadata?: unknown
+    }
 
-    const existing = db.prepare('SELECT id FROM session_handoffs WHERE id = ?').get(id)
+    const existing = db.prepare(
+      'SELECT id, project_id, shared_metadata FROM session_handoffs WHERE id = ?',
+    ).get(id) as { id: string; project_id: string | null; shared_metadata: string | null } | undefined
     if (!existing) return c.json({ error: 'Session not found' }, 404)
+
+    const mergedSharedMetadata = mergeSharedProjectMetadata(
+      parseSharedProjectMetadataJson(existing.shared_metadata, {
+        projectId: existing.project_id ?? undefined,
+      }),
+      normalizeSharedProjectMetadata(shared_metadata, {
+        projectId: existing.project_id ?? undefined,
+      }),
+    )
 
     db.prepare(
       `UPDATE session_handoffs
-       SET status = ?, task_summary = COALESCE(?, task_summary)
+       SET status = ?, task_summary = COALESCE(?, task_summary), shared_metadata = ?
        WHERE id = ?`
-    ).run(status ?? 'completed', task_summary ?? null, id)
+    ).run(
+      status ?? 'completed',
+      task_summary ?? null,
+      mergedSharedMetadata ? JSON.stringify(mergedSharedMetadata) : null,
+      id,
+    )
 
-    return c.json({ success: true, id, status: status ?? 'completed' })
+    return c.json({
+      success: true,
+      id,
+      status: status ?? 'completed',
+      sharedMetadata: mergedSharedMetadata,
+    })
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+sessionsRouter.patch('/:id/metadata', async (c) => {
+  const { id } = c.req.param()
+
+  try {
+    const body = await c.req.json().catch(() => ({}))
+    const { shared_metadata } = body as { shared_metadata?: unknown }
+
+    const existing = db.prepare(
+      'SELECT id, project_id, shared_metadata FROM session_handoffs WHERE id = ?',
+    ).get(id) as { id: string; project_id: string | null; shared_metadata: string | null } | undefined
+
+    if (!existing) return c.json({ error: 'Session not found' }, 404)
+
+    const mergedSharedMetadata = mergeSharedProjectMetadata(
+      parseSharedProjectMetadataJson(existing.shared_metadata, {
+        projectId: existing.project_id ?? undefined,
+      }),
+      normalizeSharedProjectMetadata(shared_metadata, {
+        projectId: existing.project_id ?? undefined,
+      }),
+    )
+
+    db.prepare(
+      'UPDATE session_handoffs SET shared_metadata = ? WHERE id = ?',
+    ).run(mergedSharedMetadata ? JSON.stringify(mergedSharedMetadata) : null, id)
+
+    return c.json({ success: true, id, sharedMetadata: mergedSharedMetadata })
   } catch (error) {
     return c.json({ error: String(error) }, 500)
   }

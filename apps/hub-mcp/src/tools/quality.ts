@@ -9,6 +9,7 @@ import {
   assessPlanQuality,
   formatPlanScorecard,
   type VerificationResults,
+  normalizeSharedProjectMetadata,
 } from '@cortex/shared-types'
 
 const verificationResultsSchema = z.object({
@@ -48,8 +49,12 @@ export function registerQualityTools(server: McpServer, env: Env) {
       passed: z.boolean().optional().describe('Legacy: whether the gate passed'),
       score: z.number().optional().describe('Legacy: pre-computed score (0-100)'),
       details: z.string().optional().describe('Markdown log of evaluation'),
+      shared_metadata: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe('Canonical shared metadata: projectId, branch, filesTouched, symbolsTouched, processesAffected, clustersTouched, resourceUris'),
     },
-    async ({ gate_name, agent_id, session_id, project_id, results, passed, score, details }) => {
+    async ({ gate_name, agent_id, session_id, project_id, results, passed, score, details, shared_metadata }) => {
       try {
         // If results provided, calculate scorecard locally for the response
         let scorecard: string | null = null
@@ -68,6 +73,10 @@ export function registerQualityTools(server: McpServer, env: Env) {
           ].join('\n')
         }
 
+        const normalizedSharedMetadata = normalizeSharedProjectMetadata(shared_metadata, {
+          projectId: project_id || undefined,
+        })
+
         const response = await apiCall(env, '/api/quality/report', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -81,6 +90,7 @@ export function registerQualityTools(server: McpServer, env: Env) {
             passed,
             score,
             details,
+            shared_metadata: normalizedSharedMetadata,
           }),
         })
 

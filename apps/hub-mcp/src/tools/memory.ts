@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { normalizeSharedProjectMetadata } from '@cortex/shared-types'
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Env } from '../types.js'
@@ -26,8 +27,12 @@ export function registerMemoryTools(server: McpServer, env: Env) {
         .record(z.string(), z.unknown())
         .optional()
         .describe('Optional metadata tags'),
+      shared_metadata: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe('Canonical shared metadata: projectId, branch, filesTouched, symbolsTouched, processesAffected, clustersTouched, resourceUris'),
     },
-    async ({ content, agentId, projectId, branch, metadata }) => {
+    async ({ content, agentId, projectId, branch, metadata, shared_metadata }) => {
       try {
         // Build scoped user_id for branch isolation
         let userId = agentId ?? 'default'
@@ -37,10 +42,16 @@ export function registerMemoryTools(server: McpServer, env: Env) {
           userId = `project-${projectId}`
         }
 
+        const normalizedSharedMetadata = normalizeSharedProjectMetadata(shared_metadata, {
+          projectId,
+          branch,
+        })
+
         const meta = {
           ...(metadata ?? {}),
           ...(projectId ? { project_id: projectId } : {}),
           ...(branch ? { branch } : {}),
+          ...(normalizedSharedMetadata ? { shared_metadata: normalizedSharedMetadata } : {}),
         }
 
         const response = await apiCall(env, '/api/mem9/store', {

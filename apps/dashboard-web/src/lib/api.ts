@@ -150,6 +150,7 @@ export interface QueryLog {
   latency_ms: number | null
   status: string
   error: string | null
+  sharedMetadata?: Record<string, unknown> | null
   created_at: string
 }
 
@@ -176,6 +177,7 @@ export interface QualityReportRow {
   passed: number
   details: string | null
   api_key_name: string | null
+  sharedMetadata?: Record<string, unknown> | null
   created_at: string
 }
 
@@ -246,6 +248,7 @@ export interface SessionHandoff {
   created_at: string
   expires_at: string | null
   api_key_name: string | null
+  sharedMetadata?: Record<string, unknown> | null
   savings?: {
     toolCalls: number
     tokensSaved: number

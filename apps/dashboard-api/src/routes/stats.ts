@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { db } from '../db/client.js'
+import { normalizeSharedProjectMetadata } from '@cortex/shared-types'
 
 export const statsRouter = new Hono()
 
@@ -347,8 +348,31 @@ statsRouter.post('/admin/restart/:service', async (c) => {
 // ── Telemetry: Log MCP Tool Queries ──
 statsRouter.post('/query-log', async (c) => {
   try {
-    const { agentId, tool, params, status, latencyMs, error, projectId, inputSize, outputSize, computeTokens, computeModel } = await c.req.json()
-    const stmt = db.prepare('INSERT INTO query_logs (agent_id, tool, params, latency_ms, status, error, project_id, input_size, output_size, compute_tokens, compute_model) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    const {
+      agentId,
+      tool,
+      params,
+      status,
+      latencyMs,
+      error,
+      projectId,
+      inputSize,
+      outputSize,
+      computeTokens,
+      computeModel,
+      sharedMetadata,
+      shared_metadata,
+    } = await c.req.json()
+
+    const normalizedSharedMetadata = normalizeSharedProjectMetadata(sharedMetadata ?? shared_metadata, {
+      projectId: projectId || undefined,
+    })
+
+    const stmt = db.prepare(
+      `INSERT INTO query_logs
+        (agent_id, tool, params, latency_ms, status, error, project_id, input_size, output_size, compute_tokens, compute_model, shared_metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
     stmt.run(
       agentId || 'unknown', 
       tool || 'unknown',
@@ -360,7 +384,8 @@ statsRouter.post('/query-log', async (c) => {
       inputSize || 0,
       outputSize || 0,
       computeTokens || 0,
-      computeModel || null
+      computeModel || null,
+      normalizedSharedMetadata ? JSON.stringify(normalizedSharedMetadata) : null,
     )
 
     // Bridge backend LLM cost to the unified billing table

@@ -41,9 +41,9 @@
 - [x] Document the recommended agent workflow for discovery -> overview -> deep dive -> action
 
 ### Phase 4: Shared Cross-App Metadata
-- [ ] Define the canonical metadata keys for files, symbols, processes, and clusters
-- [ ] Extend session/change/quality payloads with the shared metadata fields
-- [ ] Reuse the same metadata shape in memory and dashboard views where it fits
+- [x] Define the canonical metadata keys for files, symbols, processes, and clusters
+- [x] Extend session/change/quality payloads with the shared metadata fields
+- [x] Reuse the same metadata shape in memory and dashboard views where it fits
 
 ### Phase 5: Deferred Follow-Ups
 - [ ] Design `cortex_code_rename` as preview-first, apply-second workflow
@@ -58,3 +58,7 @@
 - [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-web typecheck` after `Memories` UI/data-shape fix
 - [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-api typecheck` after `mem9` project-filter compatibility update
 - [x] 2026-04-05: local `pnpm --filter @cortex/hub-mcp typecheck` after prompt wrappers and session context-fabric enrichment
+- [x] 2026-04-05: local `pnpm --filter @cortex/shared-types build`
+- [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-api typecheck` after shared cross-app metadata contract
+- [x] 2026-04-05: local `pnpm --filter @cortex/hub-mcp typecheck` after shared cross-app metadata contract
+- [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-web typecheck` after shared metadata API type updates

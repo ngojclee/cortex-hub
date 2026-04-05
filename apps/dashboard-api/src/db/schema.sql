@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS query_logs (
     output_size INTEGER DEFAULT 0,
     compute_tokens INTEGER DEFAULT 0,
     compute_model TEXT,
+    shared_metadata TEXT,
     created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -43,6 +44,7 @@ CREATE TABLE IF NOT EXISTS session_handoffs (
     status TEXT DEFAULT 'pending',
     claimed_by TEXT,
     project_id TEXT,
+    shared_metadata TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     expires_at TEXT
 );
@@ -135,6 +137,7 @@ CREATE TABLE IF NOT EXISTS change_events (
     commit_sha TEXT,
     commit_message TEXT,
     files_changed TEXT,
+    shared_metadata TEXT,
     created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -197,6 +200,7 @@ CREATE TABLE IF NOT EXISTS quality_reports (
     grade TEXT NOT NULL DEFAULT 'F' CHECK(grade IN ('A','B','C','D','F')),
     passed BOOLEAN NOT NULL DEFAULT 0,
     details TEXT,                                  -- JSON
+    shared_metadata TEXT,
     created_at TEXT DEFAULT (datetime('now'))
 );
 

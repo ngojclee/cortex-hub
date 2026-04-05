@@ -111,6 +111,22 @@ try {
   db.exec('ALTER TABLE query_logs ADD COLUMN compute_model TEXT')
 } catch (e) { /* ignore if exists */ }
 
+try {
+  db.exec('ALTER TABLE query_logs ADD COLUMN shared_metadata TEXT')
+} catch (e) { /* ignore if exists */ }
+
+try {
+  db.exec('ALTER TABLE session_handoffs ADD COLUMN shared_metadata TEXT')
+} catch (e) { /* ignore if exists */ }
+
+try {
+  db.exec('ALTER TABLE quality_reports ADD COLUMN shared_metadata TEXT')
+} catch (e) { /* ignore if exists */ }
+
+try {
+  db.exec('ALTER TABLE change_events ADD COLUMN shared_metadata TEXT')
+} catch (e) { /* ignore if exists */ }
+
 if (existsSync(schemaPath)) {
   const schema = readFileSync(schemaPath, 'utf8')
   db.exec(schema)

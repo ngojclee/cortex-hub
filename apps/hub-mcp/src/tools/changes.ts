@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { parseSharedProjectMetadataJson } from '@cortex/shared-types'
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Env } from '../types.js'
@@ -12,6 +13,8 @@ interface ChangeEvent {
   commit_sha: string
   commit_message: string
   files_changed: string
+  shared_metadata?: string | null
+  sharedMetadata?: Record<string, unknown> | null
   created_at: string
 }
 
@@ -128,6 +131,11 @@ export function registerChangeTools(server: McpServer, env: Env) {
                     commit: e.commit_sha?.slice(0, 7),
                     message: e.commit_message,
                     files: JSON.parse(e.files_changed || '[]'),
+                    sharedMetadata: e.sharedMetadata ?? parseSharedProjectMetadataJson(e.shared_metadata, {
+                      projectId,
+                      branch: e.branch,
+                      filesTouched: JSON.parse(e.files_changed || '[]'),
+                    }),
                     time: e.created_at,
                   })),
                 },

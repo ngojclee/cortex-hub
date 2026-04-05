@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { apiCall } from '../api-call.js'
 import { fetchUnseenChanges, formatChangeSummary, acknowledgeChanges } from './changes.js'
 import { buildContextFabric } from '../context-fabric.js'
+import { normalizeSharedProjectMetadata } from '@cortex/shared-types'
 
 /**
  * Register Session Tools
@@ -19,15 +20,21 @@ export function registerSessionTools(server: McpServer, env: Env) {
     {
       sessionId: z.string().describe('The session ID returned by cortex_session_start'),
       summary: z.string().optional().describe('Brief summary of work done in this session'),
+      shared_metadata: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe('Canonical shared metadata: projectId, branch, filesTouched, symbolsTouched, processesAffected, clustersTouched, resourceUris'),
     },
-    async ({ sessionId, summary }) => {
+    async ({ sessionId, summary, shared_metadata }) => {
       try {
+        const normalizedSharedMetadata = normalizeSharedProjectMetadata(shared_metadata)
         const response = await apiCall(env, `/api/sessions/${sessionId}/complete`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             status: 'completed',
             task_summary: summary,
+            shared_metadata: normalizedSharedMetadata,
           }),
         })
 
@@ -194,6 +201,23 @@ export function registerSessionTools(server: McpServer, env: Env) {
           try {
             const contextFabric = await buildContextFabric(env, projectId)
             if (contextFabric) {
+              const sharedMetadata = normalizeSharedProjectMetadata({
+                projectId,
+                branch: contextFabric.branch,
+                filesTouched: contextFabric.suggestedFiles,
+                processesAffected: contextFabric.topProcesses.map((process) => process.name),
+                clustersTouched: contextFabric.topClusters.map((cluster) => cluster.name),
+                resourceUris: contextFabric.suggestedNext.resources,
+              })
+
+              if (sharedMetadata) {
+                await apiCall(env, `/api/sessions/${session.sessionId}/metadata`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ shared_metadata: sharedMetadata }),
+                })
+              }
+
               session.contextFabric = contextFabric
               session.sessionSnapshot = {
                 projectId,

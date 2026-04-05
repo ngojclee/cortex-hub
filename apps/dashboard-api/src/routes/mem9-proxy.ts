@@ -12,6 +12,7 @@
 import { Hono } from 'hono'
 import { Mem9, Embedder } from '@cortex/shared-mem9'
 import type { Mem9Config, ModelSlot } from '@cortex/shared-mem9'
+import { normalizeSharedProjectMetadata } from '@cortex/shared-types'
 import { db } from '../db/client.js'
 import { resolveEmbeddingConfig } from '../services/embedding-config.js'
 import { ensureProjectExists } from '../db/utils.js'
@@ -168,8 +169,22 @@ mem9ProxyRouter.post('/store', async (c) => {
       return c.json({ error: 'messages and userId are required' }, 400)
     }
 
-    if (metadata?.project_id) { metadata.project_id = ensureProjectExists(metadata.project_id); } const mem9 = getMem9()
-    const result = await mem9.add({ messages, userId, agentId, metadata })
+    if (metadata?.project_id) {
+      metadata.project_id = ensureProjectExists(metadata.project_id)
+    }
+
+    const normalizedSharedMetadata = normalizeSharedProjectMetadata(metadata?.shared_metadata, {
+      projectId: metadata?.project_id,
+      branch: metadata?.branch,
+    })
+
+    const normalizedMetadata = {
+      ...(metadata ?? {}),
+      ...(normalizedSharedMetadata ? { shared_metadata: normalizedSharedMetadata } : {}),
+    }
+
+    const mem9 = getMem9()
+    const result = await mem9.add({ messages, userId, agentId, metadata: normalizedMetadata })
 
     c.header('X-Cortex-Compute-Tokens', String(result.tokensUsed || 0))
     c.header('X-Cortex-Compute-Model', activeLlmModel)

@@ -1,11 +1,11 @@
 # Task List: GitNexus Context Fabric Phase 1
 
 ### Phase 0: Hotfix Release & Backup
-- [ ] Pull the latest `origin/master` change into local `master`
-- [ ] Confirm the commit scope excludes unrelated docs migration work
-- [ ] Bump `version.json` for the `/memories` patch release
-- [ ] Commit the `/memories` hotfix plus the new planning docs
-- [ ] Push the checkpoint to GitHub
+- [x] Pull the latest `origin/master` change into local `master`
+- [x] Confirm the commit scope excludes unrelated docs migration work
+- [x] Bump `version.json` for the `/memories` patch release
+- [x] Commit the `/memories` hotfix plus the new planning docs
+- [x] Push the checkpoint to GitHub
 - [ ] Build and push the refreshed `cortex-api` image
 - [ ] Redeploy or wait for Watchtower, then verify `/memories`
 

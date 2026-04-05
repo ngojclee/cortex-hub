@@ -334,6 +334,10 @@ export interface IntelProjectResourceSummary {
   branch: string | null
   indexedAt: string | null
   symbols: number | null
+  knowledge: {
+    docs: number
+    chunks: number
+  }
   staleness: {
     status: string
     basedOn: string
@@ -366,6 +370,30 @@ export interface IntelProjectResourceSummary {
   } | null
 }
 
+export interface IntelDiscoveryCandidate {
+  key: string
+  slug: string
+  name: string
+  sourceKinds: string[]
+  repoName: string | null
+  gitRepoUrl: string | null
+  repoPath: string | null
+  knowledge: {
+    docs: number
+    chunks: number
+  } | null
+  gitnexus: {
+    name: string
+    path: string | null
+    indexedAt: string | null
+    stats: {
+      symbols: number | null
+      relationships: number | null
+      processes: number | null
+    }
+  } | null
+}
+
 export interface IntelClusterResource {
   id: string | null
   name: string
@@ -395,6 +423,38 @@ export async function getIntelProjectsResource() {
       items: IntelProjectResourceSummary[]
     }
   }>('/api/intel/resources/projects')
+}
+
+export async function getIntelProjectDiscovery() {
+  return apiFetch<{
+    success: boolean
+    data: {
+      uri: string
+      total: number
+      candidates: IntelDiscoveryCandidate[]
+    }
+  }>('/api/intel/resources/discovery')
+}
+
+export async function linkDiscoveredProject(data: {
+  slug?: string
+  name?: string
+  gitRepoUrl?: string | null
+  repoPath?: string | null
+}) {
+  return apiFetch<{
+    success: boolean
+    created: boolean
+    project: {
+      id: string
+      slug: string
+      name: string
+      git_repo_url: string | null
+    }
+  }>('/api/intel/resources/discovery/link', {
+    method: 'POST',
+    body: data,
+  })
 }
 
 export async function getIntelProjectContext(projectId: string) {

@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs'
 import { join, relative } from 'path'
+import { randomUUID } from 'crypto'
 import { createLogger } from '@cortex/shared-utils'
 import { Embedder } from '@cortex/shared-mem9'
 import { db } from '../db/client.js'
@@ -137,6 +138,23 @@ type ProjectResourceRecord = {
   org_slug?: string
 }
 
+type ProjectKnowledgeStats = {
+  docs: number
+  chunks: number
+}
+
+type DiscoveryCandidate = {
+  key: string
+  slug: string
+  name: string
+  sourceKinds: string[]
+  repoName: string | null
+  gitRepoUrl: string | null
+  repoPath: string | null
+  knowledge: ProjectKnowledgeStats | null
+  gitnexus: GitNexusRepoSummary | null
+}
+
 type ProjectIndexJobRecord = {
   id: string
   branch: string | null
@@ -237,6 +255,23 @@ function normalizeStringValue(value: unknown): string | null {
   return trimmed
 }
 
+function slugifyName(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/\.git$/, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+}
+
+function humanizeSlug(value: string): string {
+  return value
+    .split(/[-_/]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
 function parseNumberLike(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value
   if (typeof value !== 'string') return null
@@ -244,6 +279,109 @@ function parseNumberLike(value: unknown): number | null {
   if (!cleaned || cleaned === '?' || cleaned === 'undefined' || cleaned === 'null') return null
   const parsed = Number(cleaned)
   return Number.isFinite(parsed) ? parsed : null
+}
+
+function parseScalarValue(rawValue: string): string | number | null {
+  return parseNumberLike(rawValue) ?? normalizeStringValue(rawValue)
+}
+
+function splitMarkdownTableRow(line: string): string[] {
+  return line
+    .trim()
+    .split('|')
+    .slice(1, -1)
+    .map((cell) => cell.trim())
+}
+
+function parseMarkdownTableRows(markdown: string): Array<Record<string, string | number | null>> {
+  const lines = markdown
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('|'))
+
+  if (lines.length < 3) return []
+
+  const headerCells = splitMarkdownTableRow(lines[0] ?? '')
+  const separator = lines[1] ?? ''
+  if (
+    headerCells.length === 0 ||
+    !separator.includes('---')
+  ) {
+    return []
+  }
+
+  return lines
+    .slice(2)
+    .map((line) => {
+      const cells = splitMarkdownTableRow(line)
+      const row: Record<string, string | number | null> = {}
+
+      headerCells.forEach((header, index) => {
+        if (!header) return
+        row[header] = parseScalarValue(cells[index] ?? '')
+      })
+
+      return row
+    })
+    .filter((row) => Object.keys(row).length > 0)
+}
+
+function extractLeadingJSONObject(raw: string): string | null {
+  const trimmed = raw.trimStart()
+  if (!trimmed.startsWith('{')) return null
+
+  let depth = 0
+  let inString = false
+  let escaping = false
+
+  for (let index = 0; index < trimmed.length; index += 1) {
+    const char = trimmed[index]
+
+    if (escaping) {
+      escaping = false
+      continue
+    }
+
+    if (char === '\\') {
+      escaping = true
+      continue
+    }
+
+    if (char === '"') {
+      inString = !inString
+      continue
+    }
+
+    if (inString) continue
+
+    if (char === '{') depth += 1
+    if (char === '}') {
+      depth -= 1
+      if (depth === 0) {
+        return trimmed.slice(0, index + 1)
+      }
+    }
+  }
+
+  return null
+}
+
+function extractGitNexusMarkdown(raw: string): string | null {
+  if (raw.trimStart().startsWith('|')) {
+    return raw.trim()
+  }
+
+  const leadingJson = extractLeadingJSONObject(raw)
+  if (!leadingJson) return null
+
+  try {
+    const parsed = JSON.parse(leadingJson) as { markdown?: unknown }
+    return typeof parsed.markdown === 'string'
+      ? parsed.markdown.trim()
+      : null
+  } catch {
+    return null
+  }
 }
 
 function getRawText(result: unknown): string {
@@ -339,6 +477,230 @@ function findGitNexusRepo(
   return null
 }
 
+function findProjectByDiscoveryCandidate(
+  projects: Array<Pick<ProjectResourceRecord, 'id' | 'slug' | 'git_repo_url'>>,
+  candidate: { slug?: string | null; gitRepoUrl?: string | null; repoName?: string | null },
+): Pick<ProjectResourceRecord, 'id' | 'slug' | 'git_repo_url'> | null {
+  const cleanCandidateUrl = candidate.gitRepoUrl
+    ? candidate.gitRepoUrl.replace(/\.git$/, '').replace(/\/$/, '')
+    : null
+  const cleanRepoName = candidate.repoName ? slugifyName(candidate.repoName) : null
+
+  for (const project of projects) {
+    const projectSlug = project.slug ? slugifyName(project.slug) : null
+    const cleanProjectUrl = project.git_repo_url
+      ? project.git_repo_url.replace(/\.git$/, '').replace(/\/$/, '')
+      : null
+    const projectRepoName = project.git_repo_url
+      ? slugifyName(project.git_repo_url.split('/').pop() ?? '')
+      : null
+
+    if (candidate.slug && projectSlug === slugifyName(candidate.slug)) return project
+    if (cleanCandidateUrl && cleanProjectUrl === cleanCandidateUrl) return project
+    if (cleanRepoName && (projectSlug === cleanRepoName || projectRepoName === cleanRepoName)) return project
+  }
+
+  return null
+}
+
+function readGitRemoteUrl(repoPath: string | null): string | null {
+  if (!repoPath) return null
+
+  const configPath = join(repoPath, '.git', 'config')
+  if (!existsSync(configPath)) return null
+
+  try {
+    const raw = readFileSync(configPath, 'utf8')
+    const match = raw.match(/\[remote\s+"origin"\][\s\S]*?url\s*=\s*(.+)/)
+    return match?.[1]?.trim() ?? null
+  } catch {
+    return null
+  }
+}
+
+function listLocalRepoDirectories(): Array<{ slug: string; name: string; path: string; gitRepoUrl: string | null }> {
+  if (!existsSync(REPOS_DIR)) return []
+
+  try {
+    return readdirSync(REPOS_DIR)
+      .map((entry) => {
+        const repoPath = join(REPOS_DIR, entry)
+        try {
+          const stats = statSync(repoPath)
+          if (!stats.isDirectory()) return null
+          if (!existsSync(join(repoPath, '.git'))) return null
+
+          const gitRepoUrl = readGitRemoteUrl(repoPath)
+          const inferredSlug = slugifyName(
+            gitRepoUrl?.split('/').pop() ?? entry,
+          )
+
+          return {
+            slug: inferredSlug || slugifyName(entry),
+            name: humanizeSlug(inferredSlug || entry),
+            path: repoPath.replace(/\\/g, '/'),
+            gitRepoUrl,
+          }
+        } catch {
+          return null
+        }
+      })
+      .filter((entry): entry is { slug: string; name: string; path: string; gitRepoUrl: string | null } => Boolean(entry))
+  } catch {
+    return []
+  }
+}
+
+function getKnowledgeStatsForProject(project: Pick<ProjectResourceRecord, 'id' | 'slug'>): ProjectKnowledgeStats {
+  try {
+    const row = db.prepare(
+      `SELECT COUNT(*) as docs, COALESCE(SUM(chunk_count), 0) as chunks
+       FROM knowledge_documents
+       WHERE status = 'active' AND (project_id = ? OR project_id = ?)`
+    ).get(project.id, project.slug) as { docs: number; chunks: number } | undefined
+
+    return {
+      docs: row?.docs ?? 0,
+      chunks: row?.chunks ?? 0,
+    }
+  } catch {
+    return { docs: 0, chunks: 0 }
+  }
+}
+
+async function listDiscoveryCandidates(): Promise<DiscoveryCandidate[]> {
+  const projects = db.prepare(
+    'SELECT id, slug, git_repo_url FROM projects'
+  ).all() as Array<Pick<ProjectResourceRecord, 'id' | 'slug' | 'git_repo_url'>>
+
+  const bySlug = new Map<string, DiscoveryCandidate>()
+  const upsert = (
+    key: string,
+    patch: Partial<DiscoveryCandidate> & Pick<DiscoveryCandidate, 'slug' | 'name'>,
+  ) => {
+    const existing = bySlug.get(key)
+    const next: DiscoveryCandidate = existing ?? {
+      key,
+      slug: patch.slug,
+      name: patch.name,
+      sourceKinds: [],
+      repoName: null,
+      gitRepoUrl: null,
+      repoPath: null,
+      knowledge: null,
+      gitnexus: null,
+    }
+
+    if (patch.repoName) next.repoName = patch.repoName
+    if (patch.gitRepoUrl) next.gitRepoUrl = patch.gitRepoUrl
+    if (patch.repoPath) next.repoPath = patch.repoPath
+    if (patch.knowledge) next.knowledge = patch.knowledge
+    if (patch.gitnexus) next.gitnexus = patch.gitnexus
+    if (patch.sourceKinds) {
+      next.sourceKinds = Array.from(new Set([...next.sourceKinds, ...patch.sourceKinds]))
+    }
+
+    bySlug.set(key, next)
+  }
+
+  const gitnexusRepos = await listGitNexusRepos()
+  for (const repo of gitnexusRepos) {
+    const gitRepoUrl = readGitRemoteUrl(repo.path)
+    const slug = slugifyName(gitRepoUrl?.split('/').pop() ?? repo.name)
+    if (!slug) continue
+
+    const linked = findProjectByDiscoveryCandidate(projects, {
+      slug,
+      gitRepoUrl,
+      repoName: repo.name,
+    })
+    if (linked) continue
+
+    upsert(slug, {
+      slug,
+      name: humanizeSlug(slug),
+      sourceKinds: ['gitnexus'],
+      repoName: repo.name,
+      gitRepoUrl,
+      repoPath: repo.path,
+      gitnexus: repo,
+    })
+  }
+
+  for (const repo of listLocalRepoDirectories()) {
+    const linked = findProjectByDiscoveryCandidate(projects, {
+      slug: repo.slug,
+      gitRepoUrl: repo.gitRepoUrl,
+      repoName: repo.name,
+    })
+    if (linked) continue
+
+    upsert(repo.slug, {
+      slug: repo.slug,
+      name: repo.name,
+      sourceKinds: ['local_repo'],
+      gitRepoUrl: repo.gitRepoUrl,
+      repoPath: repo.path,
+    })
+  }
+
+  try {
+    const knowledgeRows = db.prepare(
+      `SELECT project_id, COUNT(*) as docs, COALESCE(SUM(chunk_count), 0) as chunks
+       FROM knowledge_documents
+       WHERE status = 'active' AND project_id IS NOT NULL AND project_id != ''
+       GROUP BY project_id`
+    ).all() as Array<{ project_id: string; docs: number; chunks: number }>
+
+    for (const row of knowledgeRows) {
+      const slug = slugifyName(row.project_id)
+      if (!slug) continue
+
+      const linked = findProjectByDiscoveryCandidate(projects, {
+        slug: row.project_id,
+        repoName: row.project_id,
+      })
+      if (linked) continue
+
+      upsert(slug, {
+        slug,
+        name: humanizeSlug(slug),
+        sourceKinds: ['knowledge'],
+        knowledge: {
+          docs: row.docs,
+          chunks: row.chunks,
+        },
+      })
+    }
+  } catch {
+    // knowledge tables may not exist on every install yet
+  }
+
+  return [...bySlug.values()].sort((a, b) => {
+    const score = (candidate: DiscoveryCandidate) =>
+      (candidate.gitnexus ? 100 : 0) +
+      (candidate.knowledge?.docs ?? 0) * 10 +
+      (candidate.sourceKinds.includes('local_repo') ? 5 : 0)
+
+    return score(b) - score(a) || a.name.localeCompare(b.name)
+  })
+}
+
+function ensureDefaultOrganizationId(): string {
+  const existing = db.prepare(
+    "SELECT id FROM organizations WHERE slug = 'personal' OR id = 'org-default' ORDER BY created_at ASC LIMIT 1"
+  ).get() as { id: string } | undefined
+
+  if (existing?.id) return existing.id
+
+  const orgId = 'org-default'
+  db.prepare(
+    'INSERT INTO organizations (id, name, slug, description) VALUES (?, ?, ?, ?)'
+  ).run(orgId, 'Personal', 'personal', 'Default personal organization')
+
+  return orgId
+}
+
 async function callGitNexusStrictWithFallback(
   tool: string,
   params: Record<string, unknown>,
@@ -370,6 +732,14 @@ function parseCypherRows(result: unknown): Array<Record<string, string | number 
     throw new Error(raw.replace(/^Error:\s*/, ''))
   }
 
+  const markdown = extractGitNexusMarkdown(raw)
+  if (markdown) {
+    const markdownRows = parseMarkdownTableRows(markdown)
+    if (markdownRows.length > 0) {
+      return markdownRows
+    }
+  }
+
   return raw
     .split('\n')
     .map((line) => line.trim())
@@ -386,7 +756,7 @@ function parseCypherRows(result: unknown): Array<Record<string, string | number 
         const rawValue = part.slice(separatorIndex + 2).trim()
         if (!key) continue
 
-        row[key] = parseNumberLike(rawValue) ?? normalizeStringValue(rawValue)
+        row[key] = parseScalarValue(rawValue)
       }
 
       return row
@@ -523,6 +893,7 @@ function buildProjectResourceSummary(context: ResourceContext) {
     context.latestJob,
     context.gitnexusRepo,
   )
+  const knowledge = getKnowledgeStatsForProject(context.project)
 
   return {
     projectId: context.project.id,
@@ -540,6 +911,7 @@ function buildProjectResourceSummary(context: ResourceContext) {
     branch: context.branch,
     indexedAt: preferredIndexed.indexedAt,
     symbols: context.project.indexed_symbols ?? context.gitnexusRepo?.stats.symbols ?? null,
+    knowledge,
     staleness: context.staleness,
     gitnexus: context.gitnexusRepo
       ? {
@@ -1032,6 +1404,90 @@ intelRouter.get('/resources/projects', async (c) => {
     })
   } catch (error) {
     logger.error(`Project resources failed: ${String(error)}`)
+    return c.json({ success: false, error: String(error) }, 500)
+  }
+})
+
+// ── Resource: discovery candidates not yet linked as Cortex projects ──
+intelRouter.get('/resources/discovery', async (c) => {
+  try {
+    const candidates = await listDiscoveryCandidates()
+
+    return c.json({
+      success: true,
+      data: {
+        uri: 'cortex://projects/discovery',
+        total: candidates.length,
+        candidates,
+      },
+    })
+  } catch (error) {
+    logger.error(`Project discovery resource failed: ${String(error)}`)
+    return c.json({ success: false, error: String(error) }, 500)
+  }
+})
+
+// ── Action: promote a discovered repo/knowledge space into a Cortex project ──
+intelRouter.post('/resources/discovery/link', async (c) => {
+  try {
+    const body = await c.req.json() as {
+      slug?: string
+      name?: string
+      gitRepoUrl?: string
+      repoPath?: string
+    }
+
+    const slug = slugifyName(body.slug ?? body.name ?? '')
+    if (!slug) {
+      return c.json({ success: false, error: 'slug or name is required' }, 400)
+    }
+
+    const existing = db.prepare(
+      `SELECT id, slug, name, git_repo_url
+       FROM projects
+       WHERE slug = ? OR git_repo_url = ? OR REPLACE(git_repo_url, '.git', '') = ? 
+       LIMIT 1`
+    ).get(
+      slug,
+      body.gitRepoUrl ?? null,
+      body.gitRepoUrl ? body.gitRepoUrl.replace(/\.git$/, '').replace(/\/$/, '') : null,
+    ) as { id: string; slug: string; name: string; git_repo_url: string | null } | undefined
+
+    if (existing) {
+      return c.json({
+        success: true,
+        created: false,
+        project: existing,
+      })
+    }
+
+    const orgId = ensureDefaultOrganizationId()
+    const projectId = `proj-${randomUUID().slice(0, 8)}`
+    const name = (body.name?.trim() || humanizeSlug(slug)).slice(0, 120)
+
+    db.prepare(
+      `INSERT INTO projects (id, org_id, name, slug, description, git_repo_url)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(
+      projectId,
+      orgId,
+      name,
+      slug,
+      `Discovered from ${body.gitRepoUrl ? 'repository context' : 'knowledge/project metadata'}`,
+      body.gitRepoUrl ?? null,
+    )
+
+    const created = db.prepare(
+      'SELECT id, slug, name, git_repo_url FROM projects WHERE id = ?'
+    ).get(projectId)
+
+    return c.json({
+      success: true,
+      created: true,
+      project: created,
+    }, 201)
+  } catch (error) {
+    logger.error(`Project discovery link failed: ${String(error)}`)
     return c.json({ success: false, error: String(error) }, 500)
   }
 })

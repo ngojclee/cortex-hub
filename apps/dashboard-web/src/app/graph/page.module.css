@@ -105,6 +105,90 @@
   color: var(--text-secondary);
 }
 
+.discoverySection {
+  margin-bottom: var(--space-6);
+}
+
+.sectionHeader {
+  margin-bottom: var(--space-4);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.sectionText {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.discoveryGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.discoveryCard {
+  padding: var(--space-5);
+  background:
+    radial-gradient(circle at top right, rgba(14, 165, 233, 0.12), transparent 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 100%),
+    var(--bg-secondary);
+}
+
+.discoveryHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.discoveryTitle {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.discoverySlug {
+  margin: 6px 0 0;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.discoveryTags {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+
+.discoveryTag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(124, 58, 237, 0.14);
+  border: 1px solid rgba(124, 58, 237, 0.22);
+  color: #e9d5ff;
+  font-size: 0.75rem;
+}
+
+.discoveryMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+}
+
 .statsGrid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -199,6 +283,10 @@
   stroke-width: 1.5;
 }
 
+.graphEdge {
+  opacity: 0.92;
+}
+
 .graphNode {
   stroke: rgba(255, 255, 255, 0.08);
   stroke-width: 1;
@@ -233,6 +321,11 @@
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+}
+
+.graphCoreSmall {
+  fill: rgba(226, 232, 240, 0.82);
+  font-size: 12px;
 }
 
 .columns {
@@ -300,12 +393,14 @@
     grid-template-columns: 1fr;
   }
 
+  .discoveryGrid,
   .statsGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 760px) {
+  .discoveryGrid,
   .statsGrid,
   .columns {
     grid-template-columns: 1fr;
@@ -324,6 +419,10 @@
 
   .selectorMeta {
     align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .discoveryHead {
     flex-direction: column;
   }
 }

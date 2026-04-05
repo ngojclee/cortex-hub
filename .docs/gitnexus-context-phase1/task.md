@@ -72,6 +72,8 @@
 - [ ] Re-evaluate the need for a visual graph explorer after process and cluster quality improves
 - [x] If still needed, scope a lightweight graph/process explorer instead of a generic graph canvas
 - [x] Refresh reused sessions so `mode` and session context update when `cortex_session_start` is called again
+- [x] Add discovery surfacing for unlinked repos and knowledge-only project spaces so operators can promote them into real Cortex projects
+- [x] Make the lightweight graph layout survive more branches than the original 4-node-per-side mockup
 - [ ] Keep `cortex_code_rename` deferred until the resource and process contracts are stable
 
 ## Verification Notes
@@ -111,3 +113,7 @@
 - [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-api typecheck` after refreshing reused session `mode/context`
 - [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-web typecheck` after adding the lightweight `/graph` explorer and Sessions mode badges
 - [x] 2026-04-05: local `pnpm --filter @cortex/hub-mcp typecheck` after widening `cortex_session_start` session-mode guidance to include `production`
+- [x] 2026-04-05: live `POST /api/sessions/start` now refreshes the reused session to `mode=production` and updates `task_summary/context`
+- [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-api typecheck` after teaching intel Cypher parsing to read GitNexus markdown-table responses
+- [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-api typecheck` after adding project discovery resources and project-link promotion for orphan repos/knowledge spaces
+- [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-web typecheck` after upgrading `/graph` with discovery cards, knowledge-aware stats, and orbit layout

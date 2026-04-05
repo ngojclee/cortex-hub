@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import useSWR from 'swr'
 import {
@@ -8,7 +8,10 @@ import {
   getIntelProjectContext,
   getIntelProjectClusters,
   getIntelProjectProcesses,
+  getIntelProjectDiscovery,
+  linkDiscoveredProject,
   type IntelClusterResource,
+  type IntelDiscoveryCandidate,
   type IntelProcessResource,
 } from '@/lib/api'
 import styles from './page.module.css'
@@ -27,6 +30,10 @@ function statusTone(status: string | undefined): 'healthy' | 'warning' | 'error'
 function statusLabel(status: string | undefined): string {
   if (!status) return 'unknown'
   return status.replaceAll('_', ' ')
+}
+
+function truncateLabel(value: string, max = 28): string {
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value
 }
 
 function StatCard({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
@@ -69,32 +76,114 @@ function ColumnList({
   )
 }
 
+type OrbitNode = {
+  id: string
+  title: string
+  meta: string
+  x: number
+  y: number
+  variant: 'cluster' | 'process' | 'summary' | 'knowledge'
+}
+
+function buildOrbitNodes(
+  items: Array<{ id: string; title: string; meta: string }>,
+  side: 'left' | 'right',
+  center: { x: number; y: number },
+  limit: number,
+): OrbitNode[] {
+  const visible = items.slice(0, limit)
+  const remaining = items.length - visible.length
+  const start = side === 'left' ? 225 : -45
+  const end = side === 'left' ? 135 : 45
+  const count = visible.length + (remaining > 0 ? 1 : 0)
+  const step = count <= 1 ? 0 : (end - start) / (count - 1)
+
+  const positioned: OrbitNode[] = visible.map((item, index) => {
+    const angle = ((start + step * index) * Math.PI) / 180
+    const radiusX = 315
+    const radiusY = 170
+
+    return {
+      id: item.id,
+      title: truncateLabel(item.title),
+      meta: item.meta,
+      x: center.x + Math.cos(angle) * radiusX,
+      y: center.y + Math.sin(angle) * radiusY,
+      variant: side === 'left' ? 'cluster' : 'process',
+    }
+  })
+
+  if (remaining > 0) {
+    const angle = ((start + step * (count - 1)) * Math.PI) / 180
+    positioned.push({
+      id: `${side}-overflow`,
+      title: `+${remaining} more`,
+      meta: side === 'left' ? 'additional clusters' : 'additional processes',
+      x: center.x + Math.cos(angle) * 315,
+      y: center.y + Math.sin(angle) * 170,
+      variant: 'summary',
+    })
+  }
+
+  return positioned
+}
+
+function linkPath(from: { x: number; y: number }, to: { x: number; y: number }): string {
+  const midX = (from.x + to.x) / 2
+  return `M ${from.x} ${from.y} C ${midX} ${from.y}, ${midX} ${to.y}, ${to.x} ${to.y}`
+}
+
 function GraphCanvas({
   projectName,
   clusters,
   processes,
+  knowledgeDocs,
+  knowledgeChunks,
 }: {
   projectName: string
   clusters: IntelClusterResource[]
   processes: IntelProcessResource[]
+  knowledgeDocs: number
+  knowledgeChunks: number
 }) {
-  const clusterNodes = clusters.slice(0, 4)
-  const processNodes = processes.slice(0, 4)
-  const width = 960
-  const height = 420
-  const center = { x: 480, y: 210 }
+  const width = 1080
+  const height = 700
+  const center = { x: 540, y: 320 }
 
-  const clusterPoints = clusterNodes.map((cluster, index) => ({
-    ...cluster,
-    x: 210,
-    y: 90 + index * 88,
-  }))
+  const clusterNodes = buildOrbitNodes(
+    clusters.map((cluster, index) => ({
+      id: cluster.id ?? `cluster-${index}`,
+      title: cluster.name,
+      meta: `${cluster.symbols} symbols`,
+    })),
+    'left',
+    center,
+    6,
+  )
 
-  const processPoints = processNodes.map((process, index) => ({
-    ...process,
-    x: 750,
-    y: 90 + index * 88,
-  }))
+  const processNodes = buildOrbitNodes(
+    processes.map((process, index) => ({
+      id: process.id ?? `process-${index}`,
+      title: process.name,
+      meta: `${process.steps} steps${process.type ? ` · ${process.type}` : ''}`,
+    })),
+    'right',
+    center,
+    6,
+  )
+
+  const knowledgeNode: OrbitNode | null = knowledgeDocs > 0 || knowledgeChunks > 0
+    ? {
+        id: 'knowledge-node',
+        title: 'Knowledge Base',
+        meta: `${knowledgeDocs} docs · ${knowledgeChunks} chunks`,
+        x: center.x,
+        y: 585,
+        variant: 'knowledge',
+      }
+    : null
+
+  const nodes = [...clusterNodes, ...processNodes, ...(knowledgeNode ? [knowledgeNode] : [])]
 
   return (
     <div className={`card ${styles.graphCard}`}>
@@ -102,7 +191,7 @@ function GraphCanvas({
         <div>
           <h3 className={styles.cardTitle}>Context Graph</h3>
           <p className={styles.cardSub}>
-            Lightweight explorer built from Cortex resources. This is an architecture map, not a full raw call graph.
+            The graph now scales as a hub with orbiting branches, so it can survive more clusters and processes without becoming a four-box mockup.
           </p>
         </div>
       </div>
@@ -111,73 +200,111 @@ function GraphCanvas({
         <svg viewBox={`0 0 ${width} ${height}`} className={styles.graphSvg} role="img" aria-label="Project graph overview">
           <defs>
             <linearGradient id="graphLine" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="rgba(110, 168, 254, 0.18)" />
-              <stop offset="100%" stopColor="rgba(192, 132, 252, 0.42)" />
+              <stop offset="0%" stopColor="rgba(96, 165, 250, 0.18)" />
+              <stop offset="100%" stopColor="rgba(192, 132, 252, 0.52)" />
             </linearGradient>
+            <radialGradient id="graphGlow" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor="rgba(124, 58, 237, 0.22)" />
+              <stop offset="100%" stopColor="rgba(17, 24, 39, 0)" />
+            </radialGradient>
             <linearGradient id="clusterNode" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#16355f" />
-              <stop offset="100%" stopColor="#24538b" />
+              <stop offset="0%" stopColor="#102f58" />
+              <stop offset="100%" stopColor="#2563eb" />
+            </linearGradient>
+            <linearGradient id="processNode" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#163b29" />
+              <stop offset="100%" stopColor="#22c55e" />
+            </linearGradient>
+            <linearGradient id="summaryNode" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#3b305f" />
+              <stop offset="100%" stopColor="#7c3aed" />
+            </linearGradient>
+            <linearGradient id="knowledgeNode" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#5b3413" />
+              <stop offset="100%" stopColor="#f59e0b" />
             </linearGradient>
             <linearGradient id="projectNode" x1="0%" y1="0%" x2="100%" y2="100%">
               <stop offset="0%" stopColor="#24103d" />
               <stop offset="100%" stopColor="#5d2f8e" />
             </linearGradient>
-            <linearGradient id="processNode" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#1c3f2d" />
-              <stop offset="100%" stopColor="#2f7d57" />
-            </linearGradient>
           </defs>
 
-          <rect x="12" y="12" width={width - 24} height={height - 24} rx="28" className={styles.graphFrame} />
+          <rect x="14" y="14" width={width - 28} height={height - 28} rx="34" className={styles.graphFrame} />
+          <circle cx={center.x} cy={center.y} r="250" fill="url(#graphGlow)" />
 
-          {clusterPoints.map((cluster) => (
-            <line
-              key={`line-cluster-${cluster.name}`}
-              x1={cluster.x + 110}
-              y1={cluster.y + 26}
-              x2={center.x - 88}
-              y2={center.y}
+          {nodes.map((node) => (
+            <path
+              key={`edge-${node.id}`}
+              d={linkPath(center, node)}
               stroke="url(#graphLine)"
-              strokeWidth="2"
-              strokeDasharray="6 8"
+              strokeWidth="2.2"
+              strokeDasharray={node.variant === 'knowledge' ? '0' : '6 8'}
+              fill="none"
+              className={styles.graphEdge}
             />
           ))}
 
-          {processPoints.map((process) => (
-            <line
-              key={`line-process-${process.name}`}
-              x1={center.x + 88}
-              y1={center.y}
-              x2={process.x}
-              y2={process.y + 26}
-              stroke="url(#graphLine)"
-              strokeWidth="2"
-              strokeDasharray="6 8"
-            />
-          ))}
-
-          {clusterPoints.map((cluster) => (
-            <g key={`cluster-${cluster.name}`} transform={`translate(${cluster.x}, ${cluster.y})`}>
-              <rect width="220" height="54" rx="18" fill="url(#clusterNode)" className={styles.graphNode} />
-              <text x="18" y="24" className={styles.graphNodeTitle}>{cluster.name}</text>
-              <text x="18" y="40" className={styles.graphNodeMeta}>{cluster.symbols} symbols</text>
-            </g>
-          ))}
-
-          <g transform={`translate(${center.x - 90}, ${center.y - 42})`}>
-            <rect width="180" height="84" rx="24" fill="url(#projectNode)" className={styles.graphCore} />
-            <text x="24" y="35" className={styles.graphCoreTitle}>{projectName}</text>
-            <text x="24" y="58" className={styles.graphCoreMeta}>project context</text>
+          <g transform={`translate(${center.x - 118}, ${center.y - 58})`}>
+            <rect width="236" height="116" rx="28" fill="url(#projectNode)" className={styles.graphCore} />
+            <text x="28" y="45" className={styles.graphCoreTitle}>{truncateLabel(projectName, 22)}</text>
+            <text x="28" y="72" className={styles.graphCoreMeta}>project context</text>
+            <text x="28" y="92" className={styles.graphCoreSmall}>
+              {clusters.length} clusters · {processes.length} processes
+            </text>
           </g>
 
-          {processPoints.map((process) => (
-            <g key={`process-${process.name}`} transform={`translate(${process.x - 220}, ${process.y})`}>
-              <rect width="220" height="54" rx="18" fill="url(#processNode)" className={styles.graphNode} />
-              <text x="18" y="24" className={styles.graphNodeTitle}>{process.name}</text>
-              <text x="18" y="40" className={styles.graphNodeMeta}>{process.steps} steps</text>
-            </g>
-          ))}
+          {nodes.map((node) => {
+            const fill = node.variant === 'cluster'
+              ? 'url(#clusterNode)'
+              : node.variant === 'process'
+                ? 'url(#processNode)'
+                : node.variant === 'knowledge'
+                  ? 'url(#knowledgeNode)'
+                  : 'url(#summaryNode)'
+
+            return (
+              <g key={node.id} transform={`translate(${node.x - 112}, ${node.y - 30})`}>
+                <rect width="224" height="60" rx="20" fill={fill} className={styles.graphNode} />
+                <text x="18" y="25" className={styles.graphNodeTitle}>{node.title}</text>
+                <text x="18" y="44" className={styles.graphNodeMeta}>{node.meta}</text>
+              </g>
+            )
+          })}
         </svg>
+      </div>
+    </div>
+  )
+}
+
+function DiscoveryCard({
+  candidate,
+  onLink,
+  linking,
+}: {
+  candidate: IntelDiscoveryCandidate
+  onLink: (candidate: IntelDiscoveryCandidate) => void
+  linking: boolean
+}) {
+  return (
+    <div className={`card ${styles.discoveryCard}`}>
+      <div className={styles.discoveryHead}>
+        <div>
+          <h3 className={styles.discoveryTitle}>{candidate.name}</h3>
+          <p className={styles.discoverySlug}>{candidate.slug}</p>
+        </div>
+        <button className="btn btn-secondary btn-sm" onClick={() => onLink(candidate)} disabled={linking}>
+          {linking ? 'Linking…' : 'Link Project'}
+        </button>
+      </div>
+      <div className={styles.discoveryTags}>
+        {candidate.sourceKinds.map((source) => (
+          <span key={source} className={styles.discoveryTag}>{source.replaceAll('_', ' ')}</span>
+        ))}
+      </div>
+      <div className={styles.discoveryMeta}>
+        {candidate.gitRepoUrl && <span>repo: {candidate.gitRepoUrl}</span>}
+        {candidate.gitnexus && <span>{candidate.gitnexus.stats.symbols ?? 0} symbols</span>}
+        {candidate.knowledge && <span>{candidate.knowledge.docs} knowledge docs</span>}
       </div>
     </div>
   )
@@ -185,12 +312,22 @@ function GraphCanvas({
 
 export default function GraphPage() {
   const [projectId, setProjectId] = useState('')
+  const [linkingKey, setLinkingKey] = useState<string | null>(null)
+  const [isPending, startTransition] = useTransition()
 
-  const { data: projectsData, error: projectsError } = useSWR('intel-projects-resource', getIntelProjectsResource, {
-    refreshInterval: 30000,
-  })
+  const { data: projectsData, error: projectsError, mutate: mutateProjects } = useSWR(
+    'intel-projects-resource',
+    getIntelProjectsResource,
+    { refreshInterval: 30000 },
+  )
+  const { data: discoveryData, mutate: mutateDiscovery } = useSWR(
+    'intel-project-discovery',
+    getIntelProjectDiscovery,
+    { refreshInterval: 30000 },
+  )
 
   const projects = projectsData?.data.items ?? []
+  const discoveryCandidates = discoveryData?.data.candidates ?? []
 
   useEffect(() => {
     if (!projectId && projects.length > 0) {
@@ -211,13 +348,13 @@ export default function GraphPage() {
 
   const { data: clustersData } = useSWR(
     projectId ? ['intel-project-clusters', projectId] : null,
-    () => getIntelProjectClusters(projectId, 8),
+    () => getIntelProjectClusters(projectId, 12),
     { refreshInterval: 30000 },
   )
 
   const { data: processesData } = useSWR(
     projectId ? ['intel-project-processes', projectId] : null,
-    () => getIntelProjectProcesses(projectId, 8),
+    () => getIntelProjectProcesses(projectId, 12),
     { refreshInterval: 30000 },
   )
 
@@ -226,14 +363,35 @@ export default function GraphPage() {
   const processes = processesData?.data.processes ?? []
   const freshnessTone = statusTone(context?.project.staleness.status)
 
+  function handleLinkCandidate(candidate: IntelDiscoveryCandidate) {
+    setLinkingKey(candidate.key)
+    startTransition(async () => {
+      try {
+        const result = await linkDiscoveredProject({
+          slug: candidate.slug,
+          name: candidate.name,
+          gitRepoUrl: candidate.gitRepoUrl,
+          repoPath: candidate.repoPath,
+        })
+
+        await Promise.all([mutateProjects(), mutateDiscovery()])
+        if (result.project?.id) {
+          setProjectId(result.project.id)
+        }
+      } finally {
+        setLinkingKey(null)
+      }
+    })
+  }
+
   return (
     <DashboardLayout title="Graph" subtitle="Project architecture explorer built from Cortex intel resources">
       <div className={styles.hero}>
         <div className={styles.heroIntro}>
           <span className={styles.kicker}>Graph Explorer</span>
-          <h2 className={styles.heroTitle}>Inspect how a project is indexed without dropping into raw Cypher.</h2>
+          <h2 className={styles.heroTitle}>Link orphan repos, surface knowledge-aware projects, and inspect architecture without raw Cypher.</h2>
           <p className={styles.heroText}>
-            Pick a linked project to inspect freshness, top clusters, and top processes. This page stays lightweight on purpose so operators can sanity-check architecture quickly.
+            Cortex now needs to do more than show already-linked projects. This view is meant to expose missing project candidates and give you a graph that still reads when branches grow.
           </p>
         </div>
 
@@ -264,13 +422,34 @@ export default function GraphPage() {
         </div>
       </div>
 
+      {discoveryCandidates.length > 0 && (
+        <div className={styles.discoverySection}>
+          <div className={styles.sectionHeader}>
+            <h2 className={styles.sectionTitle}>Unlinked Project Candidates</h2>
+            <p className={styles.sectionText}>
+              Repos or knowledge spaces exist, but Cortex has not promoted them into first-class projects yet.
+            </p>
+          </div>
+          <div className={styles.discoveryGrid}>
+            {discoveryCandidates.map((candidate) => (
+              <DiscoveryCard
+                key={candidate.key}
+                candidate={candidate}
+                onLink={handleLinkCandidate}
+                linking={linkingKey === candidate.key || isPending}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
       {projectsError && (
         <div className={styles.errorBanner}>Failed to load linked projects.</div>
       )}
 
       {!projectsError && projects.length === 0 && (
         <div className={`card ${styles.emptyState}`}>
-          No linked projects yet. Create or link a project first so Cortex can expose graph resources.
+          No linked projects yet. Use the discovery cards above to promote repos or knowledge spaces into first-class Cortex projects.
         </div>
       )}
 
@@ -284,13 +463,15 @@ export default function GraphPage() {
             <StatCard label="Indexed At" value={formatIndexedAt(context.project.indexedAt)} hint={context.project.staleness.basedOn} />
             <StatCard label="Symbols" value={context.stats.symbols ?? 0} hint={`GitNexus: ${context.project.gitnexus.stats.symbols ?? 0}`} />
             <StatCard label="Relationships" value={context.stats.relationships ?? 0} hint="graph edges" />
-            <StatCard label="Processes" value={context.stats.processes ?? 0} hint={`visible: ${processes.length}`} />
+            <StatCard label="Knowledge" value={context.project.knowledge.docs} hint={`${context.project.knowledge.chunks} chunks`} />
           </div>
 
           <GraphCanvas
             projectName={selectedProject.name}
             clusters={clusters}
             processes={processes}
+            knowledgeDocs={context.project.knowledge.docs}
+            knowledgeChunks={context.project.knowledge.chunks}
           />
 
           <div className={styles.columns}>

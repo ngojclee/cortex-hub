@@ -74,6 +74,9 @@ services:
     image: ghcr.io/ngojclee/cortex-gitnexus:latest
     container_name: cortex-gitnexus
     restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     ports:
       - "4848:4848"
     volumes:
@@ -105,6 +108,9 @@ services:
     image: ghcr.io/ngojclee/cortex-api:latest
     container_name: cortex-api
     restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     ports:
       - "4000:4000"
       - "3000:4000" # Backward compatibility for dashboard port

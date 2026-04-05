@@ -27,12 +27,12 @@
 - [x] Add read-only tool shims only if MCP resource support is blocked (`not needed`; native resources compiled successfully)
 
 ### Release Gate Before Phase 3
-- [ ] Commit and push the local `Memories` UI/data-shape fix so the dashboard renders stored memory content clearly
-- [ ] Rebuild and redeploy `cortex-api` so the new `Memories` page and `mem9` filter compatibility are live
-- [ ] Commit and push the local GitNexus resource-layer changes in `dashboard-api` and `hub-mcp`
-- [ ] Rebuild and redeploy `cortex-mcp` so the new `cortex://project/...` resources are available to clients
+- [x] Commit and push the local `Memories` UI/data-shape fix so the dashboard renders stored memory content clearly
+- [x] Rebuild and redeploy `cortex-api` so the new `Memories` page and `mem9` filter compatibility are live
+- [x] Commit and push the local GitNexus resource-layer changes in `dashboard-api` and `hub-mcp`
+- [x] Rebuild and redeploy `cortex-mcp` so the new `cortex://project/...` resources are available to clients
 - [ ] Smoke-test MCP resources from a real client session before starting prompt/session enrichment work
-- [ ] Keep the in-progress `docs/ -> .docs/` migration out of the release commit unless it is intentionally finalized in the same checkpoint
+- [x] Keep the in-progress `docs/ -> .docs/` migration out of the release commit unless it is intentionally finalized in the same checkpoint
 
 ### Phase 3: Prompt & Session Enrichment
 - [x] Add a `cortex_detect_impact` prompt wrapper
@@ -62,3 +62,5 @@
 - [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-api typecheck` after shared cross-app metadata contract
 - [x] 2026-04-05: local `pnpm --filter @cortex/hub-mcp typecheck` after shared cross-app metadata contract
 - [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-web typecheck` after shared metadata API type updates
+- [x] 2026-04-05: `http://10.21.1.108:4000/health` reports version `0.4.1`, commit `fabbf01`, and all core services `ok`
+- [x] 2026-04-05: deployed `http://10.21.1.108:4000/api/intel/resources/projects` returns `success=true` with `total=0` on the current clean instance

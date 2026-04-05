@@ -9,7 +9,7 @@
  * to ensure freshness.
  */
 
-import { readdirSync, readFileSync, statSync } from 'fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'fs'
 import { join, extname, relative, basename } from 'path'
 import { randomUUID } from 'crypto'
 import { Embedder, VectorStore } from '@cortex/shared-mem9'
@@ -87,6 +87,7 @@ function extractTitle(content: string, filePath: string): string {
  */
 function collectDocFiles(dir: string): Array<{ path: string; relativePath: string }> {
   const files: Array<{ path: string; relativePath: string }> = []
+  const hasPreferredDocsDir = existsSync(join(dir, '.docs'))
 
   function walk(currentDir: string) {
     let entries: string[]
@@ -98,7 +99,17 @@ function collectDocFiles(dir: string): Array<{ path: string; relativePath: strin
 
     for (const entry of entries) {
       const lowerEntry = entry.toLowerCase()
-      if (SKIP_DIRS.has(lowerEntry) || entry.startsWith('.')) continue
+      const isPreferredRootDocsDir = currentDir === dir && entry === '.docs'
+
+      if (SKIP_DIRS.has(lowerEntry)) continue
+
+      // Prefer the modern `.docs/` root and skip the legacy `docs/` root
+      // when both are present to avoid duplicate knowledge ingestion.
+      if (currentDir === dir && hasPreferredDocsDir && entry === 'docs') continue
+
+      // Hidden directories are usually ignored, but `.docs/` is a first-class
+      // documentation root and must be indexed for knowledge building.
+      if (entry.startsWith('.') && !isPreferredRootDocsDir) continue
 
       const fullPath = join(currentDir, entry)
       let stat

@@ -267,7 +267,14 @@ mem9ProxyRouter.get('/list', async (c) => {
     const projectId = c.req.query('projectId')
     const limit = Number(c.req.query('limit') || 50)
 
-    const filter = projectId ? { must: [{ key: 'project_id', match: { value: projectId } }] } : {}
+    const filter = projectId
+      ? {
+          should: [
+            { key: 'project_id', match: { value: projectId } },
+            { key: 'metadata.project_id', match: { value: projectId } },
+          ],
+        }
+      : {}
 
     const config = getMem9Config()
     const { VectorStore } = await import('@cortex/shared-mem9')

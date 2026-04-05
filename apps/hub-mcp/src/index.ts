@@ -5,6 +5,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 
 import { registerCodeTools } from './tools/code.js'
+import { registerCodeResources } from './resources/code.js'
 import { registerHealthTools } from './tools/health.js'
 import { registerIndexingTools } from './tools/indexing.js'
 import { registerKnowledgeTools } from './tools/knowledge.js'
@@ -122,6 +123,15 @@ app.get('/', (c) => {
       'cortex_plan_quality',
       'cortex_tool_stats',
     ],
+    resources: [
+      'cortex://projects',
+      'cortex://project/{projectId}/context',
+      'cortex://project/{projectId}/clusters',
+      'cortex://project/{projectId}/cluster/{clusterName}',
+      'cortex://project/{projectId}/processes',
+      'cortex://project/{projectId}/process/{processName}',
+      'cortex://project/{projectId}/schema',
+    ],
   })
 })
 
@@ -131,6 +141,7 @@ function createMcpServer(env: Env) {
     name: env.MCP_SERVER_NAME ?? 'cortex-hub',
     version: env.MCP_SERVER_VERSION ?? '0.1.0',
   })
+  registerCodeResources(server, env)
   registerHealthTools(server, env)
   registerMemoryTools(server, env)
   registerKnowledgeTools(server, env)

@@ -6,25 +6,33 @@
 - [x] Bump `version.json` for the `/memories` patch release
 - [x] Commit the `/memories` hotfix plus the new planning docs
 - [x] Push the checkpoint to GitHub
-- [ ] Build and push the refreshed `cortex-api` image
-- [ ] Redeploy or wait for Watchtower, then verify `/memories`
+- [x] Build and push the refreshed `cortex-api` image
+- [x] Redeploy or wait for Watchtower, then verify `/memories`
 
 ### Phase 1: Dashboard API Resource Layer
-- [ ] Audit which GitNexus resource endpoints are available from the installed GitNexus build
-- [ ] Add normalized Dashboard API endpoints for project context, clusters, processes, process detail, and schema
-- [ ] Reuse `projectId` to repo-candidate resolution for all new read-only routes
-- [ ] Enrich responses with Cortex project metadata and index freshness data
+- [x] Audit which GitNexus resource endpoints are available from the installed GitNexus build
+- [x] Add normalized Dashboard API endpoints for project context, clusters, processes, process detail, and schema
+- [x] Reuse `projectId` to repo-candidate resolution for all new read-only routes
+- [x] Enrich responses with Cortex project metadata and index freshness data
 
 ### Phase 2: MCP Resource Surface
-- [ ] Confirm the deployed MCP SDK/runtime supports first-class resources on the current transport
-- [ ] Register `cortex://projects`
-- [ ] Register `cortex://project/{projectId}/context`
-- [ ] Register `cortex://project/{projectId}/clusters`
-- [ ] Register `cortex://project/{projectId}/cluster/{clusterName}`
-- [ ] Register `cortex://project/{projectId}/processes`
-- [ ] Register `cortex://project/{projectId}/process/{processName}`
-- [ ] Register `cortex://project/{projectId}/schema`
-- [ ] Add read-only tool shims only if MCP resource support is blocked
+- [x] Confirm the current MCP SDK/runtime supports first-class resources on the current transport
+- [x] Register `cortex://projects`
+- [x] Register `cortex://project/{projectId}/context`
+- [x] Register `cortex://project/{projectId}/clusters`
+- [x] Register `cortex://project/{projectId}/cluster/{clusterName}`
+- [x] Register `cortex://project/{projectId}/processes`
+- [x] Register `cortex://project/{projectId}/process/{processName}`
+- [x] Register `cortex://project/{projectId}/schema`
+- [x] Add read-only tool shims only if MCP resource support is blocked (`not needed`; native resources compiled successfully)
+
+### Release Gate Before Phase 3
+- [ ] Commit and push the local `Memories` UI/data-shape fix so the dashboard renders stored memory content clearly
+- [ ] Rebuild and redeploy `cortex-api` so the new `Memories` page and `mem9` filter compatibility are live
+- [ ] Commit and push the local GitNexus resource-layer changes in `dashboard-api` and `hub-mcp`
+- [ ] Rebuild and redeploy `cortex-mcp` so the new `cortex://project/...` resources are available to clients
+- [ ] Smoke-test MCP resources from a real client session before starting prompt/session enrichment work
+- [ ] Keep the in-progress `docs/ -> .docs/` migration out of the release commit unless it is intentionally finalized in the same checkpoint
 
 ### Phase 3: Prompt & Session Enrichment
 - [ ] Add a `cortex_detect_impact` prompt wrapper
@@ -41,3 +49,11 @@
 - [ ] Design `cortex_code_rename` as preview-first, apply-second workflow
 - [ ] Decide whether a visual graph explorer is still needed after resources and prompts are live
 - [ ] If needed, scope a lightweight graph page around clusters and process traces instead of a full generic graph canvas
+
+## Verification Notes
+- [x] 2026-04-05: `http://10.21.1.108:4000/health` reports version `0.2.39`, commit `7fae1cf`, all core services `ok`
+- [x] 2026-04-05: `http://10.21.1.108:4000/api/mem9/list?limit=1` returns JSON successfully
+- [x] 2026-04-05: `pnpm --filter @cortex/dashboard-api typecheck`
+- [x] 2026-04-05: `pnpm --filter @cortex/hub-mcp typecheck`
+- [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-web typecheck` after `Memories` UI/data-shape fix
+- [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-api typecheck` after `mem9` project-filter compatibility update

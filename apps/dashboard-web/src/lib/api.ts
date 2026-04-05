@@ -795,13 +795,19 @@ export async function getKnowledgeTags() {
 export interface AgentMemory {
   id: string
   payload: {
-    content: string
-    messages: unknown[]
+    memory?: string
+    content?: string
+    messages?: unknown[]
     agentId?: string
+    agent_id?: string
     userId?: string
+    user_id?: string
     project_id?: string
     metadata?: Record<string, unknown>
-    createdAt: string
+    createdAt?: string
+    created_at?: string
+    updatedAt?: string
+    updated_at?: string
   }
 }
 

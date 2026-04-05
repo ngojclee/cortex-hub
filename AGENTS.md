@@ -211,9 +211,9 @@ Every code session MUST end with verification from `project-profile.json`:
 | **STATE.md** | `STATE.md` (read FIRST every session) |
 | **Project Profile** | `.cortex/project-profile.json` (verify commands) |
 | **Code Conventions** | `.cortex/code-conventions.md` |
-| MCP Tool Reference | `docs/api/hub-mcp-reference.md` |
-| Database ERD | `docs/database/erd.md` |
-| Agent Quality Strategy | `docs/architecture/agent-quality-strategy.md` |
+| MCP Tool Reference | `.docs/api/hub-mcp-reference.md` (fallback: `docs/api/hub-mcp-reference.md`) |
+| Database ERD | `.docs/database/erd.md` (fallback: `docs/database/erd.md`) |
+| Agent Quality Strategy | `.docs/architecture/agent-quality-strategy.md` (fallback: `docs/architecture/agent-quality-strategy.md`) |
 | Docker Stack | `infra/docker-compose.yml` |
 
 ---

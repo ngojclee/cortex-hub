@@ -111,6 +111,490 @@ function resolveRepoName(projectId: string): string {
   return names[0] ?? projectId
 }
 
+type GitNexusRepoSummary = {
+  name: string
+  path: string | null
+  indexedAt: string | null
+  stats: {
+    symbols: number | null
+    relationships: number | null
+    processes: number | null
+  }
+}
+
+type ProjectResourceRecord = {
+  id: string
+  org_id: string
+  name: string
+  slug: string
+  description: string | null
+  git_repo_url: string | null
+  indexed_at: string | null
+  indexed_symbols: number | null
+  created_at: string
+  updated_at: string
+  org_name?: string
+  org_slug?: string
+}
+
+type ProjectIndexJobRecord = {
+  id: string
+  branch: string | null
+  status: string | null
+  progress: number | null
+  started_at: string | null
+  completed_at: string | null
+  commit_hash: string | null
+  commit_message: string | null
+  mem9_status: string | null
+  docs_knowledge_status: string | null
+}
+
+type ResourceContext = {
+  project: ProjectResourceRecord
+  repoCandidates: string[]
+  gitnexusRepo: GitNexusRepoSummary | null
+  latestJob: ProjectIndexJobRecord | null
+  branch: string | null
+  staleness: {
+    status: 'fresh' | 'aging' | 'stale' | 'not_indexed' | 'indexing' | 'unknown'
+    basedOn: 'gitnexus.indexedAt' | 'cortex.indexed_at' | 'cortex.index_jobs'
+    indexedAt: string | null
+    ageHours: number | null
+    latestJobStatus: string | null
+  }
+}
+
+const GITNEXUS_RESOURCE_TOOLS = [
+  'cortex_code_search',
+  'cortex_code_context',
+  'cortex_code_impact',
+  'cortex_detect_changes',
+  'cortex_cypher',
+  'cortex_list_repos',
+  'cortex_code_read',
+] as const
+
+function buildResourceUris(projectId: string): string[] {
+  return [
+    'cortex://projects',
+    `cortex://project/${projectId}/context`,
+    `cortex://project/${projectId}/clusters`,
+    `cortex://project/${projectId}/processes`,
+    `cortex://project/${projectId}/schema`,
+    `cortex://project/${projectId}/cluster/{clusterName}`,
+    `cortex://project/${projectId}/process/{processName}`,
+  ]
+}
+
+const GITNEXUS_GRAPH_SCHEMA = `# GitNexus Graph Schema
+
+nodes:
+  - File: Source code files
+  - Folder: Directory containers
+  - Function: Functions and arrow functions
+  - Class: Class definitions
+  - Interface: Interface/type definitions
+  - Method: Class methods
+  - CodeElement: Catch-all for other code elements
+  - Community: Auto-detected functional area (Leiden algorithm)
+  - Process: Execution flow trace
+
+additional_node_types: "Multi-language: Struct, Enum, Macro, Typedef, Union, Namespace, Trait, Impl, TypeAlias, Const, Static, Property, Record, Delegate, Annotation, Constructor, Template, Module (use backticks in queries: \`Struct\`, \`Enum\`, etc.)"
+
+node_properties:
+  common: "name (STRING), filePath (STRING), startLine (INT32), endLine (INT32)"
+  Method: "parameterCount (INT32), returnType (STRING), isVariadic (BOOL)"
+  Function: "parameterCount (INT32), returnType (STRING), isVariadic (BOOL)"
+  Property: "declaredType (STRING) - the field's type annotation (e.g., 'Address', 'City'). Used for field-access chain resolution."
+  Constructor: "parameterCount (INT32)"
+  Community: "heuristicLabel (STRING), cohesion (DOUBLE), symbolCount (INT32), keywords (STRING[]), description (STRING), enrichedBy (STRING)"
+  Process: "heuristicLabel (STRING), processType (STRING - 'intra_community' or 'cross_community'), stepCount (INT32), communities (STRING[]), entryPointId (STRING), terminalId (STRING)"
+
+relationships:
+  - CONTAINS: File/Folder contains child
+  - DEFINES: File defines a symbol
+  - CALLS: Function/method invocation
+  - IMPORTS: Module imports
+  - EXTENDS: Class inheritance
+  - IMPLEMENTS: Interface implementation
+  - HAS_METHOD: Class/Struct/Interface owns a Method
+  - HAS_PROPERTY: Class/Struct/Interface owns a Property (field)
+  - ACCESSES: Function/Method reads or writes a Property (reason: 'read' or 'write')
+  - OVERRIDES: Method overrides another Method (MRO)
+  - MEMBER_OF: Symbol belongs to community
+  - STEP_IN_PROCESS: Symbol is step N in process
+
+relationship_table: "All relationships use a single CodeRelation table with a 'type' property. Properties: type (STRING), confidence (DOUBLE), reason (STRING), step (INT32)"
+`
+
+function normalizeStringValue(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (!trimmed || trimmed === 'undefined' || trimmed === 'null') return null
+  return trimmed
+}
+
+function parseNumberLike(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value !== 'string') return null
+  const cleaned = value.replaceAll(',', '').trim()
+  if (!cleaned || cleaned === '?' || cleaned === 'undefined' || cleaned === 'null') return null
+  const parsed = Number(cleaned)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function getRawText(result: unknown): string {
+  if (typeof result === 'string') return result.trim()
+  if (result && typeof result === 'object' && 'raw' in result) {
+    const raw = (result as { raw?: unknown }).raw
+    if (typeof raw === 'string') return raw.trim()
+  }
+  return JSON.stringify(result, null, 2)
+}
+
+function parseGitNexusListRepos(result: unknown): GitNexusRepoSummary[] {
+  if (Array.isArray(result)) {
+    return result.map((repo) => {
+      const row = repo as Record<string, unknown>
+      const statsRow = row.stats && typeof row.stats === 'object'
+        ? row.stats as Record<string, unknown>
+        : {}
+
+      return {
+        name: normalizeStringValue(row.name) ?? 'unknown',
+        path: normalizeStringValue(row.path),
+        indexedAt: normalizeStringValue(row.indexedAt),
+        stats: {
+          symbols: parseNumberLike(statsRow.nodes ?? row.symbols),
+          relationships: parseNumberLike(statsRow.edges ?? row.relationships),
+          processes: parseNumberLike(statsRow.processes ?? row.processes),
+        },
+      }
+    })
+  }
+
+  const raw = getRawText(result)
+  if (!raw || raw.includes('No indexed repositories')) return []
+
+  const repos: GitNexusRepoSummary[] = []
+  let current: GitNexusRepoSummary | null = null
+
+  for (const line of raw.split('\n')) {
+    const repoMatch = line.match(/^\s{2}(.+?)\s+[—-]\s+(.+?) symbols,\s+(.+?) relationships,\s+(.+?) flows$/)
+    if (repoMatch) {
+      current = {
+        name: repoMatch[1]!.trim(),
+        path: null,
+        indexedAt: null,
+        stats: {
+          symbols: parseNumberLike(repoMatch[2]),
+          relationships: parseNumberLike(repoMatch[3]),
+          processes: parseNumberLike(repoMatch[4]),
+        },
+      }
+      repos.push(current)
+      continue
+    }
+
+    if (!current) continue
+
+    const pathMatch = line.match(/^\s{4}Path:\s+(.+)$/)
+    if (pathMatch) {
+      current.path = pathMatch[1]!.trim()
+      continue
+    }
+
+    const indexedMatch = line.match(/^\s{4}Indexed:\s+(.+)$/)
+    if (indexedMatch) {
+      current.indexedAt = indexedMatch[1]!.trim()
+    }
+  }
+
+  return repos
+}
+
+async function listGitNexusRepos(): Promise<GitNexusRepoSummary[]> {
+  try {
+    return parseGitNexusListRepos(await callGitNexus('list_repos', {}))
+  } catch (error) {
+    logger.warn(`listGitNexusRepos failed: ${String(error)}`)
+    return []
+  }
+}
+
+function findGitNexusRepo(
+  candidates: string[],
+  repos: GitNexusRepoSummary[],
+): GitNexusRepoSummary | null {
+  const byName = new Map(repos.map((repo) => [repo.name.toLowerCase(), repo]))
+
+  for (const candidate of candidates) {
+    const match = byName.get(candidate.toLowerCase())
+    if (match) return match
+  }
+
+  return null
+}
+
+async function callGitNexusStrictWithFallback(
+  tool: string,
+  params: Record<string, unknown>,
+  projectId: string,
+): Promise<{ repo: string; result: unknown }> {
+  const candidates = resolveRepoNames(projectId)
+  logger.info(`GitNexus strict fallback: trying candidates ${JSON.stringify(candidates)} for ${tool}`)
+
+  let lastError: unknown = null
+
+  for (const candidate of candidates) {
+    try {
+      const result = await callGitNexus(tool, { ...params, repo: candidate })
+      logger.info(`GitNexus strict fallback: success with repo "${candidate}" for ${tool}`)
+      return { repo: candidate, result }
+    } catch (error) {
+      lastError = error
+      logger.info(`GitNexus strict fallback: "${candidate}" failed for ${tool}`)
+    }
+  }
+
+  throw lastError ?? new Error(`GitNexus ${tool} failed for project ${projectId}`)
+}
+
+function parseCypherRows(result: unknown): Array<Record<string, string | number | null>> {
+  const raw = getRawText(result)
+  if (!raw || raw === 'Query returned 0 rows.') return []
+  if (raw.startsWith('Error:')) {
+    throw new Error(raw.replace(/^Error:\s*/, ''))
+  }
+
+  return raw
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !/^\d+\s+row\(s\):/.test(line))
+    .map((line) => {
+      const row: Record<string, string | number | null> = {}
+      const parts = line.split(' | ')
+
+      for (const part of parts) {
+        const separatorIndex = part.indexOf(': ')
+        if (separatorIndex === -1) continue
+
+        const key = part.slice(0, separatorIndex).trim()
+        const rawValue = part.slice(separatorIndex + 2).trim()
+        if (!key) continue
+
+        row[key] = parseNumberLike(rawValue) ?? normalizeStringValue(rawValue)
+      }
+
+      return row
+    })
+    .filter((row) => Object.keys(row).length > 0)
+}
+
+function escapeCypherString(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
+function getProjectResourceRecord(projectId: string): ProjectResourceRecord | null {
+  return db.prepare(
+    `SELECT p.*, o.name AS org_name, o.slug AS org_slug
+     FROM projects p
+     JOIN organizations o ON o.id = p.org_id
+     WHERE p.id = ? OR p.slug = ?`
+  ).get(projectId, projectId) as ProjectResourceRecord | undefined ?? null
+}
+
+function getLatestIndexJob(projectId: string): ProjectIndexJobRecord | null {
+  return db.prepare(
+    `SELECT id, branch, status, progress, started_at, completed_at,
+            commit_hash, commit_message, mem9_status, docs_knowledge_status
+     FROM index_jobs
+     WHERE project_id = ?
+     ORDER BY created_at DESC
+     LIMIT 1`
+  ).get(projectId) as ProjectIndexJobRecord | undefined ?? null
+}
+
+function buildStaleness(
+  project: ProjectResourceRecord,
+  latestJob: ProjectIndexJobRecord | null,
+  gitnexusRepo: GitNexusRepoSummary | null,
+): ResourceContext['staleness'] {
+  const activeStatuses = new Set(['pending', 'cloning', 'analyzing', 'ingesting'])
+  if (latestJob?.status && activeStatuses.has(latestJob.status)) {
+    return {
+      status: 'indexing',
+      basedOn: 'cortex.index_jobs',
+      indexedAt: project.indexed_at ?? gitnexusRepo?.indexedAt ?? latestJob.completed_at,
+      ageHours: null,
+      latestJobStatus: latestJob.status,
+    }
+  }
+
+  const indexedAt = gitnexusRepo?.indexedAt ?? project.indexed_at ?? latestJob?.completed_at ?? null
+  if (!indexedAt) {
+    return {
+      status: 'not_indexed',
+      basedOn: gitnexusRepo?.indexedAt ? 'gitnexus.indexedAt' : 'cortex.indexed_at',
+      indexedAt: null,
+      ageHours: null,
+      latestJobStatus: latestJob?.status ?? null,
+    }
+  }
+
+  const ageMs = Date.now() - Date.parse(indexedAt)
+  if (!Number.isFinite(ageMs)) {
+    return {
+      status: 'unknown',
+      basedOn: gitnexusRepo?.indexedAt ? 'gitnexus.indexedAt' : 'cortex.indexed_at',
+      indexedAt,
+      ageHours: null,
+      latestJobStatus: latestJob?.status ?? null,
+    }
+  }
+
+  const ageHours = Math.round((ageMs / 36e5) * 10) / 10
+  let status: ResourceContext['staleness']['status'] = 'fresh'
+  if (ageHours >= 24 * 7) status = 'stale'
+  else if (ageHours >= 24) status = 'aging'
+
+  return {
+    status,
+    basedOn: gitnexusRepo?.indexedAt ? 'gitnexus.indexedAt' : 'cortex.indexed_at',
+    indexedAt,
+    ageHours,
+    latestJobStatus: latestJob?.status ?? null,
+  }
+}
+
+async function resolveResourceContext(projectId: string): Promise<ResourceContext | null> {
+  const project = getProjectResourceRecord(projectId)
+  if (!project) return null
+
+  const repoCandidates = resolveRepoNames(project.id)
+  const gitnexusRepos = await listGitNexusRepos()
+  const gitnexusRepo = findGitNexusRepo(repoCandidates, gitnexusRepos)
+  const latestJob = getLatestIndexJob(project.id)
+
+  return {
+    project,
+    repoCandidates,
+    gitnexusRepo,
+    latestJob,
+    branch: latestJob?.branch ?? null,
+    staleness: buildStaleness(project, latestJob, gitnexusRepo),
+  }
+}
+
+function buildProjectResourceSummary(context: ResourceContext) {
+  return {
+    projectId: context.project.id,
+    slug: context.project.slug,
+    name: context.project.name,
+    description: context.project.description,
+    organization: {
+      id: context.project.org_id,
+      name: context.project.org_name ?? null,
+      slug: context.project.org_slug ?? null,
+    },
+    gitRepoUrl: context.project.git_repo_url,
+    repoPath: join(REPOS_DIR, context.project.id).replace(/\\/g, '/'),
+    repoCandidates: context.repoCandidates,
+    branch: context.branch,
+    indexedAt: context.project.indexed_at ?? context.gitnexusRepo?.indexedAt ?? context.latestJob?.completed_at ?? null,
+    symbols: context.project.indexed_symbols ?? context.gitnexusRepo?.stats.symbols ?? null,
+    staleness: context.staleness,
+    gitnexus: context.gitnexusRepo
+      ? {
+          registered: true,
+          repoName: context.gitnexusRepo.name,
+          path: context.gitnexusRepo.path,
+          indexedAt: context.gitnexusRepo.indexedAt,
+          stats: context.gitnexusRepo.stats,
+        }
+      : {
+          registered: false,
+          repoName: null,
+          path: null,
+          indexedAt: null,
+          stats: {
+            symbols: null,
+            relationships: null,
+            processes: null,
+          },
+        },
+    latestIndexJob: context.latestJob
+      ? {
+          id: context.latestJob.id,
+          branch: context.latestJob.branch,
+          status: context.latestJob.status,
+          progress: context.latestJob.progress,
+          startedAt: context.latestJob.started_at,
+          completedAt: context.latestJob.completed_at,
+          commitHash: context.latestJob.commit_hash,
+          commitMessage: context.latestJob.commit_message,
+          mem9Status: context.latestJob.mem9_status,
+          docsKnowledgeStatus: context.latestJob.docs_knowledge_status,
+        }
+      : null,
+  }
+}
+
+async function queryProjectCypherRows(
+  projectId: string,
+  query: string,
+): Promise<{ repo: string; rows: Array<Record<string, string | number | null>> }> {
+  const { repo, result } = await callGitNexusStrictWithFallback('cypher', { query }, projectId)
+  return { repo, rows: parseCypherRows(result) }
+}
+
+function normalizeClusterRows(rows: Array<Record<string, string | number | null>>) {
+  const aggregated = new Map<string, {
+    id: string | null
+    label: string | null
+    heuristicLabel: string | null
+    symbols: number
+    weightedCohesion: number
+    subCommunities: number
+  }>()
+
+  for (const row of rows) {
+    const label = normalizeStringValue(row.label)
+    const heuristicLabel = normalizeStringValue(row.heuristicLabel)
+    const id = normalizeStringValue(row.id)
+    const key = (heuristicLabel ?? label ?? id ?? 'unknown').toLowerCase()
+    const symbolCount = parseNumberLike(row.symbolCount) ?? 0
+    const cohesion = parseNumberLike(row.cohesion) ?? 0
+
+    const existing = aggregated.get(key) ?? {
+      id,
+      label,
+      heuristicLabel,
+      symbols: 0,
+      weightedCohesion: 0,
+      subCommunities: 0,
+    }
+
+    existing.symbols += symbolCount
+    existing.weightedCohesion += cohesion * symbolCount
+    existing.subCommunities += 1
+    aggregated.set(key, existing)
+  }
+
+  return Array.from(aggregated.values())
+    .map((cluster) => ({
+      id: cluster.id,
+      name: cluster.heuristicLabel ?? cluster.label ?? cluster.id ?? 'unknown',
+      label: cluster.label,
+      heuristicLabel: cluster.heuristicLabel,
+      symbols: cluster.symbols,
+      cohesion: cluster.symbols > 0 ? Math.round((cluster.weightedCohesion / cluster.symbols) * 1000) / 1000 : null,
+      subCommunities: cluster.subCommunities,
+    }))
+    .sort((a, b) => b.symbols - a.symbols)
+}
+
 
 /**
  * Call GitNexus with multi-candidate repo fallback.
@@ -464,10 +948,367 @@ intelRouter.post('/context', async (c) => {
   }
 })
 
+// ── Resource: list Cortex projects with GitNexus mapping ──
+intelRouter.get('/resources/projects', async (c) => {
+  try {
+    const gitnexusRepos = await listGitNexusRepos()
+    const projects = db.prepare(
+      `SELECT p.*, o.name AS org_name, o.slug AS org_slug
+       FROM projects p
+       JOIN organizations o ON o.id = p.org_id
+       ORDER BY p.updated_at DESC, p.created_at DESC`
+    ).all() as ProjectResourceRecord[]
+
+    const items = projects.map((project) => {
+      const repoCandidates = resolveRepoNames(project.id)
+      const gitnexusRepo = findGitNexusRepo(repoCandidates, gitnexusRepos)
+      const latestJob = getLatestIndexJob(project.id)
+      const summaryContext: ResourceContext = {
+        project,
+        repoCandidates,
+        gitnexusRepo,
+        latestJob,
+        branch: latestJob?.branch ?? null,
+        staleness: buildStaleness(project, latestJob, gitnexusRepo),
+      }
+
+      return {
+        ...buildProjectResourceSummary(summaryContext),
+        resourcesAvailable: buildResourceUris(project.id),
+      }
+    })
+
+    return c.json({
+      success: true,
+      data: {
+        uri: 'cortex://projects',
+        total: items.length,
+        indexed: items.filter((item) => item.gitnexus.registered).length,
+        items,
+      },
+    })
+  } catch (error) {
+    logger.error(`Project resources failed: ${String(error)}`)
+    return c.json({ success: false, error: String(error) }, 500)
+  }
+})
+
+// ── Resource: project context overview ──
+intelRouter.get('/resources/project/:projectId/context', async (c) => {
+  try {
+    const { projectId } = c.req.param()
+    const context = await resolveResourceContext(projectId)
+    if (!context) return c.json({ success: false, error: 'Project not found' }, 404)
+
+    let fileCount: number | null = null
+    if (context.gitnexusRepo) {
+      try {
+        const { rows } = await queryProjectCypherRows(
+          context.project.id,
+          'MATCH (f:File) RETURN COUNT(f) AS files',
+        )
+        fileCount = parseNumberLike(rows[0]?.files) ?? null
+      } catch (error) {
+        logger.warn(`Project context file count failed for ${context.project.id}: ${String(error)}`)
+      }
+    }
+
+    return c.json({
+      success: true,
+      data: {
+        uri: `cortex://project/${context.project.id}/context`,
+        project: buildProjectResourceSummary(context),
+        stats: {
+          files: fileCount,
+          symbols: context.project.indexed_symbols ?? context.gitnexusRepo?.stats.symbols ?? null,
+          relationships: context.gitnexusRepo?.stats.relationships ?? null,
+          processes: context.gitnexusRepo?.stats.processes ?? null,
+        },
+        toolsAvailable: GITNEXUS_RESOURCE_TOOLS,
+        resourcesAvailable: buildResourceUris(context.project.id),
+        hint: context.gitnexusRepo
+          ? null
+          : 'Project exists in Cortex but is not yet registered in GitNexus. Run indexing/register first to unlock clusters and processes.',
+      },
+    })
+  } catch (error) {
+    logger.error(`Project context resource failed: ${String(error)}`)
+    return c.json({ success: false, error: String(error) }, 500)
+  }
+})
+
+// ── Resource: project clusters ──
+intelRouter.get('/resources/project/:projectId/clusters', async (c) => {
+  try {
+    const { projectId } = c.req.param()
+    const context = await resolveResourceContext(projectId)
+    if (!context) return c.json({ success: false, error: 'Project not found' }, 404)
+
+    const requestedLimit = Number.parseInt(c.req.query('limit') ?? '', 10)
+    const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? Math.min(requestedLimit, 100)
+      : 20
+
+    if (!context.gitnexusRepo) {
+      return c.json({
+        success: true,
+        data: {
+          uri: `cortex://project/${context.project.id}/clusters`,
+          project: buildProjectResourceSummary(context),
+          total: 0,
+          clusters: [],
+          hint: 'No GitNexus index found for this project yet.',
+        },
+      })
+    }
+
+    const { repo, rows } = await queryProjectCypherRows(
+      context.project.id,
+      `MATCH (c:Community)
+       RETURN c.id AS id, c.label AS label, c.heuristicLabel AS heuristicLabel,
+              c.cohesion AS cohesion, c.symbolCount AS symbolCount
+       ORDER BY c.symbolCount DESC
+       LIMIT ${Math.max(limit * 5, 50)}`,
+    )
+    const clusters = normalizeClusterRows(rows).slice(0, limit)
+
+    return c.json({
+      success: true,
+      data: {
+        uri: `cortex://project/${context.project.id}/clusters`,
+        repo,
+        project: buildProjectResourceSummary(context),
+        total: clusters.length,
+        clusters,
+      },
+    })
+  } catch (error) {
+    logger.error(`Project clusters resource failed: ${String(error)}`)
+    return c.json({ success: false, error: String(error) }, 500)
+  }
+})
+
+// ── Resource: cluster detail ──
+intelRouter.get('/resources/project/:projectId/cluster/:clusterName', async (c) => {
+  try {
+    const { projectId, clusterName } = c.req.param()
+    const context = await resolveResourceContext(projectId)
+    if (!context) return c.json({ success: false, error: 'Project not found' }, 404)
+    if (!context.gitnexusRepo) {
+      return c.json({
+        success: false,
+        error: 'Project is not yet indexed in GitNexus',
+        hint: 'Run indexing/register before requesting cluster detail.',
+      }, 409)
+    }
+
+    const decodedClusterName = decodeURIComponent(clusterName)
+    const safeClusterName = escapeCypherString(decodedClusterName)
+
+    const { repo, rows: clusterRows } = await queryProjectCypherRows(
+      context.project.id,
+      `MATCH (c:Community)
+       WHERE c.label = "${safeClusterName}" OR c.heuristicLabel = "${safeClusterName}"
+       RETURN c.id AS id, c.label AS label, c.heuristicLabel AS heuristicLabel,
+              c.cohesion AS cohesion, c.symbolCount AS symbolCount
+       ORDER BY c.symbolCount DESC`,
+    )
+
+    if (clusterRows.length === 0) {
+      return c.json({ success: false, error: `Cluster not found: ${decodedClusterName}` }, 404)
+    }
+
+    const { rows: memberRows } = await queryProjectCypherRows(
+      context.project.id,
+      `MATCH (n)-[:CodeRelation {type: 'MEMBER_OF'}]->(c:Community)
+       WHERE c.label = "${safeClusterName}" OR c.heuristicLabel = "${safeClusterName}"
+       RETURN DISTINCT n.name AS name, labels(n)[0] AS type, n.filePath AS filePath
+       LIMIT 30`,
+    )
+
+    const cluster = normalizeClusterRows(clusterRows)[0] ?? null
+    const members = memberRows.map((row) => ({
+      name: normalizeStringValue(row.name) ?? 'unknown',
+      type: normalizeStringValue(row.type),
+      filePath: normalizeStringValue(row.filePath),
+    }))
+
+    return c.json({
+      success: true,
+      data: {
+        uri: `cortex://project/${context.project.id}/cluster/${encodeURIComponent(decodedClusterName)}`,
+        repo,
+        project: buildProjectResourceSummary(context),
+        cluster,
+        members,
+      },
+    })
+  } catch (error) {
+    logger.error(`Cluster detail resource failed: ${String(error)}`)
+    return c.json({ success: false, error: String(error) }, 500)
+  }
+})
+
+// ── Resource: project processes ──
+intelRouter.get('/resources/project/:projectId/processes', async (c) => {
+  try {
+    const { projectId } = c.req.param()
+    const context = await resolveResourceContext(projectId)
+    if (!context) return c.json({ success: false, error: 'Project not found' }, 404)
+
+    const requestedLimit = Number.parseInt(c.req.query('limit') ?? '', 10)
+    const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? Math.min(requestedLimit, 100)
+      : 20
+
+    if (!context.gitnexusRepo) {
+      return c.json({
+        success: true,
+        data: {
+          uri: `cortex://project/${context.project.id}/processes`,
+          project: buildProjectResourceSummary(context),
+          total: 0,
+          processes: [],
+          hint: 'No GitNexus index found for this project yet.',
+        },
+      })
+    }
+
+    const { repo, rows } = await queryProjectCypherRows(
+      context.project.id,
+      `MATCH (p:Process)
+       RETURN p.id AS id, p.label AS label, p.heuristicLabel AS heuristicLabel,
+              p.processType AS processType, p.stepCount AS stepCount
+       ORDER BY p.stepCount DESC
+       LIMIT ${limit}`,
+    )
+    const processes = rows.map((row) => ({
+      id: normalizeStringValue(row.id),
+      name: normalizeStringValue(row.heuristicLabel) ?? normalizeStringValue(row.label) ?? normalizeStringValue(row.id) ?? 'unknown',
+      label: normalizeStringValue(row.label),
+      heuristicLabel: normalizeStringValue(row.heuristicLabel),
+      type: normalizeStringValue(row.processType),
+      steps: parseNumberLike(row.stepCount) ?? 0,
+    }))
+
+    return c.json({
+      success: true,
+      data: {
+        uri: `cortex://project/${context.project.id}/processes`,
+        repo,
+        project: buildProjectResourceSummary(context),
+        total: processes.length,
+        processes,
+      },
+    })
+  } catch (error) {
+    logger.error(`Project processes resource failed: ${String(error)}`)
+    return c.json({ success: false, error: String(error) }, 500)
+  }
+})
+
+// ── Resource: process detail ──
+intelRouter.get('/resources/project/:projectId/process/:processName', async (c) => {
+  try {
+    const { projectId, processName } = c.req.param()
+    const context = await resolveResourceContext(projectId)
+    if (!context) return c.json({ success: false, error: 'Project not found' }, 404)
+    if (!context.gitnexusRepo) {
+      return c.json({
+        success: false,
+        error: 'Project is not yet indexed in GitNexus',
+        hint: 'Run indexing/register before requesting process detail.',
+      }, 409)
+    }
+
+    const decodedProcessName = decodeURIComponent(processName)
+    const safeProcessName = escapeCypherString(decodedProcessName)
+
+    const { repo, rows: processRows } = await queryProjectCypherRows(
+      context.project.id,
+      `MATCH (p:Process)
+       WHERE p.label = "${safeProcessName}" OR p.heuristicLabel = "${safeProcessName}"
+       RETURN p.id AS id, p.label AS label, p.heuristicLabel AS heuristicLabel,
+              p.processType AS processType, p.stepCount AS stepCount
+       LIMIT 1`,
+    )
+
+    const processRow = processRows[0]
+    if (!processRow) {
+      return c.json({ success: false, error: `Process not found: ${decodedProcessName}` }, 404)
+    }
+
+    const processIdValue = normalizeStringValue(processRow.id)
+    if (!processIdValue) {
+      return c.json({ success: false, error: `Process id missing for ${decodedProcessName}` }, 500)
+    }
+
+    const safeProcessId = escapeCypherString(processIdValue)
+    const { rows: stepRows } = await queryProjectCypherRows(
+      context.project.id,
+      `MATCH (n)-[r:CodeRelation {type: 'STEP_IN_PROCESS'}]->(p:Process)
+       WHERE p.id = "${safeProcessId}"
+       RETURN n.name AS name, labels(n)[0] AS type, n.filePath AS filePath, r.step AS step
+       ORDER BY r.step`,
+    )
+
+    const steps = stepRows.map((row) => ({
+      step: parseNumberLike(row.step) ?? 0,
+      name: normalizeStringValue(row.name) ?? 'unknown',
+      type: normalizeStringValue(row.type),
+      filePath: normalizeStringValue(row.filePath),
+    }))
+
+    return c.json({
+      success: true,
+      data: {
+        uri: `cortex://project/${context.project.id}/process/${encodeURIComponent(decodedProcessName)}`,
+        repo,
+        project: buildProjectResourceSummary(context),
+        process: {
+          id: processIdValue,
+          name: normalizeStringValue(processRow.heuristicLabel) ?? normalizeStringValue(processRow.label) ?? decodedProcessName,
+          label: normalizeStringValue(processRow.label),
+          heuristicLabel: normalizeStringValue(processRow.heuristicLabel),
+          type: normalizeStringValue(processRow.processType),
+          steps: parseNumberLike(processRow.stepCount) ?? steps.length,
+        },
+        steps,
+      },
+    })
+  } catch (error) {
+    logger.error(`Process detail resource failed: ${String(error)}`)
+    return c.json({ success: false, error: String(error) }, 500)
+  }
+})
+
+// ── Resource: schema reference ──
+intelRouter.get('/resources/project/:projectId/schema', async (c) => {
+  try {
+    const { projectId } = c.req.param()
+    const context = await resolveResourceContext(projectId)
+    if (!context) return c.json({ success: false, error: 'Project not found' }, 404)
+
+    return c.json({
+      success: true,
+      data: {
+        uri: `cortex://project/${context.project.id}/schema`,
+        project: buildProjectResourceSummary(context),
+        schema: GITNEXUS_GRAPH_SCHEMA,
+        toolsAvailable: GITNEXUS_RESOURCE_TOOLS,
+        resourcesAvailable: buildResourceUris(context.project.id),
+      },
+    })
+  } catch (error) {
+    logger.error(`Schema resource failed: ${String(error)}`)
+    return c.json({ success: false, error: String(error) }, 500)
+  }
+})
+
 // ── List Repos: discover indexed repositories with project mapping ──
 intelRouter.get('/repos', async (c) => {
   try {
-    const gitNexusResult = await callGitNexus('list_repos', {})
+    const gitNexusRepos = await listGitNexusRepos()
 
     // Enrich with project DB data for project ID mapping
     const projects = db.prepare(
@@ -489,36 +1330,18 @@ intelRouter.get('/repos', async (c) => {
       }
     }
 
-    // Parse GitNexus raw response — may be array, object with repos, or raw text
-    let repos: Array<{ name: string; projectId: string; slug: string; symbols: number | string; gitUrl: string }> = []
-
-    const rawData = gitNexusResult as Record<string, unknown>
-    if (rawData?.raw && typeof rawData.raw === 'string') {
-      // Raw text: parse repo names from lines
-      const repoNames = rawData.raw.split('\n').map(l => l.trim()).filter(l => l.length > 0)
-      repos = repoNames.map(name => {
-        const match = projectBySlug.get(name.toLowerCase()) ?? projectById.get(name)
-        return {
-          name,
-          projectId: match?.id ?? '',
-          slug: match?.slug ?? name,
-          symbols: match?.indexed_symbols ?? '?',
-          gitUrl: match?.git_repo_url ?? '',
-        }
-      })
-    } else if (Array.isArray(rawData)) {
-      repos = rawData.map((r: unknown) => {
-        const name = typeof r === 'string' ? r : ((r as Record<string, string>).name ?? 'unknown')
-        const match = projectBySlug.get(name.toLowerCase()) ?? projectById.get(name)
-        return {
-          name,
-          projectId: match?.id ?? '',
-          slug: match?.slug ?? name,
-          symbols: match?.indexed_symbols ?? '?',
-          gitUrl: match?.git_repo_url ?? '',
-        }
-      })
-    }
+    const repos = gitNexusRepos.map((repo) => {
+      const match = projectBySlug.get(repo.name.toLowerCase()) ?? projectById.get(repo.name)
+      return {
+        name: repo.name,
+        projectId: match?.id ?? '',
+        slug: match?.slug ?? repo.name,
+        symbols: repo.stats.symbols ?? match?.indexed_symbols ?? '?',
+        processes: repo.stats.processes ?? '?',
+        indexedAt: repo.indexedAt,
+        gitUrl: match?.git_repo_url ?? '',
+      }
+    })
 
     return c.json({ success: true, data: repos })
   } catch (error) {

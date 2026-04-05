@@ -43,3 +43,16 @@ Currently, when Cortex MCP tools (`cortex_knowledge_store`, `cortex_memory_store
 - Test opening the Dashboard:
   - Go to `/memories` -> verify list appears.
   - Use `cortex_memory_store` with a brand new `projectId` -> verify a new Project appears under `/orgs` instantly.
+
+---
+
+## Follow-On Phases
+
+### GitNexus Context Fabric Phase 1 (Completed)
+See [gitnexus-context-phase1/plan.md](gitnexus-context-phase1/plan.md)
+
+### Multi-Project Organization & Agent Intelligence (Active)
+See [multi-project-agent-intel/plan.md](multi-project-agent-intel/plan.md)
+- Phase A: Register projects, clean knowledge (current)
+- Phase B: Interactive graph explorer (future)
+- Phase C: GitNexus rename + wiki tools (future)

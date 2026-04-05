@@ -23,5 +23,16 @@
 ### Phase 4: Build & Deployment
 - [x] Commit changes to git and review any missed files.
 - [x] Use `/workflow6` or manual script to build the Docker image and push to registry.
-- [ ] Update Portainer (or wait for Watchtower) to deploy the new image.
-- [ ] Verify Dashboard UI reflects new Projects and shows the Memories page.
+- [x] Update Portainer (or wait for Watchtower) to deploy the new image.
+- [x] Verify Dashboard UI reflects new Projects and shows the Memories page.
+
+---
+
+### GitNexus Context Fabric Phase 1
+- [x] **Completed** — See [.docs/gitnexus-context-phase1/task.md](gitnexus-context-phase1/task.md)
+- Delivered: resource APIs, MCP resources/prompts, graph explorer, quality gates, health check tiering, GitNexus CLI Docker fix
+
+### Multi-Project Organization & Agent Intelligence (Active)
+- [ ] **Phase A: Registration & Knowledge Cleanup** — See [.docs/multi-project-agent-intel/task.md](multi-project-agent-intel/task.md)
+- [ ] **Phase B: Graph Explorer Enhancement** (future)
+- [ ] **Phase C: GitNexus Tool Expansion** (future)

@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { randomUUID } from 'crypto'
 import { db } from '../db/client.js'
 import {
   calculateFromVerificationResults,
@@ -428,6 +429,7 @@ sessionsRouter.post('/start', async (c) => {
 
     let project: Record<string, unknown> | undefined
     if (repo) {
+      // Strategy 1: match by git_repo_url
       const stmt = db.prepare(
         `SELECT * FROM projects
          WHERE git_repo_url IN (?, ?, ?, ?)`
@@ -438,6 +440,38 @@ sessionsRouter.post('/start', async (c) => {
         `${normalizedRepo}/`,
         repo
       ) as Record<string, unknown> | undefined
+
+      // Strategy 2: match by slug derived from repo basename
+      if (!project) {
+        const repoBasename = normalizedRepo.split('/').pop() ?? ''
+        const slug = repoBasename.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+        if (slug) {
+          project = db.prepare('SELECT * FROM projects WHERE slug = ?').get(slug) as Record<string, unknown> | undefined
+          // Backfill git_repo_url if found by slug but URL was missing
+          if (project && !project.git_repo_url) {
+            db.prepare('UPDATE projects SET git_repo_url = ? WHERE id = ?').run(repo, project.id)
+            project.git_repo_url = repo
+          }
+        }
+      }
+
+      // Strategy 3: auto-create project if repo provided but no match
+      if (!project) {
+        const repoBasename = normalizedRepo.split('/').pop() ?? 'unknown'
+        const slug = repoBasename.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+        const readableName = repoBasename.split('-').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+        const newId = `proj-${randomUUID().slice(0, 8)}`
+        const defaultOrg = db.prepare("SELECT id FROM organizations WHERE slug = 'default' OR slug = 'personal' ORDER BY created_at LIMIT 1").get() as { id: string } | undefined
+        const orgId = defaultOrg?.id ?? 'org-default'
+        try {
+          db.prepare(
+            `INSERT INTO projects (id, org_id, name, slug, git_repo_url) VALUES (?, ?, ?, ?, ?)`
+          ).run(newId, orgId, readableName, slug, repo)
+          project = { id: newId, org_id: orgId, name: readableName, slug, git_repo_url: repo } as Record<string, unknown>
+        } catch { /* slug collision — try lookup again */
+          project = db.prepare('SELECT * FROM projects WHERE slug = ?').get(slug) as Record<string, unknown> | undefined
+        }
+      }
     }
 
     const normalizedSharedMetadata = normalizeSharedProjectMetadata(shared_metadata, {

@@ -209,6 +209,13 @@ export interface QualitySummary {
   grade_f: number
 }
 
+export interface QualityDimensionScores {
+  build: number
+  regression: number
+  standards: number
+  traceability: number
+}
+
 export async function getQualityReports(opts?: { limit?: number; page?: number; projectId?: string; agentId?: string; grade?: string }) {
   const params = new URLSearchParams()
   if (opts?.limit) params.set('limit', String(opts.limit))
@@ -232,6 +239,27 @@ export async function getQualityTrends(days = 30, projectId?: string) {
 
 export async function getQualitySummary() {
   return apiFetch<{ summary: QualitySummary; latest: QualityReportRow | null }>('/api/quality/summary')
+}
+
+export async function submitQualityReport(data: {
+  gate_name: string
+  agent_id: string
+  session_id?: string
+  project_id?: string
+  dimension_scores?: QualityDimensionScores
+  passed?: boolean
+  score?: number
+  details?: string
+  shared_metadata?: Record<string, unknown>
+}) {
+  return apiFetch<{
+    success: boolean
+    warning?: string
+    report: QualityReportRow
+  }>('/api/quality/report', {
+    method: 'POST',
+    body: data,
+  })
 }
 
 // ── Sessions ──

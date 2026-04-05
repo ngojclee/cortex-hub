@@ -30,6 +30,13 @@ const verificationResultsSchema = z.object({
   hasDocs: z.boolean().optional(),
 })
 
+const dimensionScoresSchema = z.object({
+  build: z.number().min(0).max(25),
+  regression: z.number().min(0).max(25),
+  standards: z.number().min(0).max(25),
+  traceability: z.number().min(0).max(25),
+})
+
 /**
  * Register quality reporting tools.
  * Supports both legacy (simple pass/fail) and new (4-dimension scoring) formats.
@@ -45,6 +52,7 @@ export function registerQualityTools(server: McpServer, env: Env) {
       project_id: z.string().optional().describe('Project ID'),
       // New format: provide raw results for auto-scoring
       results: verificationResultsSchema.optional().describe('Raw verification results — scores are calculated automatically'),
+      dimension_scores: dimensionScoresSchema.optional().describe('Manual 4-dimension scores when a human-reviewed gate already has the component scores'),
       // Legacy format: provide pre-computed values
       passed: z.boolean().optional().describe('Legacy: whether the gate passed'),
       score: z.number().optional().describe('Legacy: pre-computed score (0-100)'),
@@ -54,7 +62,7 @@ export function registerQualityTools(server: McpServer, env: Env) {
         .optional()
         .describe('Canonical shared metadata: projectId, branch, filesTouched, symbolsTouched, processesAffected, clustersTouched, resourceUris'),
     },
-    async ({ gate_name, agent_id, session_id, project_id, results, passed, score, details, shared_metadata }) => {
+    async ({ gate_name, agent_id, session_id, project_id, results, dimension_scores, passed, score, details, shared_metadata }) => {
       try {
         // If results provided, calculate scorecard locally for the response
         let scorecard: string | null = null
@@ -87,6 +95,7 @@ export function registerQualityTools(server: McpServer, env: Env) {
             session_id,
             project_id,
             results,
+            dimension_scores,
             passed,
             score,
             details,

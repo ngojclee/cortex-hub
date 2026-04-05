@@ -64,6 +64,7 @@
 
 ### Phase 5C: Quality Gate Adoption
 - [ ] Make `cortex_quality_report` part of the normal phase-completion workflow
+- [x] Add a dashboard-level quick report composer so operators can seed the first real quality report without waiting on MCP automation
 - [ ] Submit at least one real quality report for the linked `cortex-hub` project
 - [ ] Verify the dashboard overview card and `/quality` page stop showing the empty-state path once reports exist
 - [ ] Ensure the shared metadata contract is preserved in quality reports and related analytics
@@ -117,3 +118,4 @@
 - [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-api typecheck` after teaching intel Cypher parsing to read GitNexus markdown-table responses
 - [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-api typecheck` after adding project discovery resources and project-link promotion for orphan repos/knowledge spaces
 - [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-web typecheck` after upgrading `/graph` with discovery cards, knowledge-aware stats, and orbit layout
+- [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-api typecheck`, `pnpm --filter @cortex/dashboard-web typecheck`, and `pnpm --filter @cortex/hub-mcp typecheck` after adding manual quality-report submission from the dashboard and dimension-score support in the API/MCP tool

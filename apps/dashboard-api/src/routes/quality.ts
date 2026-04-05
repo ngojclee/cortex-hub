@@ -15,6 +15,13 @@ import {
 
 export const qualityRouter = new Hono()
 
+type ManualDimensionScores = {
+  build: number
+  regression: number
+  standards: number
+  traceability: number
+}
+
 function parseSessionContext(raw: unknown): Record<string, unknown> | null {
   if (typeof raw !== 'string' || !raw.trim()) return null
   try {
@@ -31,6 +38,12 @@ function normalizeSessionMode(value: unknown): string {
   return typeof value === 'string' && value.trim()
     ? value.trim()
     : 'development'
+}
+
+function clampDimensionScore(value: unknown): number {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return 0
+  return Math.max(0, Math.min(25, Math.round(numeric)))
 }
 
 // ── Server-side session validation ──
@@ -71,6 +84,7 @@ qualityRouter.post('/report', async (c) => {
       agent_id,
       session_id,
       project_id,
+      dimension_scores,
       passed,
       score,
       details,
@@ -110,6 +124,15 @@ qualityRouter.post('/report', async (c) => {
       scoreTotal = calculated.total
       grade = calculated.grade
       reportPassed = calculated.passed
+    } else if (dimension_scores && typeof dimension_scores === 'object') {
+      const scores = dimension_scores as Partial<ManualDimensionScores>
+      scoreBuild = clampDimensionScore(scores.build)
+      scoreRegression = clampDimensionScore(scores.regression)
+      scoreStandards = clampDimensionScore(scores.standards)
+      scoreTraceability = clampDimensionScore(scores.traceability)
+      scoreTotal = scoreBuild + scoreRegression + scoreStandards + scoreTraceability
+      grade = scoreToGrade(scoreTotal)
+      reportPassed = passed ?? grade !== 'F'
     } else if (score !== undefined && score !== null) {
       // Legacy format: approximate dimensions from single score
       const dims = approximateDimensionsFromTotal(Number(score))

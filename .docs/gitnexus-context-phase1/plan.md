@@ -139,6 +139,7 @@ This feature should be delivered in two layers:
 **Goal:** Turn the Quality dashboard from empty chrome into an operational audit trail.
 
 - Make `cortex_quality_report` part of the normal phase-completion workflow
+- Add a dashboard-level fallback path for manually submitting the first real quality reports before every agent is fully automated
 - Ensure at least one real report is written after each meaningful implementation phase
 - Update dashboard expectations so empty-state messaging is clear until the first report exists
 - Verify reports appear in:

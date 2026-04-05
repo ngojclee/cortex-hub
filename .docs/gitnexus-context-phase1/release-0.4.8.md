@@ -30,7 +30,7 @@ This batch closes three related gaps together:
 
 ## Git Checkpoint
 - Target version: `0.4.8`
-- Commit: `TBD after checkpoint commit is created`
+- Commit: `c34e0f8`
 - Branch: `master`
 
 ## Images To Rebuild Now

@@ -42,6 +42,24 @@ interface TestKeyResult {
   error?: string
 }
 
+interface RoutingTestResult {
+  success: boolean
+  purpose: 'chat' | 'embedding'
+  accountId?: string
+  accountName?: string | null
+  providerType?: string
+  model?: string
+  latency?: number
+  reply?: string
+  vectorDimensions?: number
+  usage?: {
+    promptTokens?: number
+    completionTokens?: number
+    totalTokens?: number
+  } | null
+  error?: string
+}
+
 // ── Constants ──
 // ── Provider Type Definitions (GoClaw-style) ──
 interface ProviderTypeDef {
@@ -194,13 +212,21 @@ async function fetchActiveConfig(): Promise<ActiveConfigResponse> {
   return res.json()
 }
 
-function ActiveConfigPanel({ accounts }: { accounts: ProviderAccount[] }) {
+function ActiveConfigPanel({
+  accounts,
+  showToast,
+}: {
+  accounts: ProviderAccount[]
+  showToast: (type: 'success' | 'error', message: string) => void
+}) {
   const { data, mutate: mutateRouting } = useSWR('routing-active', fetchActiveConfig, {
     refreshInterval: 0,
     revalidateOnFocus: false,
   })
 
   const [saving, setSaving] = useState<string | null>(null)
+  const [testingPurpose, setTestingPurpose] = useState<string | null>(null)
+  const [testResults, setTestResults] = useState<Record<string, RoutingTestResult | null>>({})
 
   const purposes = [
     { key: 'chat', label: '💬 Chat Model', desc: 'Used for conversations, fact extraction, memory dedup' },
@@ -233,10 +259,41 @@ function ActiveConfigPanel({ accounts }: { accounts: ProviderAccount[] }) {
     setSaving(null)
   }
 
+  const handleLiveTest = async (purpose: 'chat' | 'embedding') => {
+    setTestingPurpose(purpose)
+    try {
+      const res = await fetch(`${config.api.base}/api/llm/routing/test/${purpose}`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(20000),
+      })
+      const result = (await res.json()) as RoutingTestResult
+      setTestResults((prev) => ({ ...prev, [purpose]: result }))
+
+      if (result.success) {
+        const detail = purpose === 'chat'
+          ? `${result.model ?? 'unknown'} replied in ${result.latency ?? 0}ms`
+          : `${result.model ?? 'unknown'} returned ${result.vectorDimensions ?? 0} dims in ${result.latency ?? 0}ms`
+        showToast('success', `✅ ${detail}`)
+      } else {
+        showToast('error', `❌ ${result.error || `Failed to test ${purpose} routing`}`)
+      }
+    } catch (err) {
+      const errorMessage = String(err)
+      setTestResults((prev) => ({
+        ...prev,
+        [purpose]: { success: false, purpose, error: errorMessage },
+      }))
+      showToast('error', `❌ ${errorMessage}`)
+    } finally {
+      setTestingPurpose(null)
+    }
+  }
+
   return (
     <div className={styles.activeConfigGrid}>
       {purposes.map(({ key, label, desc }) => {
         const active = getActive(key)
+        const result = testResults[key]
         return (
           <div key={key} className={styles.activeCard}>
             <div className={styles.activeCardHeader}>
@@ -284,6 +341,36 @@ function ActiveConfigPanel({ accounts }: { accounts: ProviderAccount[] }) {
                 ))
               })}
             </select>
+            <div className={styles.activeActions}>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => handleLiveTest(key as 'chat' | 'embedding')}
+                disabled={!active || testingPurpose === key}
+              >
+                {testingPurpose === key ? '⏳ Testing live...' : key === 'chat' ? '🧪 Test Chat Live' : '🧪 Test Embedding Live'}
+              </button>
+            </div>
+            {result && (
+              <div className={result.success ? styles.testResultSuccess : styles.testResultError} role="status">
+                <div className={styles.testResultTitle}>
+                  {result.success ? 'Live test passed' : 'Live test failed'}
+                </div>
+                <div className={styles.testResultBody}>
+                  {result.model ? result.model : 'Unknown model'}
+                  {result.accountName ? ` via ${result.accountName}` : ''}
+                  {typeof result.latency === 'number' ? ` • ${result.latency}ms` : ''}
+                </div>
+                {result.success && key === 'chat' && result.reply && (
+                  <div className={styles.testResultMeta}>Reply: {result.reply}</div>
+                )}
+                {result.success && key === 'embedding' && typeof result.vectorDimensions === 'number' && (
+                  <div className={styles.testResultMeta}>Vector size: {result.vectorDimensions} dims</div>
+                )}
+                {!result.success && result.error && (
+                  <div className={styles.testResultMeta}>{result.error}</div>
+                )}
+              </div>
+            )}
           </div>
         )
       })}
@@ -752,7 +839,7 @@ export default function ProvidersPage() {
 
       {/* Active Config */}
       {!error && accounts.length > 0 && (
-        <ActiveConfigPanel accounts={accounts} />
+        <ActiveConfigPanel accounts={accounts} showToast={showToast} />
       )}
 
       {/* Table */}

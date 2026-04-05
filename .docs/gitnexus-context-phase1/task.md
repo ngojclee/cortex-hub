@@ -64,3 +64,7 @@
 - [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-web typecheck` after shared metadata API type updates
 - [x] 2026-04-05: `http://10.21.1.108:4000/health` reports version `0.4.1`, commit `fabbf01`, and all core services `ok`
 - [x] 2026-04-05: deployed `http://10.21.1.108:4000/api/intel/resources/projects` returns `success=true` with `total=0` on the current clean instance
+- [x] 2026-04-05: `http://10.21.1.108:4000/health` reports version `0.4.2`, commit `5c0a92d`, and all core services `ok` after the shared metadata release
+- [x] 2026-04-05: deployed `http://10.21.1.108:4000/api/intel/repos` shows GitNexus has indexed `cortex-hub`, while `cortex://projects` remains empty because no Cortex project has been linked yet
+- [x] 2026-04-05: deployed `POST /api/sessions/start` returns `project=null` and `sharedMetadata=null` for `https://github.com/ngojclee/cortex-hub.git` until the repo is linked to a Cortex project
+- [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-api typecheck` and `pnpm --filter @cortex/dashboard-web typecheck` after adding live chat/embed routing tests in Providers and a Quality Gates empty-state hint

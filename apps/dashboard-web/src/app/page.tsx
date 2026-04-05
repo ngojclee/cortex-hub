@@ -161,6 +161,7 @@ export default function DashboardPage() {
     }
   }
 }`
+  const hasQualityReports = overview?.quality.lastGrade && overview.quality.lastGrade !== 'N/A'
 
   return (
     <DashboardLayout title="Dashboard" subtitle="System overview and project health">
@@ -297,6 +298,11 @@ export default function DashboardPage() {
                 <span className={styles.intelLabel}>Today</span>
               </div>
             </div>
+            {!hasQualityReports && (
+              <div className={styles.intelHint}>
+                No quality reports yet. Agents need to submit <code>cortex_quality_report</code> before this card can score anything.
+              </div>
+            )}
           </div>
 
           {/* Knowledge */}

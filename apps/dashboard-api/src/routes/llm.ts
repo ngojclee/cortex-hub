@@ -31,6 +31,7 @@ interface ProviderSlot {
   apiBase: string
   apiKey: string
   type: string
+  accountName?: string
 }
 
 const RETRYABLE_CODES = new Set([429, 502, 503, 504])
@@ -49,12 +50,13 @@ function resolveChain(purpose: 'embedding' | 'chat'): ProviderSlot[] {
 
   for (const slot of chain) {
     const acct = db
-      .prepare("SELECT id, api_base, api_key, type FROM provider_accounts WHERE id = ? AND status = 'enabled'")
-      .get(slot.accountId) as { id: string; api_base: string; api_key: string | null; type: string } | undefined
+      .prepare("SELECT id, name, api_base, api_key, type FROM provider_accounts WHERE id = ? AND status = 'enabled'")
+      .get(slot.accountId) as { id: string; name: string; api_base: string; api_key: string | null; type: string } | undefined
 
     if (acct) {
       slots.push({
         accountId: acct.id,
+        accountName: acct.name,
         model: slot.model,
         apiBase: acct.api_base,
         apiKey: acct.api_key ?? '',
@@ -561,6 +563,101 @@ llmRouter.get('/models', async (c) => {
     return c.json(data)
   } catch (err) {
     return c.json({ error: 'Failed to fetch models', details: String(err) }, 502)
+  }
+})
+
+llmRouter.post('/routing/test/:purpose', async (c) => {
+  const purpose = c.req.param('purpose')
+
+  if (purpose !== 'chat' && purpose !== 'embedding') {
+    return c.json({ success: false, error: 'purpose must be "chat" or "embedding"' }, 400)
+  }
+
+  const slot = resolveChain(purpose)[0]
+  if (!slot) {
+    return c.json({
+      success: false,
+      purpose,
+      error: `No active ${purpose} routing configured. Assign a model in Providers first.`,
+    }, 503)
+  }
+
+  const startTime = Date.now()
+
+  try {
+    if (purpose === 'chat') {
+      const result = isGeminiProvider(slot)
+        ? await chatViaGemini(
+            [{ role: 'user', content: 'Reply with "OK" only.' }],
+            slot.apiKey,
+            slot.model,
+            slot.apiBase,
+            8,
+          )
+        : await chatViaOpenAI(
+            [{ role: 'user', content: 'Reply with "OK" only.' }],
+            slot.apiKey,
+            slot.model,
+            slot.apiBase,
+            8,
+          )
+
+      return c.json({
+        success: true,
+        purpose,
+        accountId: slot.accountId,
+        accountName: slot.accountName ?? null,
+        providerType: slot.type,
+        model: slot.model,
+        latency: Date.now() - startTime,
+        reply: result.content.trim().slice(0, 100),
+        usage: {
+          promptTokens: result.promptTokens,
+          completionTokens: result.completionTokens,
+          totalTokens: result.promptTokens + result.completionTokens,
+        },
+      })
+    }
+
+    const result = isGeminiProvider(slot)
+      ? await embedViaGemini(
+          'Routing health check for embeddings.',
+          slot.apiKey,
+          slot.model,
+          slot.apiBase,
+        )
+      : await embedViaOpenAI(
+          'Routing health check for embeddings.',
+          slot.apiKey,
+          slot.model,
+          slot.apiBase,
+        )
+
+    return c.json({
+      success: true,
+      purpose,
+      accountId: slot.accountId,
+      accountName: slot.accountName ?? null,
+      providerType: slot.type,
+      model: slot.model,
+      latency: Date.now() - startTime,
+      vectorDimensions: result.vector.length,
+      usage: {
+        promptTokens: result.tokens,
+        totalTokens: result.tokens,
+      },
+    })
+  } catch (err) {
+    return c.json({
+      success: false,
+      purpose,
+      accountId: slot.accountId,
+      accountName: slot.accountName ?? null,
+      providerType: slot.type,
+      model: slot.model,
+      latency: Date.now() - startTime,
+      error: String(err),
+    }, 502)
   }
 })
 

@@ -483,6 +483,20 @@
   letter-spacing: 0.06em;
 }
 
+.intelHint {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.intelHint code {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+
 /* ── Top Tools List (Savings Card) ── */
 .topToolsList {
   margin-top: var(--space-3);

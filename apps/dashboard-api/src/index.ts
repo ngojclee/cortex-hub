@@ -117,6 +117,8 @@ app.route('/api/metrics', metricsRouter)
 app.route('/api/accounts', accountsRouter)
 app.route('/api/indexing', indexingRouter)
 app.route('/api/mem9', mem9ProxyRouter)
+// Backward-compatible alias for older dashboard builds and clients.
+app.route('/api/mem9-proxy', mem9ProxyRouter)
 app.route('/api/knowledge', knowledgeRouter)
 app.route('/api/webhooks', webhooksRouter)
 

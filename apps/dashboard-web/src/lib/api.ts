@@ -810,9 +810,9 @@ export async function getMemories(projectId?: string, limit: number = 50) {
   if (projectId) query.append('projectId', projectId)
   query.append('limit', limit.toString())
   
-  return apiFetch<{ memories: AgentMemory[]; total: number }>(`/api/mem9-proxy/list?${query.toString()}`)
+  return apiFetch<{ memories: AgentMemory[]; total: number }>(`/api/mem9/list?${query.toString()}`)
 }
 
 export async function deleteMemory(id: string) {
-  return apiFetch<{ success: boolean }>(`/api/mem9-proxy/${id}`, { method: 'DELETE' })
+  return apiFetch<{ success: boolean }>(`/api/mem9/${id}`, { method: 'DELETE' })
 }

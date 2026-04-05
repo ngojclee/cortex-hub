@@ -73,10 +73,11 @@ app.get('/health', async (c) => {
     options?: {
       acceptedStatuses?: number[]
       healthyStatusTexts?: string[]
+      timeoutMs?: number
     },
   ): Promise<'ok' | 'error'> {
     try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(3000) })
+      const res = await fetch(url, { signal: AbortSignal.timeout(options?.timeoutMs ?? 3000) })
       const acceptedStatuses = new Set(options?.acceptedStatuses ?? [])
       if (res.ok || acceptedStatuses.has(res.status)) {
         if (!options?.healthyStatusTexts || options.healthyStatusTexts.length === 0) {
@@ -97,25 +98,34 @@ app.get('/health', async (c) => {
     }
   }
 
-  const [qdrant, cliproxy, gitnexus, mem9, mcp] = await Promise.all([
+  // Core services: affect overall status
+  const [qdrant, mem9] = await Promise.all([
     checkService(`${process.env['QDRANT_URL'] || 'http://qdrant:6333'}/healthz`),
+    checkService(`http://localhost:${process.env.PORT || 4000}/api/mem9/health`, {
+      healthyStatusTexts: ['healthy', 'ok'],
+    }),
+  ])
+
+  // Optional services: reported individually but don't affect overall status
+  const [cliproxy, gitnexus, mcp] = await Promise.all([
     checkService(`${process.env['LLM_PROXY_URL'] || 'http://llm-proxy:8317'}/v1/models`, {
-      acceptedStatuses: [401],
+      acceptedStatuses: [401, 403],
     }),
     checkService(`${process.env['GITNEXUS_URL'] || 'http://gitnexus:4848'}/health`, {
       healthyStatusTexts: ['healthy', 'ok'],
-    }),
-    checkService(`http://localhost:${process.env.PORT || 4000}/api/mem9/health`, {
-      healthyStatusTexts: ['healthy', 'ok'],
+      timeoutMs: 8000,
     }),
     checkService(`${process.env['MCP_HEALTH_URL'] || 'http://cortex-mcp:8317/health'}`),
   ])
 
-  const services = { qdrant, cliproxy, gitnexus, mem9, mcp }
+  const coreServices = { qdrant, mem9 }
+  const optionalServices = { cliproxy, gitnexus, mcp }
+  const services = { ...coreServices, ...optionalServices }
+  const coreOk = Object.values(coreServices).every(s => s === 'ok')
   const allOk = Object.values(services).every(s => s === 'ok')
 
   return c.json({
-    status: allOk ? 'ok' : 'degraded',
+    status: coreOk ? 'ok' : 'degraded',
     service: 'dashboard-api',
     version: appVersion,
     commit: process.env['COMMIT_SHA'] || 'dev',
@@ -125,6 +135,7 @@ app.get('/health', async (c) => {
     uptime: Math.floor(process.uptime()),
     responseTime: Date.now() - startTime,
     services,
+    ...(coreOk && !allOk ? { notice: 'Some optional services are unavailable but core functionality is operational' } : {}),
   })
 })
 

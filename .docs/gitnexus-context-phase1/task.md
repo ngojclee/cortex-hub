@@ -52,12 +52,12 @@
 
 ### Phase 5A: Runtime Health & Release Verification
 - [x] Re-check whether the earlier `/health` degraded mismatch still reproduces on the refreshed `0.4.4` host
-- [ ] Fix or narrow the health checks for `qdrant`, `cliproxy`, and `gitnexus` so operator status matches real behavior
+- [x] Fix or narrow the health checks for `qdrant`, `cliproxy`, and `gitnexus` so operator status matches real behavior
 - [x] Verify the deployed favicon asset resolves as an actual icon response instead of an HTML fallback
 - [x] Extend release verification notes so frontend deploy status is checked alongside `dashboard-api`
 
 ### Phase 5B: GitNexus Registration & Native Indexing Quality
-- [ ] Restore the GitNexus CLI/native runtime so indexing no longer falls back to pure JS extraction
+- [x] Restore the GitNexus CLI/native runtime so indexing no longer falls back to pure JS extraction
 - [x] Re-register the linked `cortex-hub` project with GitNexus so `gitnexus.registered` returns `true` again
 - [x] Improve cluster and process extraction so resource names stop collapsing to `unknown`
 - [ ] Re-run indexing after the registration/runtime fix and compare symbol/process/cluster quality before vs after

@@ -105,7 +105,7 @@ export default function Sidebar() {
           <div className={styles.statusRow}>
             <span className={`status-dot ${isOnline ? 'healthy' : 'unhealthy'}`} />
             <span className={styles.statusText}>
-              {isOnline ? 'All systems online' : 'Connecting...'}
+              {!isOnline ? 'Connecting...' : health?.status === 'degraded' ? 'Core degraded' : 'All systems online'}
             </span>
           </div>
         <div className={styles.commitRow} title={`Version: v${health?.version ?? '0.0.0'}\nCommit: ${health?.commit ?? 'dev'}\nBuilt: ${health?.buildDate ?? 'N/A'}`}>

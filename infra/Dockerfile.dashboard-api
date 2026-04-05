@@ -12,10 +12,13 @@ RUN corepack enable && \
 RUN echo "node-linker=hoisted" > /root/.npmrc && echo "shamefully-hoist=true" >> /root/.npmrc
 
 # Stage 1b: GitNexus CLI bundle for native indexing inside cortex-api
+# Must copy ALL global node_modules (not just gitnexus/) because npm hoists
+# native dependencies (tree-sitter-*, onnxruntime-node, @ladybugdb/core, etc.)
+# as siblings rather than nesting them inside the gitnexus package.
 FROM base AS gitnexus-cli
 RUN npm install -g gitnexus@latest && \
     mkdir -p /opt/gitnexus-cli && \
-    cp -a "$(npm root -g)/gitnexus" /opt/gitnexus-cli/module && \
+    cp -a "$(npm root -g)" /opt/gitnexus-cli/node_modules && \
     cp -L "$(npm prefix -g)/bin/gitnexus" /opt/gitnexus-cli/gitnexus && \
     chmod +x /opt/gitnexus-cli/gitnexus
 
@@ -94,8 +97,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
 # Copy production node_modules (hoisted, prod only)
 COPY --from=prod-deps /app/node_modules ./node_modules
 
-# Copy GitNexus CLI so index jobs can write to the shared /root/.gitnexus registry
-COPY --from=gitnexus-cli /opt/gitnexus-cli/module /usr/local/lib/node_modules/gitnexus
+# Copy GitNexus CLI with ALL hoisted dependencies (tree-sitter-*, onnxruntime, etc.)
+COPY --from=gitnexus-cli /opt/gitnexus-cli/node_modules /usr/local/lib/node_modules
 COPY --from=gitnexus-cli /opt/gitnexus-cli/gitnexus /usr/local/bin/gitnexus
 
 # Copy built artifacts

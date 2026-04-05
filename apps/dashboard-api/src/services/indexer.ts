@@ -134,6 +134,72 @@ const ALL_SOURCE_EXTENSIONS = new Set([
   '.txt', '.rst', '.adoc', '.csv', '.tsv',
 ])
 const MAX_FILE_SIZE = 512 * 1024 // 512KB
+const GITNEXUS_HEAP_MB = (() => {
+  const raw = Number.parseInt(process.env.GITNEXUS_HEAP_MB ?? '', 10)
+  return Number.isFinite(raw) && raw > 0 ? raw : 768
+})()
+
+function normalizeCount(value: string | null | undefined): number {
+  if (!value) return 0
+  const parsed = Number.parseInt(value.replaceAll(',', '').trim(), 10)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function withHeapLimit(nodeOptions: string | undefined, heapMb: number): string {
+  const parts = (nodeOptions ?? '')
+    .split(/\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .filter((part) => !part.startsWith('--max-old-space-size='))
+  parts.push(`--max-old-space-size=${heapMb}`)
+  return parts.join(' ')
+}
+
+function parseGitNexusAnalyzeSummary(output: string): { symbolsFound: number } {
+  const nodeMatch = output.match(/([\d,]+)\s*nodes?/i)
+    ?? output.match(/([\d,]+)\s*symbols?/i)
+
+  return {
+    symbolsFound: normalizeCount(nodeMatch?.[1]),
+  }
+}
+
+function countSourceFilesInDir(dir: string): number {
+  let totalFiles = 0
+
+  function walk(currentDir: string) {
+    let entries: string[]
+    try {
+      entries = readdirSync(currentDir)
+    } catch {
+      return
+    }
+
+    for (const entry of entries) {
+      if (SKIP_DIRS.has(entry) || entry.startsWith('.')) continue
+
+      const fullPath = join(currentDir, entry)
+      let stat
+      try {
+        stat = statSync(fullPath)
+      } catch {
+        continue
+      }
+
+      if (stat.isDirectory()) {
+        walk(fullPath)
+      } else if (stat.isFile()) {
+        const ext = extname(entry).toLowerCase()
+        if (!ALL_SOURCE_EXTENSIONS.has(ext)) continue
+        if (stat.size > MAX_FILE_SIZE) continue
+        totalFiles++
+      }
+    }
+  }
+
+  walk(dir)
+  return totalFiles
+}
 
 /**
  * Walk directory recursively and extract symbols from source files.
@@ -201,9 +267,22 @@ function extractSymbolsFromDir(dir: string): { totalFiles: number; symbolsFound:
 /**
  * Run a shell command and return a promise.
  */
-function runCommand(cmd: string, args: string[], cwd: string, jobId: string): Promise<{ stdout: string; code: number }> {
+function runCommand(
+  cmd: string,
+  args: string[],
+  cwd: string,
+  jobId: string,
+  envOverrides: NodeJS.ProcessEnv = {},
+): Promise<{ stdout: string; code: number }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { cwd, env: { ...process.env, PATH: process.env.PATH } })
+    const child = spawn(cmd, args, {
+      cwd,
+      env: {
+        ...process.env,
+        PATH: process.env.PATH,
+        ...envOverrides,
+      },
+    })
     runningJobs.set(jobId, child)
 
     let stdout = ''
@@ -298,24 +377,29 @@ export async function startIndexing(projectId: string, jobId: string, branch: st
     let totalFiles = 0
     let symbolNames: string[] = []
 
-    // Strategy 1: Try local CLI (fast, uses Tree-sitter AST)
+    // Strategy 1: Try local CLI (fast, uses Tree-sitter AST + shared GitNexus registry)
     let gitnexusSuccess = false
     try {
+      appendLog(jobId, `[info] Trying native GitNexus CLI with shared registry (heap ${GITNEXUS_HEAP_MB}MB)`)
       const analyzeResult = await runCommand('gitnexus', [
-        'analyze', '.', '--force', '--embeddings'
-      ], repoDir, jobId)
+        'analyze', '.', '--force'
+      ], repoDir, jobId, {
+        NODE_OPTIONS: withHeapLimit(process.env.NODE_OPTIONS, GITNEXUS_HEAP_MB),
+      })
 
-      const symbolMatch = analyzeResult.stdout.match(/(\d+)\s*symbols?/i)
-      const fileMatch = analyzeResult.stdout.match(/(\d+)\s*files?/i)
-      if (symbolMatch?.[1]) symbolsFound = parseInt(symbolMatch[1], 10)
-      if (fileMatch?.[1]) totalFiles = parseInt(fileMatch[1], 10)
+      const summary = parseGitNexusAnalyzeSummary(analyzeResult.stdout)
+      symbolsFound = summary.symbolsFound
+      totalFiles = countSourceFilesInDir(repoDir)
 
-      if (analyzeResult.code === 0 && (symbolsFound > 0 || totalFiles > 0)) {
+      if (analyzeResult.code === 0 && (symbolsFound > 0 || analyzeResult.stdout.includes('Repository indexed successfully'))) {
         gitnexusSuccess = true
         appendLog(jobId, `GitNexus: ${totalFiles} files, ${symbolsFound} symbols`)
+      } else {
+        appendLog(jobId, `[warn] Native GitNexus CLI exited ${analyzeResult.code}; falling back to pure JS extraction`)
       }
-    } catch {
-      // gitnexus not installed locally — expected in cortex-api container
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      appendLog(jobId, `[warn] Native GitNexus CLI unavailable: ${reason}`)
     }
 
     // Strategy 2: Pure JS fallback (regex-based, no native deps)

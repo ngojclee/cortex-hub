@@ -105,6 +105,57 @@ This feature should be delivered in two layers:
   - process and cluster endpoints are proven useful
   - there is clear human workflow demand beyond Mermaid maps and structured resources
 
+## 4. Current Live State
+- `Providers` live routing tests are working for both chat and embedding
+- `cortex-hub` is now linked as a Cortex project and indexed through the dashboard job system
+- `cortex_session_start` now resolves the linked project and returns `sharedMetadata.projectId`
+- `0.4.4` is live with `/health=ok`, a working favicon asset, and `gitnexus.registered=true` again on the linked project
+- The current blocker is no longer basic linking; it is **quality and trustworthiness of code-intel/context**
+- Two issues stand out:
+  - intel resource `staleness` can still prefer the older GitNexus timestamp over the fresher Cortex indexing timestamp until the reconciliation patch is deployed
+  - indexing still falls back to pure JS extraction, leaving process/cluster quality weak even though project linking is now healthy
+
+## Phase 5A: Runtime Health & Release Verification
+**Goal:** Make the live system status trustworthy for operators after every deploy.
+
+- Keep `/health` verification in the release flow so transient parity issues are caught quickly if they reappear
+- Distinguish true service outage from false-negative health probes when investigating future deploys
+- Verify the favicon release end-to-end:
+  - page HTML references the icon
+  - direct icon asset fetch resolves correctly
+  - browser tabs/bookmarks show the new branding consistently after hard refresh
+- Add release verification notes so operators can confirm both API and frontend deployment, not just `dashboard-api`
+
+## Phase 5B: GitNexus Registration & Native Indexing Quality
+**Goal:** Restore high-quality code intelligence so resources and prompts are worth trusting.
+
+- Fix the missing GitNexus CLI/runtime path that caused `pure JS symbol extraction`
+- Restore proper GitNexus repo registration for linked Cortex projects
+- Ensure `cortex://project/{projectId}/clusters` and `.../processes` return meaningful names instead of `unknown`
+- Reconcile Cortex-owned indexing metadata with GitNexus-owned graph metadata so staleness and symbol counts are consistent
+- Re-run indexing on the linked `cortex-hub` project after the registration/runtime fix
+
+## Phase 5C: Quality Gate Adoption
+**Goal:** Turn the Quality dashboard from empty chrome into an operational audit trail.
+
+- Make `cortex_quality_report` part of the normal phase-completion workflow
+- Ensure at least one real report is written after each meaningful implementation phase
+- Update dashboard expectations so empty-state messaging is clear until the first report exists
+- Verify reports appear in:
+  - dashboard overview card
+  - `/quality`
+  - session history and any downstream analytics that consume shared metadata
+
+## Phase 5D: UX Follow-Ups After Data Quality Stabilizes
+**Goal:** Decide on higher-level UX features only after underlying data becomes reliable.
+
+- Re-evaluate whether a visual graph explorer is still necessary once:
+  - project linking is stable
+  - process and cluster labels are meaningful
+  - prompts/resources cover most discovery workflows
+- If still needed, scope a lightweight graph/process explorer rather than a generic node-canvas
+- Design `cortex_code_rename` as preview-first/apply-second only after resource and process contracts stabilize
+
 ## Phase 6: Testing Phase
 **Goal:** Validate both the release path and the new context model.
 
@@ -117,13 +168,21 @@ This feature should be delivered in two layers:
   - responses remain stable across multiple clients
   - session start returns consistent hints and context summaries
   - token usage stays lower than equivalent repeated tool calls
+- Runtime verification:
+  - `/health` agrees with live service behavior
+  - favicon asset resolves as a real icon response, not a fallback HTML route
+  - linked project indexing uses the intended GitNexus/native path
+  - quality reports appear after explicit submission and are reflected in dashboard summary cards
 
 ## Risks
 - MCP SDK support for `server.resource(...)` may differ between local Node and deployed transports
 - GitNexus resource response formats may drift between versions and need an adapter layer
 - Cross-app metadata can become noisy if entity naming is not normalized early
 - A graph UI can consume substantial effort without materially improving agent performance
+- False-negative health checks can cause operators to distrust healthy deployments
+- Falling back to pure JS extraction can make process/cluster resources look present but low-value
 
 ## Release Recommendation
 - Ship the `/memories` fix as the next patch release
 - Ship the GitNexus context fabric as the next minor release after the patch is stable
+- For the next cycle, prioritize runtime trust and index quality before any graph-heavy UX work

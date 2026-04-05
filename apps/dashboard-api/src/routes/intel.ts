@@ -165,6 +165,8 @@ type ResourceContext = {
   }
 }
 
+type IndexedSource = 'gitnexus.indexedAt' | 'cortex.indexed_at' | 'cortex.index_jobs'
+
 const GITNEXUS_RESOURCE_TOOLS = [
   'cortex_code_search',
   'cortex_code_context',
@@ -416,27 +418,55 @@ function getLatestIndexJob(projectId: string): ProjectIndexJobRecord | null {
   ).get(projectId) as ProjectIndexJobRecord | undefined ?? null
 }
 
+function getPreferredIndexedSnapshot(
+  project: ProjectResourceRecord,
+  latestJob: ProjectIndexJobRecord | null,
+  gitnexusRepo: GitNexusRepoSummary | null,
+): { indexedAt: string | null; basedOn: IndexedSource | null } {
+  const candidates: Array<{ indexedAt: string; basedOn: IndexedSource; ts: number }> = []
+
+  const pushCandidate = (indexedAt: string | null | undefined, basedOn: IndexedSource) => {
+    if (!indexedAt) return
+    const ts = Date.parse(indexedAt)
+    if (!Number.isFinite(ts)) return
+    candidates.push({ indexedAt, basedOn, ts })
+  }
+
+  pushCandidate(gitnexusRepo?.indexedAt, 'gitnexus.indexedAt')
+  pushCandidate(project.indexed_at, 'cortex.indexed_at')
+  pushCandidate(latestJob?.completed_at, 'cortex.index_jobs')
+
+  if (candidates.length === 0) {
+    return { indexedAt: null, basedOn: null }
+  }
+
+  candidates.sort((a, b) => b.ts - a.ts)
+  const freshest = candidates[0]!
+  return { indexedAt: freshest.indexedAt, basedOn: freshest.basedOn }
+}
+
 function buildStaleness(
   project: ProjectResourceRecord,
   latestJob: ProjectIndexJobRecord | null,
   gitnexusRepo: GitNexusRepoSummary | null,
 ): ResourceContext['staleness'] {
   const activeStatuses = new Set(['pending', 'cloning', 'analyzing', 'ingesting'])
+  const freshest = getPreferredIndexedSnapshot(project, latestJob, gitnexusRepo)
   if (latestJob?.status && activeStatuses.has(latestJob.status)) {
     return {
       status: 'indexing',
       basedOn: 'cortex.index_jobs',
-      indexedAt: project.indexed_at ?? gitnexusRepo?.indexedAt ?? latestJob.completed_at,
+      indexedAt: freshest.indexedAt ?? latestJob.completed_at,
       ageHours: null,
       latestJobStatus: latestJob.status,
     }
   }
 
-  const indexedAt = gitnexusRepo?.indexedAt ?? project.indexed_at ?? latestJob?.completed_at ?? null
+  const indexedAt = freshest.indexedAt
   if (!indexedAt) {
     return {
       status: 'not_indexed',
-      basedOn: gitnexusRepo?.indexedAt ? 'gitnexus.indexedAt' : 'cortex.indexed_at',
+      basedOn: freshest.basedOn ?? 'cortex.indexed_at',
       indexedAt: null,
       ageHours: null,
       latestJobStatus: latestJob?.status ?? null,
@@ -447,7 +477,7 @@ function buildStaleness(
   if (!Number.isFinite(ageMs)) {
     return {
       status: 'unknown',
-      basedOn: gitnexusRepo?.indexedAt ? 'gitnexus.indexedAt' : 'cortex.indexed_at',
+      basedOn: freshest.basedOn ?? 'cortex.indexed_at',
       indexedAt,
       ageHours: null,
       latestJobStatus: latestJob?.status ?? null,
@@ -461,7 +491,7 @@ function buildStaleness(
 
   return {
     status,
-    basedOn: gitnexusRepo?.indexedAt ? 'gitnexus.indexedAt' : 'cortex.indexed_at',
+    basedOn: freshest.basedOn ?? 'cortex.indexed_at',
     indexedAt,
     ageHours,
     latestJobStatus: latestJob?.status ?? null,
@@ -488,6 +518,12 @@ async function resolveResourceContext(projectId: string): Promise<ResourceContex
 }
 
 function buildProjectResourceSummary(context: ResourceContext) {
+  const preferredIndexed = getPreferredIndexedSnapshot(
+    context.project,
+    context.latestJob,
+    context.gitnexusRepo,
+  )
+
   return {
     projectId: context.project.id,
     slug: context.project.slug,
@@ -502,7 +538,7 @@ function buildProjectResourceSummary(context: ResourceContext) {
     repoPath: join(REPOS_DIR, context.project.id).replace(/\\/g, '/'),
     repoCandidates: context.repoCandidates,
     branch: context.branch,
-    indexedAt: context.project.indexed_at ?? context.gitnexusRepo?.indexedAt ?? context.latestJob?.completed_at ?? null,
+    indexedAt: preferredIndexed.indexedAt,
     symbols: context.project.indexed_symbols ?? context.gitnexusRepo?.stats.symbols ?? null,
     staleness: context.staleness,
     gitnexus: context.gitnexusRepo
@@ -593,6 +629,13 @@ function normalizeClusterRows(rows: Array<Record<string, string | number | null>
       subCommunities: cluster.subCommunities,
     }))
     .sort((a, b) => b.symbols - a.symbols)
+}
+
+function hasOnlyUnknownNames(items: Array<{ name: string | null }>): boolean {
+  return items.length > 0 && items.every((item) => {
+    const normalized = (item.name ?? '').trim().toLowerCase()
+    return !normalized || normalized === 'unknown'
+  })
 }
 
 
@@ -1071,6 +1114,9 @@ intelRouter.get('/resources/project/:projectId/clusters', async (c) => {
        LIMIT ${Math.max(limit * 5, 50)}`,
     )
     const clusters = normalizeClusterRows(rows).slice(0, limit)
+    const hint = hasOnlyUnknownNames(clusters)
+      ? 'Cluster labels are still generic. This usually means the current graph index lacks enriched community naming or was built with a limited extraction path.'
+      : null
 
     return c.json({
       success: true,
@@ -1080,6 +1126,7 @@ intelRouter.get('/resources/project/:projectId/clusters', async (c) => {
         project: buildProjectResourceSummary(context),
         total: clusters.length,
         clusters,
+        hint,
       },
     })
   } catch (error) {
@@ -1190,6 +1237,9 @@ intelRouter.get('/resources/project/:projectId/processes', async (c) => {
       type: normalizeStringValue(row.processType),
       steps: parseNumberLike(row.stepCount) ?? 0,
     }))
+    const hint = hasOnlyUnknownNames(processes)
+      ? 'Process names are still generic. The linked project is indexed, but process labeling likely needs the native GitNexus path or richer graph enrichment.'
+      : null
 
     return c.json({
       success: true,
@@ -1199,6 +1249,7 @@ intelRouter.get('/resources/project/:projectId/processes', async (c) => {
         project: buildProjectResourceSummary(context),
         total: processes.length,
         processes,
+        hint,
       },
     })
   } catch (error) {

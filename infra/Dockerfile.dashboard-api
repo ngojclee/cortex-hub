@@ -11,6 +11,14 @@ RUN corepack enable && \
     rm -rf /var/lib/apt/lists/*
 RUN echo "node-linker=hoisted" > /root/.npmrc && echo "shamefully-hoist=true" >> /root/.npmrc
 
+# Stage 1b: GitNexus CLI bundle for native indexing inside cortex-api
+FROM base AS gitnexus-cli
+RUN npm install -g gitnexus@latest && \
+    mkdir -p /opt/gitnexus-cli && \
+    cp -a "$(npm root -g)/gitnexus" /opt/gitnexus-cli/module && \
+    cp -L "$(npm prefix -g)/bin/gitnexus" /opt/gitnexus-cli/gitnexus && \
+    chmod +x /opt/gitnexus-cli/gitnexus
+
 # Stage 2: Install ALL deps (cached pnpm store)
 FROM base AS deps
 WORKDIR /app
@@ -74,6 +82,7 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PORT=4000
+ENV GITNEXUS_HEAP_MB=768
 ARG COMMIT_SHA=unknown
 ARG BUILD_DATE=unknown
 ENV COMMIT_SHA=${COMMIT_SHA}
@@ -84,6 +93,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
 
 # Copy production node_modules (hoisted, prod only)
 COPY --from=prod-deps /app/node_modules ./node_modules
+
+# Copy GitNexus CLI so index jobs can write to the shared /root/.gitnexus registry
+COPY --from=gitnexus-cli /opt/gitnexus-cli/module /usr/local/lib/node_modules/gitnexus
+COPY --from=gitnexus-cli /opt/gitnexus-cli/gitnexus /usr/local/bin/gitnexus
 
 # Copy built artifacts
 COPY --from=builder /app/apps/dashboard-api/dist ./apps/dashboard-api/dist

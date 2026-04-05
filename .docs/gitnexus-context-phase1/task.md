@@ -50,6 +50,29 @@
 - [ ] Decide whether a visual graph explorer is still needed after resources and prompts are live
 - [ ] If needed, scope a lightweight graph page around clusters and process traces instead of a full generic graph canvas
 
+### Phase 5A: Runtime Health & Release Verification
+- [x] Re-check whether the earlier `/health` degraded mismatch still reproduces on the refreshed `0.4.4` host
+- [ ] Fix or narrow the health checks for `qdrant`, `cliproxy`, and `gitnexus` so operator status matches real behavior
+- [x] Verify the deployed favicon asset resolves as an actual icon response instead of an HTML fallback
+- [x] Extend release verification notes so frontend deploy status is checked alongside `dashboard-api`
+
+### Phase 5B: GitNexus Registration & Native Indexing Quality
+- [ ] Restore the GitNexus CLI/native runtime so indexing no longer falls back to pure JS extraction
+- [x] Re-register the linked `cortex-hub` project with GitNexus so `gitnexus.registered` returns `true` again
+- [ ] Improve cluster and process extraction so resource names stop collapsing to `unknown`
+- [ ] Re-run indexing after the registration/runtime fix and compare symbol/process/cluster quality before vs after
+
+### Phase 5C: Quality Gate Adoption
+- [ ] Make `cortex_quality_report` part of the normal phase-completion workflow
+- [ ] Submit at least one real quality report for the linked `cortex-hub` project
+- [ ] Verify the dashboard overview card and `/quality` page stop showing the empty-state path once reports exist
+- [ ] Ensure the shared metadata contract is preserved in quality reports and related analytics
+
+### Phase 5D: UX Follow-Ups After Data Quality Stabilizes
+- [ ] Re-evaluate the need for a visual graph explorer after process and cluster quality improves
+- [ ] If still needed, scope a lightweight graph/process explorer instead of a generic graph canvas
+- [ ] Keep `cortex_code_rename` deferred until the resource and process contracts are stable
+
 ## Verification Notes
 - [x] 2026-04-05: `http://10.21.1.108:4000/health` reports version `0.2.39`, commit `7fae1cf`, all core services `ok`
 - [x] 2026-04-05: `http://10.21.1.108:4000/api/mem9/list?limit=1` returns JSON successfully
@@ -71,3 +94,16 @@
 - [x] 2026-04-05: deployed `POST /api/llm/routing/test/chat` succeeds with `gemini-3.1-flash-lite-preview` and returns `OK`
 - [x] 2026-04-05: deployed `POST /api/llm/routing/test/embedding` succeeds with `gemini-embedding-001` and returns a `3072`-dimension vector
 - [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-web typecheck` after adding the Cortex Hub favicon asset
+- [x] 2026-04-05: live project `proj-44576c69` created for `https://github.com/ngojclee/cortex-hub.git` under `org-default`
+- [x] 2026-04-05: `GET /api/intel/resources/projects` now returns one linked Cortex project with GitNexus registration
+- [x] 2026-04-05: `POST /api/projects/proj-44576c69/index` completed successfully with `141 files` and `2826 symbols`
+- [x] 2026-04-05: `GET /api/intel/resources/project/proj-44576c69/context` now reports `branch=master`, `indexedAt=2026-04-05 14:24:40`, and `symbols=2826`
+- [x] 2026-04-05: live `POST /api/llm/routing/test/chat` still succeeds while `/health` reports `degraded`, confirming a health/runtime parity gap
+- [x] 2026-04-05: live `GET /api/intel/resources/projects` shows the linked project is fresh from Cortex indexing but `gitnexus.registered=false`
+- [x] 2026-04-05: live index log for `proj-44576c69` reports `Using pure JS symbol extraction (gitnexus CLI not available)`
+- [x] 2026-04-05: live dashboard HTML references `/icon.svg`, but direct `GET /icon.svg` currently returns HTML instead of a dedicated icon response
+- [x] 2026-04-05: refreshed host now reports `/health=ok`, `version=0.4.4`, `commit=b99e2af`, and all core services `ok`
+- [x] 2026-04-05: refreshed host serves `GET /icon.svg` as `image/svg+xml`, confirming the favicon release is live
+- [x] 2026-04-05: refreshed host `GET /api/intel/resources/projects` shows `projectId=proj-44576c69`, `gitnexus.registered=true`, and `indexed=1`
+- [x] 2026-04-05: refreshed host still shows stale intel-resource freshness based on the older `gitnexus.indexedAt`, so metadata reconciliation remains the next code fix
+- [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-api typecheck` after preparing the intel staleness reconciliation patch and native GitNexus CLI indexing path

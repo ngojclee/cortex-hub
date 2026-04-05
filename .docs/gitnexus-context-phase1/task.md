@@ -68,3 +68,6 @@
 - [x] 2026-04-05: deployed `http://10.21.1.108:4000/api/intel/repos` shows GitNexus has indexed `cortex-hub`, while `cortex://projects` remains empty because no Cortex project has been linked yet
 - [x] 2026-04-05: deployed `POST /api/sessions/start` returns `project=null` and `sharedMetadata=null` for `https://github.com/ngojclee/cortex-hub.git` until the repo is linked to a Cortex project
 - [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-api typecheck` and `pnpm --filter @cortex/dashboard-web typecheck` after adding live chat/embed routing tests in Providers and a Quality Gates empty-state hint
+- [x] 2026-04-05: deployed `POST /api/llm/routing/test/chat` succeeds with `gemini-3.1-flash-lite-preview` and returns `OK`
+- [x] 2026-04-05: deployed `POST /api/llm/routing/test/embedding` succeeds with `gemini-embedding-001` and returns a `3072`-dimension vector
+- [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-web typecheck` after adding the Cortex Hub favicon asset

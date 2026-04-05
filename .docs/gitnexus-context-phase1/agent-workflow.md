@@ -24,6 +24,15 @@ Give every MCP client the same low-token discovery path before it starts using h
    - Use `cortex_code_search` for focused retrieval after the resource map is clear
    - Use `cortex_cypher` only after the schema and target entities are clear
    - Use `cortex_code_read` when you already know which files matter
+5. Quality Gate
+   - After any meaningful implementation phase, submit `cortex_quality_report`
+   - Include `project_id`, dimension scores or raw verification results, and shared metadata such as:
+     - `branch`
+     - `filesTouched`
+     - `processesAffected`
+     - `clustersTouched`
+     - `resourceUris`
+   - If MCP automation is unavailable, seed the same audit trail from the dashboard `Quick Quality Report` card on `/quality`
 
 ## Prompt Entry Points
 - `cortex_detect_impact`

@@ -68,21 +68,47 @@ app.use('*', honoLogger())
 app.get('/health', async (c) => {
   const startTime = Date.now()
 
-  async function checkService(name: string, url: string): Promise<'ok' | 'error'> {
+  async function checkService(
+    url: string,
+    options?: {
+      acceptedStatuses?: number[]
+      healthyStatusTexts?: string[]
+    },
+  ): Promise<'ok' | 'error'> {
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(3000) })
-      return res.ok ? 'ok' : 'error'
+      const acceptedStatuses = new Set(options?.acceptedStatuses ?? [])
+      if (res.ok || acceptedStatuses.has(res.status)) {
+        if (!options?.healthyStatusTexts || options.healthyStatusTexts.length === 0) {
+          return 'ok'
+        }
+
+        const contentType = res.headers.get('content-type') ?? ''
+        if (!contentType.includes('application/json')) return 'ok'
+
+        const payload = await res.json().catch(() => null) as { status?: unknown } | null
+        const statusText = typeof payload?.status === 'string' ? payload.status.toLowerCase() : null
+        if (!statusText) return 'ok'
+        return options.healthyStatusTexts.includes(statusText) ? 'ok' : 'error'
+      }
+      return 'error'
     } catch {
       return 'error'
     }
   }
 
   const [qdrant, cliproxy, gitnexus, mem9, mcp] = await Promise.all([
-    checkService('qdrant', `${process.env['QDRANT_URL'] || 'http://qdrant:6333'}/healthz`),
-    checkService('cliproxy', `${process.env['LLM_PROXY_URL'] || 'http://llm-proxy:8317'}/v1/models`),
-    checkService('gitnexus', `${process.env['GITNEXUS_URL'] || 'http://gitnexus:4848'}/health`),
-    checkService('mem9', `http://localhost:${process.env.PORT || 4000}/api/mem9/health`),
-    checkService('mcp', `${process.env['MCP_HEALTH_URL'] || 'http://cortex-mcp:8317/health'}`),
+    checkService(`${process.env['QDRANT_URL'] || 'http://qdrant:6333'}/healthz`),
+    checkService(`${process.env['LLM_PROXY_URL'] || 'http://llm-proxy:8317'}/v1/models`, {
+      acceptedStatuses: [401],
+    }),
+    checkService(`${process.env['GITNEXUS_URL'] || 'http://gitnexus:4848'}/health`, {
+      healthyStatusTexts: ['healthy', 'ok'],
+    }),
+    checkService(`http://localhost:${process.env.PORT || 4000}/api/mem9/health`, {
+      healthyStatusTexts: ['healthy', 'ok'],
+    }),
+    checkService(`${process.env['MCP_HEALTH_URL'] || 'http://cortex-mcp:8317/health'}`),
   ])
 
   const services = { qdrant, cliproxy, gitnexus, mem9, mcp }

@@ -255,6 +255,108 @@ function normalizeStringValue(value: unknown): string | null {
   return trimmed
 }
 
+const GENERIC_CLUSTER_NAME = /^(unknown|cluster[_-\s]?\d+)$/i
+const TOKEN_STOPWORDS = new Set([
+  'a', 'an', 'and', 'api', 'app', 'apps', 'base', 'button', 'card', 'code', 'common',
+  'component', 'components', 'config', 'container', 'core', 'dashboard', 'data',
+  'default', 'detail', 'dist', 'error', 'feature', 'file', 'files', 'flow', 'general',
+  'helper', 'helpers', 'hook', 'hooks', 'index', 'item', 'js', 'json', 'layout', 'lib',
+  'list', 'logic', 'model', 'module', 'node', 'page', 'pages', 'path', 'provider',
+  'report', 'resource', 'route', 'routes', 'service', 'services', 'shared', 'src',
+  'state', 'store', 'system', 'ts', 'tsx', 'type', 'types', 'ui', 'util', 'utils',
+  'value', 'view', 'web',
+])
+
+function isGenericClusterName(value: string | null): boolean {
+  if (!value) return true
+  return GENERIC_CLUSTER_NAME.test(value.trim())
+}
+
+function splitIdentifierTokens(value: string): string[] {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .split(/[^A-Za-z0-9]+/)
+    .map((part) => part.trim().toLowerCase())
+    .filter(Boolean)
+}
+
+function cleanClusterToken(value: string): string | null {
+  const normalized = value.trim().toLowerCase()
+  if (
+    !normalized ||
+    normalized.length < 3 ||
+    TOKEN_STOPWORDS.has(normalized) ||
+    /^\d+$/.test(normalized)
+  ) {
+    return null
+  }
+  return normalized
+}
+
+function titleCaseToken(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+function collectClusterCandidateTokens(filePath: string | null, symbolName: string | null): string[] {
+  const weighted: string[] = []
+
+  if (filePath) {
+    const normalizedPath = filePath.replaceAll('\\', '/')
+    const parts = normalizedPath.split('/').filter(Boolean)
+    const fileName = parts.at(-1) ?? ''
+    const baseName = fileName.includes('.') ? fileName.slice(0, fileName.lastIndexOf('.')) : fileName
+    const parentDir = parts.at(-2) ?? ''
+
+    for (const token of splitIdentifierTokens(baseName)) {
+      const cleaned = cleanClusterToken(token)
+      if (cleaned) weighted.push(cleaned, cleaned, cleaned, cleaned)
+    }
+
+    for (const token of splitIdentifierTokens(parentDir)) {
+      const cleaned = cleanClusterToken(token)
+      if (cleaned) weighted.push(cleaned, cleaned)
+    }
+
+    for (const segment of parts) {
+      for (const token of splitIdentifierTokens(segment)) {
+        const cleaned = cleanClusterToken(token)
+        if (cleaned) weighted.push(cleaned)
+      }
+    }
+  }
+
+  if (symbolName) {
+    for (const token of splitIdentifierTokens(symbolName)) {
+      const cleaned = cleanClusterToken(token)
+      if (cleaned) weighted.push(cleaned, cleaned)
+    }
+  }
+
+  return weighted
+}
+
+function inferClusterLabelFromMembers(
+  members: Array<{ filePath: string | null; name: string | null }>,
+): string | null {
+  const scores = new Map<string, number>()
+
+  for (const member of members) {
+    const weightedTokens = collectClusterCandidateTokens(member.filePath, member.name)
+    for (const token of weightedTokens) {
+      scores.set(token, (scores.get(token) ?? 0) + 1)
+    }
+  }
+
+  const winner = Array.from(scores.entries())
+    .sort((a, b) => {
+      if (b[1] !== a[1]) return b[1] - a[1]
+      if (b[0].length !== a[0].length) return b[0].length - a[0].length
+      return a[0].localeCompare(b[0])
+    })[0]?.[0]
+
+  return winner ? titleCaseToken(winner) : null
+}
+
 function slugifyName(value: string): string {
   return value
     .trim()
@@ -1003,10 +1105,65 @@ function normalizeClusterRows(rows: Array<Record<string, string | number | null>
     .sort((a, b) => b.symbols - a.symbols)
 }
 
+async function enrichGenericClusterNames(
+  projectId: string,
+  clusters: Array<{
+    id: string | null
+    name: string
+    label: string | null
+    heuristicLabel: string | null
+    symbols: number
+    cohesion: number | null
+    subCommunities: number
+  }>,
+) {
+  const genericIds = clusters
+    .filter((cluster) => cluster.id && isGenericClusterName(cluster.name))
+    .map((cluster) => cluster.id as string)
+
+  if (genericIds.length === 0) return clusters
+
+  const whereClause = genericIds
+    .map((clusterId) => `c.id = "${escapeCypherString(clusterId)}"`)
+    .join(' OR ')
+
+  const { rows } = await queryProjectCypherRows(
+    projectId,
+    `MATCH (n)-[:CodeRelation {type: 'MEMBER_OF'}]->(c:Community)
+     WHERE ${whereClause}
+     RETURN c.id AS clusterId, n.name AS name, n.filePath AS filePath
+     LIMIT ${Math.max(genericIds.length * 20, 60)}`,
+  )
+
+  const membersByCluster = new Map<string, Array<{ filePath: string | null; name: string | null }>>()
+  for (const row of rows) {
+    const clusterId = normalizeStringValue(row.clusterId)
+    if (!clusterId) continue
+    const members = membersByCluster.get(clusterId) ?? []
+    members.push({
+      filePath: normalizeStringValue(row.filePath),
+      name: normalizeStringValue(row.name),
+    })
+    membersByCluster.set(clusterId, members)
+  }
+
+  return clusters.map((cluster) => {
+    if (!cluster.id || !isGenericClusterName(cluster.name)) return cluster
+    const inferredLabel = inferClusterLabelFromMembers(membersByCluster.get(cluster.id) ?? [])
+    if (!inferredLabel) return cluster
+
+    return {
+      ...cluster,
+      name: inferredLabel,
+      heuristicLabel: inferredLabel,
+    }
+  })
+}
+
 function hasOnlyUnknownNames(items: Array<{ name: string | null }>): boolean {
   return items.length > 0 && items.every((item) => {
     const normalized = (item.name ?? '').trim().toLowerCase()
-    return !normalized || normalized === 'unknown'
+    return !normalized || normalized === 'unknown' || GENERIC_CLUSTER_NAME.test(normalized)
   })
 }
 
@@ -1569,7 +1726,10 @@ intelRouter.get('/resources/project/:projectId/clusters', async (c) => {
        ORDER BY c.symbolCount DESC
        LIMIT ${Math.max(limit * 5, 50)}`,
     )
-    const clusters = normalizeClusterRows(rows).slice(0, limit)
+    const clusters = (await enrichGenericClusterNames(
+      context.project.id,
+      normalizeClusterRows(rows),
+    )).slice(0, limit)
     const hint = hasOnlyUnknownNames(clusters)
       ? 'Cluster labels are still generic. This usually means the current graph index lacks enriched community naming or was built with a limited extraction path.'
       : null
@@ -1611,7 +1771,7 @@ intelRouter.get('/resources/project/:projectId/cluster/:clusterName', async (c) 
     const { repo, rows: clusterRows } = await queryProjectCypherRows(
       context.project.id,
       `MATCH (c:Community)
-       WHERE c.label = "${safeClusterName}" OR c.heuristicLabel = "${safeClusterName}"
+       WHERE c.id = "${safeClusterName}" OR c.label = "${safeClusterName}" OR c.heuristicLabel = "${safeClusterName}"
        RETURN c.id AS id, c.label AS label, c.heuristicLabel AS heuristicLabel,
               c.cohesion AS cohesion, c.symbolCount AS symbolCount
        ORDER BY c.symbolCount DESC`,
@@ -1624,7 +1784,7 @@ intelRouter.get('/resources/project/:projectId/cluster/:clusterName', async (c) 
     const { rows: memberRows } = await queryProjectCypherRows(
       context.project.id,
       `MATCH (n)-[:CodeRelation {type: 'MEMBER_OF'}]->(c:Community)
-       WHERE c.label = "${safeClusterName}" OR c.heuristicLabel = "${safeClusterName}"
+       WHERE c.id = "${safeClusterName}" OR c.label = "${safeClusterName}" OR c.heuristicLabel = "${safeClusterName}"
        RETURN DISTINCT n.name AS name, labels(n)[0] AS type, n.filePath AS filePath
        LIMIT 30`,
     )

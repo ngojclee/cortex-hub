@@ -46,7 +46,7 @@
 - [x] Reuse the same metadata shape in memory and dashboard views where it fits
 
 ### Phase 5: Deferred Follow-Ups
-- [ ] Design `cortex_code_rename` as preview-first, apply-second workflow
+- [x] Design `cortex_code_rename` as preview-first, apply-second workflow
 - [x] Decide whether a visual graph explorer is still needed after resources and prompts are live
 - [x] If needed, scope a lightweight graph page around clusters and process traces instead of a full generic graph canvas
 
@@ -59,18 +59,18 @@
 ### Phase 5B: GitNexus Registration & Native Indexing Quality
 - [ ] Restore the GitNexus CLI/native runtime so indexing no longer falls back to pure JS extraction
 - [x] Re-register the linked `cortex-hub` project with GitNexus so `gitnexus.registered` returns `true` again
-- [ ] Improve cluster and process extraction so resource names stop collapsing to `unknown`
+- [x] Improve cluster and process extraction so resource names stop collapsing to `unknown`
 - [ ] Re-run indexing after the registration/runtime fix and compare symbol/process/cluster quality before vs after
 
 ### Phase 5C: Quality Gate Adoption
-- [ ] Make `cortex_quality_report` part of the normal phase-completion workflow
+- [x] Make `cortex_quality_report` part of the normal phase-completion workflow
 - [x] Add a dashboard-level quick report composer so operators can seed the first real quality report without waiting on MCP automation
-- [ ] Submit at least one real quality report for the linked `cortex-hub` project
-- [ ] Verify the dashboard overview card and `/quality` page stop showing the empty-state path once reports exist
-- [ ] Ensure the shared metadata contract is preserved in quality reports and related analytics
+- [x] Submit at least one real quality report for the linked `cortex-hub` project
+- [x] Verify the dashboard overview card and `/quality` page stop showing the empty-state path once reports exist
+- [x] Ensure the shared metadata contract is preserved in quality reports and related analytics
 
 ### Phase 5D: UX Follow-Ups After Data Quality Stabilizes
-- [ ] Re-evaluate the need for a visual graph explorer after process and cluster quality improves
+- [x] Re-evaluate the need for a visual graph explorer after process and cluster quality improves
 - [x] If still needed, scope a lightweight graph/process explorer instead of a generic graph canvas
 - [x] Refresh reused sessions so `mode` and session context update when `cortex_session_start` is called again
 - [x] Add discovery surfacing for unlinked repos and knowledge-only project spaces so operators can promote them into real Cortex projects
@@ -119,3 +119,8 @@
 - [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-api typecheck` after adding project discovery resources and project-link promotion for orphan repos/knowledge spaces
 - [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-web typecheck` after upgrading `/graph` with discovery cards, knowledge-aware stats, and orbit layout
 - [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-api typecheck`, `pnpm --filter @cortex/dashboard-web typecheck`, and `pnpm --filter @cortex/hub-mcp typecheck` after adding manual quality-report submission from the dashboard and dimension-score support in the API/MCP tool
+- [x] 2026-04-05: live `POST /api/quality/report` wrote report `qr_1775412535381_97w20` for `proj-44576c69` with grade `A`, score `96`, and canonical `sharedMetadata`
+- [x] 2026-04-05: live `GET /api/quality/summary` and `GET /api/metrics/overview-v2` now show non-empty quality stats (`lastGrade=A`, `lastScore=96`, `reportsToday=1`)
+- [x] 2026-04-05: live `GET /api/quality/logs?limit=3` preserves the same shared metadata contract inside analytics/query logs
+- [x] 2026-04-05: live `GET /api/intel/resources/project/proj-44576c69/processes` now returns named processes instead of collapsing to `unknown`, and `GET /api/intel/resources/project/proj-44576c69/clusters` now mostly returns named clusters
+- [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-api typecheck`, `pnpm --filter @cortex/dashboard-web typecheck`, and `pnpm --filter @cortex/hub-mcp typecheck` after adding generic-cluster label inference, health-check narrowing, and the rename workflow design doc

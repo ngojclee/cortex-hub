@@ -154,6 +154,7 @@ This feature should be delivered in two layers:
   - project linking is stable
   - process and cluster labels are meaningful
   - prompts/resources cover most discovery workflows
+- Current decision: keep the lightweight graph/process explorer and improve its data quality rather than building a heavier free-form canvas now
 - If still needed, scope a lightweight graph/process explorer rather than a generic node-canvas
 - Design `cortex_code_rename` as preview-first/apply-second only after resource and process contracts stabilize
 

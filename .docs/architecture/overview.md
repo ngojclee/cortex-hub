@@ -235,4 +235,4 @@ graph LR
     DA --> DW["dashboard-web"]
 ```
 
-> See [`docs/architecture/monorepo-structure.md`](monorepo-structure.md) for detailed package descriptions.
+> See [`.docs/architecture/monorepo-structure.md`](monorepo-structure.md) for detailed package descriptions.

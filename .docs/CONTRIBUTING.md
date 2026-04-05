@@ -29,7 +29,7 @@ pnpm dev
 | `develop` | Integration branch |
 | `feat/<name>` | New features |
 | `fix/<name>` | Bug fixes |
-| `docs/<name>` | Documentation updates |
+| `.docs/<name>` | Documentation updates |
 
 ```bash
 # Create a feature branch

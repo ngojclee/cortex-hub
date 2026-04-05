@@ -173,7 +173,7 @@ main() {
   echo ""
   echo "  Next steps:"
   echo "    1. Configure .env with your API keys"
-  echo "    2. Setup Cloudflare Tunnel (see docs/guides/implementation.md)"
+  echo "    2. Setup Cloudflare Tunnel (see .docs/guides/implementation.md)"
   echo "    3. Deploy Hub MCP (Docker container)"
   echo ""
 }
@@ -207,7 +207,7 @@ cortex-hub-v1.0.0-linux-amd64.tar.gz
 │   ├── hub-mcp/             # Built Worker bundle
 │   ├── dashboard-api/       # Built API server
 │   └── dashboard-web/       # Built static frontend
-└── docs/                    # Offline documentation
+└── .docs/                   # Offline documentation
 ```
 
 ### Distribution Channels

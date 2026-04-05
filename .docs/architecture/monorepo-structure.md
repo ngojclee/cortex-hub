@@ -125,7 +125,7 @@ cortex-hub/
 │   └── cloudflare/
 │       └── tunnel-config.yml
 │
-├── docs/                               # Project documentation
+├── .docs/                              # Project documentation
 │   ├── architecture/
 │   ├── guides/
 │   ├── api/

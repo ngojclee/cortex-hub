@@ -6,6 +6,7 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 
 import { registerCodeTools } from './tools/code.js'
 import { registerCodeResources } from './resources/code.js'
+import { registerCodePrompts } from './prompts/code.js'
 import { registerHealthTools } from './tools/health.js'
 import { registerIndexingTools } from './tools/indexing.js'
 import { registerKnowledgeTools } from './tools/knowledge.js'
@@ -132,6 +133,10 @@ app.get('/', (c) => {
       'cortex://project/{projectId}/process/{processName}',
       'cortex://project/{projectId}/schema',
     ],
+    prompts: [
+      'cortex_detect_impact',
+      'cortex_generate_map',
+    ],
   })
 })
 
@@ -142,6 +147,7 @@ function createMcpServer(env: Env) {
     version: env.MCP_SERVER_VERSION ?? '0.1.0',
   })
   registerCodeResources(server, env)
+  registerCodePrompts(server, env)
   registerHealthTools(server, env)
   registerMemoryTools(server, env)
   registerKnowledgeTools(server, env)

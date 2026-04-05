@@ -35,10 +35,10 @@
 - [ ] Keep the in-progress `docs/ -> .docs/` migration out of the release commit unless it is intentionally finalized in the same checkpoint
 
 ### Phase 3: Prompt & Session Enrichment
-- [ ] Add a `cortex_detect_impact` prompt wrapper
-- [ ] Add a `cortex_generate_map` prompt wrapper
-- [ ] Extend `cortex_session_start` to return top clusters, top processes, and suggested next steps
-- [ ] Document the recommended agent workflow for discovery -> overview -> deep dive -> action
+- [x] Add a `cortex_detect_impact` prompt wrapper
+- [x] Add a `cortex_generate_map` prompt wrapper
+- [x] Extend `cortex_session_start` to return top clusters, top processes, and suggested next steps
+- [x] Document the recommended agent workflow for discovery -> overview -> deep dive -> action
 
 ### Phase 4: Shared Cross-App Metadata
 - [ ] Define the canonical metadata keys for files, symbols, processes, and clusters
@@ -57,3 +57,4 @@
 - [x] 2026-04-05: `pnpm --filter @cortex/hub-mcp typecheck`
 - [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-web typecheck` after `Memories` UI/data-shape fix
 - [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-api typecheck` after `mem9` project-filter compatibility update
+- [x] 2026-04-05: local `pnpm --filter @cortex/hub-mcp typecheck` after prompt wrappers and session context-fabric enrichment

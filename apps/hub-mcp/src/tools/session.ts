@@ -3,6 +3,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { apiCall } from '../api-call.js'
 import { fetchUnseenChanges, formatChangeSummary, acknowledgeChanges } from './changes.js'
+import { buildContextFabric } from '../context-fabric.js'
 
 /**
  * Register Session Tools
@@ -189,6 +190,24 @@ export function registerSessionTools(server: McpServer, env: Env) {
               }
             }
           } catch { /* non-fatal */ }
+
+          try {
+            const contextFabric = await buildContextFabric(env, projectId)
+            if (contextFabric) {
+              session.contextFabric = contextFabric
+              session.sessionSnapshot = {
+                projectId,
+                branch: contextFabric.branch,
+                clusters: contextFabric.topClusters.map((cluster) => cluster.name),
+                processes: contextFabric.topProcesses.map((process) => process.name),
+                suggestedFiles: contextFabric.suggestedFiles,
+                resourceUris: contextFabric.suggestedNext.resources,
+              }
+              session.suggestedNext = contextFabric.suggestedNext
+            }
+          } catch {
+            // Non-fatal: session start should still work even if context enrichment fails.
+          }
         }
 
         return {

@@ -1,3 +1,5 @@
+'use client'
+
 import styles from './SymbolTreeViewer.module.css'
 
 interface SymbolTreeNode {
@@ -43,17 +45,17 @@ export default function SymbolTreeViewer({ symbolName, treeData, onClose }: Symb
                       {segments.map((seg: any, sIdx: number) => (
                         <div key={`seg-${sIdx}`} className={styles.segment}>
                           <div className={styles.node}>
-                            <span className={styles.nodeName}>{seg.start.properties.name}</span>
-                            <span className={styles.nodeType}>{seg.start.labels[0]}</span>
+                            <span className={styles.nodeName}>{seg?.start?.properties?.name ?? 'unknown'}</span>
+                            <span className={styles.nodeType}>{seg?.start?.labels?.[0] ?? 'Symbol'}</span>
                           </div>
                           <div className={styles.edge}>
-                            <span className={styles.edgeType}>{seg.relationship.type}</span>
+                            <span className={styles.edgeType}>{seg?.relationship?.type ?? 'DEPENDS_ON'}</span>
                             <div className={styles.edgeLine} />
                           </div>
                           {sIdx === segments.length - 1 && (
                             <div className={styles.node}>
-                              <span className={styles.nodeName}>{seg.end.properties.name}</span>
-                              <span className={styles.nodeType}>{seg.end.labels[0]}</span>
+                              <span className={styles.nodeName}>{seg?.end?.properties?.name ?? 'unknown'}</span>
+                              <span className={styles.nodeType}>{seg?.end?.labels?.[0] ?? 'Symbol'}</span>
                             </div>
                           )}
                         </div>

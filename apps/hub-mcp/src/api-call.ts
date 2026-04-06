@@ -25,6 +25,21 @@ export async function apiCall(
   if (env.API_KEY_OWNER && !headers.has('X-API-Key-Owner')) {
     headers.set('X-API-Key-Owner', env.API_KEY_OWNER)
   }
+  if (env.CLIENT_TRANSPORT && !headers.has('X-Cortex-Transport')) {
+    headers.set('X-Cortex-Transport', env.CLIENT_TRANSPORT)
+  }
+  if (env.CLIENT_APP && !headers.has('X-Cortex-Client-App')) {
+    headers.set('X-Cortex-Client-App', env.CLIENT_APP)
+  }
+  if (env.CLIENT_HOST && !headers.has('X-Cortex-Client-Host')) {
+    headers.set('X-Cortex-Client-Host', env.CLIENT_HOST)
+  }
+  if (env.CLIENT_IP && !headers.has('X-Cortex-Client-IP')) {
+    headers.set('X-Cortex-Client-IP', env.CLIENT_IP)
+  }
+  if (env.CLIENT_USER_AGENT && !headers.has('X-Cortex-Client-User-Agent')) {
+    headers.set('X-Cortex-Client-User-Agent', env.CLIENT_USER_AGENT)
+  }
 
   const response = await fetch(`${baseUrl}${path}`, {
     ...init,

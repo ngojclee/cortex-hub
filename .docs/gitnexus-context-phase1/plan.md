@@ -158,6 +158,23 @@ This feature should be delivered in two layers:
 - If still needed, scope a lightweight graph/process explorer rather than a generic node-canvas
 - Design `cortex_code_rename` as preview-first/apply-second only after resource and process contracts stabilize
 
+## Phase 5E: Auth & Session Observability
+**Goal:** Make operator-facing access/session state match what is actually happening on the host.
+
+- Wire `AUTH_ENABLED`, session TTL, and Telegram approval env vars into the Docker/runtime path instead of assuming they exist only in local `.env` files
+- Split the dashboard `Sessions` surface into:
+  - user login sessions from `/api/auth/sessions`
+  - agent/API/MCP work sessions from `/api/sessions/all`
+- Standardize connection-source metadata so new sessions can capture:
+  - transport (`dashboard`, `api`, `mcp`)
+  - client app (`antigravity`, `claude`, `codex`, `cursor`, etc.)
+  - client host when explicitly provided
+  - client user agent
+  - client IP
+- Propagate request-source headers from `hub-mcp` into `dashboard-api` so session history can answer “which app/machine connected here?”
+- Add a visible logout affordance in the dashboard shell whenever auth is enabled and a session is approved
+- Use this observability layer as the prerequisite before heavier graph/tree UX work, because the operator first needs trustworthy session identity and routing data
+
 ## Phase 6: Testing Phase
 **Goal:** Validate both the release path and the new context model.
 

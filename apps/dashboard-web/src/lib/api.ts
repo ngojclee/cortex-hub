@@ -278,6 +278,13 @@ export interface SessionHandoff {
   expires_at: string | null
   api_key_name: string | null
   sharedMetadata?: Record<string, unknown> | null
+  connection?: {
+    transport?: string
+    clientApp?: string
+    clientHost?: string
+    clientUserAgent?: string
+    clientIp?: string
+  } | null
   savings?: {
     toolCalls: number
     tokensSaved: number
@@ -331,8 +338,14 @@ export async function getAuthStatus(requestId: string) {
   )
 }
 
+export interface AuthValidationResponse {
+  valid: boolean
+  email?: string
+  sessionId?: string
+}
+
 export async function validateSession() {
-  return apiFetch<{ valid: boolean; email?: string }>('/api/auth/validate')
+  return apiFetch<AuthValidationResponse>('/api/auth/validate')
 }
 
 export async function logout() {

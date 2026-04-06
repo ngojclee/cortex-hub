@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { randomUUID } from 'crypto'
 import { db } from '../db/client.js'
 import {
@@ -23,6 +23,14 @@ type ManualDimensionScores = {
   traceability: number
 }
 
+type SharedConnectionMetadata = {
+  transport?: string
+  clientApp?: string
+  clientHost?: string
+  clientUserAgent?: string
+  clientIp?: string
+}
+
 function parseSessionContext(raw: unknown): Record<string, unknown> | null {
   if (typeof raw !== 'string' || !raw.trim()) return null
   try {
@@ -45,6 +53,157 @@ function clampDimensionScore(value: unknown): number {
   const numeric = Number(value)
   if (!Number.isFinite(numeric)) return 0
   return Math.max(0, Math.min(25, Math.round(numeric)))
+}
+
+function asNonEmptyString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0
+    ? value.trim()
+    : undefined
+}
+
+function firstForwardedValue(value: string | undefined): string | undefined {
+  return value
+    ?.split(',')
+    .map((entry) => entry.trim())
+    .find(Boolean)
+}
+
+function compactConnectionMetadata(
+  metadata: SharedConnectionMetadata | null | undefined,
+): SharedConnectionMetadata | undefined {
+  if (!metadata) return undefined
+
+  const compacted: SharedConnectionMetadata = {}
+  if (metadata.transport) compacted.transport = metadata.transport
+  if (metadata.clientApp) compacted.clientApp = metadata.clientApp
+  if (metadata.clientHost) compacted.clientHost = metadata.clientHost
+  if (metadata.clientUserAgent) compacted.clientUserAgent = metadata.clientUserAgent
+  if (metadata.clientIp) compacted.clientIp = metadata.clientIp
+
+  return Object.keys(compacted).length > 0 ? compacted : undefined
+}
+
+function attachConnectionMetadata(
+  metadata: Record<string, unknown> | null | undefined,
+  connection: SharedConnectionMetadata | undefined,
+): Record<string, unknown> | null {
+  const base = metadata ? { ...metadata } : {}
+  if (connection) {
+    base.connection = connection
+  }
+
+  return Object.keys(base).length > 0 ? base : null
+}
+
+function extractConnectionMetadata(value: unknown): SharedConnectionMetadata | undefined {
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      return extractConnectionMetadata(JSON.parse(value))
+    } catch {
+      return undefined
+    }
+  }
+
+  if (!value || typeof value !== 'object') return undefined
+
+  const input = value as Record<string, unknown>
+  const connection = input.connection && typeof input.connection === 'object'
+    ? input.connection as Record<string, unknown>
+    : input
+
+  return compactConnectionMetadata({
+    transport: asNonEmptyString(connection.transport),
+    clientApp: asNonEmptyString(connection.clientApp) ?? asNonEmptyString(connection.client_app) ?? asNonEmptyString(connection.app),
+    clientHost: asNonEmptyString(connection.clientHost) ?? asNonEmptyString(connection.client_host) ?? asNonEmptyString(connection.host),
+    clientUserAgent:
+      asNonEmptyString(connection.clientUserAgent) ??
+      asNonEmptyString(connection.client_user_agent) ??
+      asNonEmptyString(connection.userAgent) ??
+      asNonEmptyString(connection.user_agent),
+    clientIp:
+      asNonEmptyString(connection.clientIp) ??
+      asNonEmptyString(connection.client_ip) ??
+      asNonEmptyString(connection.ip) ??
+      asNonEmptyString(connection.ip_address),
+  })
+}
+
+function mergeConnectionMetadata(
+  base: SharedConnectionMetadata | undefined,
+  incoming: SharedConnectionMetadata | undefined,
+): SharedConnectionMetadata | undefined {
+  return compactConnectionMetadata({
+    transport: incoming?.transport ?? base?.transport,
+    clientApp: incoming?.clientApp ?? base?.clientApp,
+    clientHost: incoming?.clientHost ?? base?.clientHost,
+    clientUserAgent: incoming?.clientUserAgent ?? base?.clientUserAgent,
+    clientIp: incoming?.clientIp ?? base?.clientIp,
+  })
+}
+
+function inferClientApp(
+  explicitApp: string | undefined,
+  agentId: string,
+  apiKeyName: string | null,
+  userAgent: string | undefined,
+  transport: string | undefined,
+): string | undefined {
+  const direct = explicitApp
+  if (direct) return direct
+
+  const haystack = [
+    agentId,
+    apiKeyName ?? '',
+    userAgent ?? '',
+  ].join(' ').toLowerCase()
+
+  const inferred = [
+    ['antigravity', 'antigravity'],
+    ['claude', 'claude'],
+    ['codex', 'codex'],
+    ['cursor', 'cursor'],
+    ['windsurf', 'windsurf'],
+    ['gemini', 'gemini'],
+  ] as Array<[string, string]>
+  const match = inferred.find(([needle]) => haystack.includes(needle))
+
+  if (match) return match[1]
+  if (transport === 'dashboard') return 'dashboard'
+  if (transport === 'mcp') return 'mcp-client'
+  return asNonEmptyString(apiKeyName) ?? asNonEmptyString(agentId)
+}
+
+function buildConnectionMetadata(
+  c: Context,
+  agentId: string,
+  apiKeyName: string | null,
+): SharedConnectionMetadata | undefined {
+  const headerTransport = asNonEmptyString(c.req.header('x-cortex-transport'))
+  const rawUserAgent =
+    asNonEmptyString(c.req.header('x-cortex-client-user-agent')) ??
+    asNonEmptyString(c.req.header('user-agent'))
+  const transport = headerTransport ??
+    (rawUserAgent?.toLowerCase().includes('mozilla/') ? 'dashboard' : 'api')
+
+  const metadata: SharedConnectionMetadata = {
+    transport,
+    clientApp: inferClientApp(
+      asNonEmptyString(c.req.header('x-cortex-client-app')),
+      agentId,
+      apiKeyName,
+      rawUserAgent,
+      transport,
+    ),
+    clientHost: asNonEmptyString(c.req.header('x-cortex-client-host')),
+    clientUserAgent: rawUserAgent,
+    clientIp:
+      asNonEmptyString(c.req.header('x-cortex-client-ip')) ??
+      firstForwardedValue(c.req.header('cf-connecting-ip')) ??
+      firstForwardedValue(c.req.header('x-forwarded-for')) ??
+      asNonEmptyString(c.req.header('x-real-ip')),
+  }
+
+  return compactConnectionMetadata(metadata)
 }
 
 // ── Server-side session validation ──
@@ -474,13 +633,18 @@ sessionsRouter.post('/start', async (c) => {
       }
     }
 
-    const normalizedSharedMetadata = normalizeSharedProjectMetadata(shared_metadata, {
+    const connectionMetadata = buildConnectionMetadata(c, agentId, apiKeyName)
+    const normalizedProjectMetadata = normalizeSharedProjectMetadata(shared_metadata, {
       projectId: (project?.id as string | undefined) ?? undefined,
     })
+    const normalizedSharedMetadata = attachConnectionMetadata(
+      normalizedProjectMetadata ? { ...normalizedProjectMetadata } as Record<string, unknown> : null,
+      connectionMetadata,
+    )
 
     let sessionId: string
     const existingSession = db.prepare(
-      `SELECT id FROM session_handoffs
+      `SELECT id, project_id, shared_metadata FROM session_handoffs
        WHERE from_agent = ? AND project IN (?, ?, ?, ?) AND status = 'active'
        ORDER BY created_at DESC LIMIT 1`
     ).get(
@@ -489,11 +653,30 @@ sessionsRouter.post('/start', async (c) => {
       `${normalizedRepo}.git`,
       `${normalizedRepo}/`,
       repo ?? 'unknown'
-    ) as { id: string } | undefined
+    ) as { id: string; project_id: string | null; shared_metadata: string | null } | undefined
 
     if (existingSession) {
       sessionId = existingSession.id
-      const nextContext = JSON.stringify({ repo, mode: resolvedMode, agentId, projectId: project?.id })
+      const mergedProjectMetadata = mergeSharedProjectMetadata(
+        parseSharedProjectMetadataJson(existingSession.shared_metadata, {
+          projectId: existingSession.project_id ?? undefined,
+        }),
+        normalizedProjectMetadata,
+      )
+      const mergedSharedMetadata = attachConnectionMetadata(
+        mergedProjectMetadata ? { ...mergedProjectMetadata } as Record<string, unknown> : null,
+        mergeConnectionMetadata(
+          extractConnectionMetadata(existingSession.shared_metadata),
+          connectionMetadata,
+        ),
+      )
+      const nextContext = JSON.stringify({
+        repo,
+        mode: resolvedMode,
+        agentId,
+        projectId: project?.id,
+        connection: extractConnectionMetadata(mergedSharedMetadata) ?? connectionMetadata ?? null,
+      })
       db.prepare(
         `UPDATE session_handoffs
          SET created_at = datetime('now'),
@@ -506,7 +689,7 @@ sessionsRouter.post('/start', async (c) => {
         `Session started: mode=${resolvedMode}`,
         nextContext,
         (project?.id as string | undefined) ?? null,
-        normalizedSharedMetadata ? JSON.stringify(normalizedSharedMetadata) : null,
+        mergedSharedMetadata ? JSON.stringify(mergedSharedMetadata) : null,
         sessionId,
       )
     } else {
@@ -541,7 +724,13 @@ sessionsRouter.post('/start', async (c) => {
         agentId,
         normalizedRepo,
         `Session started: mode=${resolvedMode}`,
-        JSON.stringify({ repo, mode: resolvedMode, agentId, projectId: project?.id }),
+        JSON.stringify({
+          repo,
+          mode: resolvedMode,
+          agentId,
+          projectId: project?.id,
+          connection: extractConnectionMetadata(normalizedSharedMetadata) ?? connectionMetadata ?? null,
+        }),
         'active',
         apiKeyName,
         (project?.id as string | undefined) ?? null,
@@ -589,6 +778,12 @@ sessionsRouter.get('/all', (c) => {
     // Enrich each session with token savings from query_logs
     const sessionsWithSavings = rawSessions.map((session) => {
       const sessionContext = parseSessionContext(session.context)
+      const sharedMetadata = attachConnectionMetadata(
+        parseSharedProjectMetadataJson(session.shared_metadata, {
+          projectId: typeof session.project_id === 'string' ? session.project_id : undefined,
+        }) as Record<string, unknown> | null,
+        extractConnectionMetadata(session.shared_metadata),
+      )
       try {
         const agentId = session.from_agent as string
         const sessionCreatedAt = session.created_at as string
@@ -608,9 +803,8 @@ sessionsRouter.get('/all', (c) => {
         return {
           ...session,
           mode: normalizeSessionMode(sessionContext?.mode),
-          sharedMetadata: parseSharedProjectMetadataJson(session.shared_metadata, {
-            projectId: typeof session.project_id === 'string' ? session.project_id : undefined,
-          }),
+          sharedMetadata,
+          connection: extractConnectionMetadata(sharedMetadata) ?? extractConnectionMetadata(sessionContext?.connection) ?? null,
           savings: {
             toolCalls: savings.tool_calls,
             tokensSaved: Math.round(savings.output_bytes / 4),
@@ -621,9 +815,8 @@ sessionsRouter.get('/all', (c) => {
         return {
           ...session,
           mode: normalizeSessionMode(sessionContext?.mode),
-          sharedMetadata: parseSharedProjectMetadataJson(session.shared_metadata, {
-            projectId: typeof session.project_id === 'string' ? session.project_id : undefined,
-          }),
+          sharedMetadata,
+          connection: extractConnectionMetadata(sharedMetadata) ?? extractConnectionMetadata(sessionContext?.connection) ?? null,
           savings: { toolCalls: 0, tokensSaved: 0, dataBytes: 0 },
         }
       }

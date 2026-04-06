@@ -24,6 +24,42 @@ import type { Env } from './types.js'
 const app = new Hono<{ Bindings: Env }>()
 const authRequired = (process.env['MCP_AUTH_REQUIRED'] ?? 'true').toLowerCase() !== 'false'
 
+function getHeaderValue(headers: Headers, key: string): string | undefined {
+  const value = headers.get(key)
+  return typeof value === 'string' && value.trim().length > 0
+    ? value.trim()
+    : undefined
+}
+
+function firstForwardedValue(value: string | undefined): string | undefined {
+  return value
+    ?.split(',')
+    .map((entry) => entry.trim())
+    .find(Boolean)
+}
+
+function inferClientApp(headers: Headers, agentId?: string): string | undefined {
+  const explicit = getHeaderValue(headers, 'x-cortex-client-app')
+  if (explicit) return explicit
+
+  const haystack = [
+    agentId ?? '',
+    getHeaderValue(headers, 'user-agent') ?? '',
+  ].join(' ').toLowerCase()
+
+  const inferred = [
+    ['antigravity', 'antigravity'],
+    ['claude', 'claude'],
+    ['codex', 'codex'],
+    ['cursor', 'cursor'],
+    ['windsurf', 'windsurf'],
+    ['gemini', 'gemini'],
+  ] as Array<[string, string]>
+  const match = inferred.find(([needle]) => haystack.includes(needle))
+
+  return match?.[1] ?? agentId
+}
+
 // Bridge process.env → c.env for Node.js runtime
 // (In Cloudflare Workers, c.env is auto-populated from wrangler bindings.
 //  In Node.js, c.env is empty — this middleware fills it from process.env.)
@@ -31,6 +67,7 @@ app.use('*', async (c, next) => {
   const envKeys: (keyof Env)[] = [
     'QDRANT_URL', 'CLIPROXY_URL',
     'DASHBOARD_API_URL', 'MCP_SERVER_NAME', 'MCP_SERVER_VERSION',
+    'CLIENT_TRANSPORT', 'CLIENT_APP', 'CLIENT_HOST', 'CLIENT_IP', 'CLIENT_USER_AGENT',
   ]
   for (const key of envKeys) {
     if (!c.env[key] && process.env[key]) {
@@ -192,6 +229,22 @@ app.all('/mcp', async (c) => {
   if (authResult.valid && authResult.agentId) {
     envWithOwner.API_KEY_OWNER = authResult.agentId
   }
+  envWithOwner.CLIENT_TRANSPORT = 'mcp'
+  envWithOwner.CLIENT_APP =
+    inferClientApp(c.req.raw.headers, authResult.agentId) ??
+    envWithOwner.CLIENT_APP
+  envWithOwner.CLIENT_HOST =
+    getHeaderValue(c.req.raw.headers, 'x-cortex-client-host') ??
+    envWithOwner.CLIENT_HOST
+  envWithOwner.CLIENT_IP =
+    getHeaderValue(c.req.raw.headers, 'x-cortex-client-ip') ??
+    firstForwardedValue(getHeaderValue(c.req.raw.headers, 'cf-connecting-ip')) ??
+    firstForwardedValue(getHeaderValue(c.req.raw.headers, 'x-forwarded-for')) ??
+    getHeaderValue(c.req.raw.headers, 'x-real-ip') ??
+    envWithOwner.CLIENT_IP
+  envWithOwner.CLIENT_USER_AGENT =
+    getHeaderValue(c.req.raw.headers, 'user-agent') ??
+    envWithOwner.CLIENT_USER_AGENT
 
   const mcpServer = createMcpServer(envWithOwner)
   const transport = new WebStandardStreamableHTTPServerTransport({

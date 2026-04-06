@@ -11,6 +11,11 @@ Use one canonical metadata shape across sessions, change events, quality reports
 - `processesAffected`
 - `clustersTouched`
 - `resourceUris`
+- `connection.transport`
+- `connection.clientApp`
+- `connection.clientHost`
+- `connection.clientUserAgent`
+- `connection.clientIp`
 
 ## Storage Rules
 - Persist as JSON in `shared_metadata`
@@ -28,3 +33,5 @@ Use one canonical metadata shape across sessions, change events, quality reports
 - `projectId` and `branch` are the minimum useful link keys
 - Arrays should be de-duplicated and omit empty values
 - `resourceUris` should point to `cortex://...` resources when possible so different MCP clients can reopen the same context
+- `connection.*` is optional but should be filled whenever the runtime can infer it from MCP/API headers
+- `connection.clientHost` should only be trusted when explicitly supplied by the client; do not silently reuse server hostnames as if they were operator machines

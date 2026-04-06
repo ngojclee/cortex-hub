@@ -130,6 +130,10 @@ services:
       CLIPROXY_AUTH_DIR: /app/cliproxy-auth
       CLIPROXY_MANAGEMENT_KEY: ${MANAGEMENT_PASSWORD:-cortex2026}
       DASHBOARD_URL: ${DASHBOARD_URL:-http://localhost:4000}
+      AUTH_ENABLED: ${AUTH_ENABLED:-false}
+      AUTH_SESSION_TTL_HOURS: ${AUTH_SESSION_TTL_HOURS:-168}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       # mem9 Configuration
       MEM9_LLM_MODEL: ${MEM9_LLM_MODEL:-gpt-5.4-mini}
       MEM9_EMBEDDING_MODEL: ${MEM9_EMBEDDING_MODEL:-gemini-embedding-2-preview}

@@ -77,6 +77,17 @@
 - [x] Make the lightweight graph layout survive more branches than the original 4-node-per-side mockup
 - [ ] Keep `cortex_code_rename` deferred until the resource and process contracts are stable
 
+### Phase 5E: Auth & Session Observability
+- [x] Confirm the live auth/login issue is runtime wiring (`/api/auth/config -> enabled=false`), not missing auth routes
+- [x] Wire `AUTH_ENABLED`, `AUTH_SESSION_TTL_HOURS`, `TELEGRAM_BOT_TOKEN`, and `TELEGRAM_CHAT_ID` into `infra/docker-compose.yml`
+- [x] Document the same auth envs in `infra/.env.example`
+- [x] Add a visible dashboard logout control for approved auth sessions
+- [x] Split the `Sessions` page so it shows both dashboard login sessions and agent/API/MCP work sessions
+- [x] Standardize connection-source metadata for new sessions (`transport`, `clientApp`, `clientHost`, `clientUserAgent`, `clientIp`)
+- [x] Forward connection-source headers from `hub-mcp` into `dashboard-api`
+- [ ] Redeploy and verify live `/api/auth/config` flips to `enabled=true` when the host env is set correctly
+- [ ] Redeploy and verify `/sessions` now shows the active agent/API/MCP connection(s) that were previously hidden behind the user-login empty state
+
 ## Verification Notes
 - [x] 2026-04-05: `http://10.21.1.108:4000/health` reports version `0.2.39`, commit `7fae1cf`, all core services `ok`
 - [x] 2026-04-05: `http://10.21.1.108:4000/api/mem9/list?limit=1` returns JSON successfully
@@ -124,3 +135,5 @@
 - [x] 2026-04-05: live `GET /api/quality/logs?limit=3` preserves the same shared metadata contract inside analytics/query logs
 - [x] 2026-04-05: live `GET /api/intel/resources/project/proj-44576c69/processes` now returns named processes instead of collapsing to `unknown`, and `GET /api/intel/resources/project/proj-44576c69/clusters` now mostly returns named clusters
 - [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-api typecheck`, `pnpm --filter @cortex/dashboard-web typecheck`, and `pnpm --filter @cortex/hub-mcp typecheck` after adding generic-cluster label inference, health-check narrowing, and the rename workflow design doc
+- [x] 2026-04-06: local `pnpm --filter @cortex/shared-types build` after extending the shared metadata contract with optional connection-source fields
+- [x] 2026-04-06: local `pnpm --filter @cortex/dashboard-api typecheck`, `pnpm --filter @cortex/dashboard-web typecheck`, and `pnpm --filter @cortex/hub-mcp typecheck` after wiring auth envs, adding dashboard logout, splitting the Sessions page, and forwarding MCP connection-source metadata

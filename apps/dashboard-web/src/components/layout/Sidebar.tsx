@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import useSWR from 'swr'
-import { checkHealth } from '@/lib/api'
+import { checkHealth, getAuthConfig, logout, validateSession } from '@/lib/api'
 import styles from './Sidebar.module.css'
 
 const navItems = [
@@ -24,7 +24,14 @@ const navItems = [
 export default function Sidebar() {
   const pathname = usePathname()
   const [isOpen, setIsOpen] = useState(false)
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
   const { data: health } = useSWR('health', checkHealth, { refreshInterval: 30000 })
+  const { data: authConfig } = useSWR('sidebar-auth-config', getAuthConfig, { refreshInterval: 60000 })
+  const { data: authSession, mutate: mutateAuthSession } = useSWR(
+    authConfig?.enabled ? 'sidebar-auth-session' : null,
+    validateSession,
+    { refreshInterval: 30000 },
+  )
 
   const commitShort = health?.commit && health.commit !== 'dev'
     ? health.commit.slice(0, 7)
@@ -47,6 +54,22 @@ export default function Sidebar() {
     }
     return () => { document.body.style.overflow = '' }
   }, [isOpen])
+
+  const handleLogout = useCallback(async () => {
+    if (isLoggingOut) return
+
+    setIsLoggingOut(true)
+    try {
+      await logout()
+    } catch {
+      // Even if the API call fails, clear the client cookie so the guard can re-authenticate.
+    } finally {
+      document.cookie = 'cortex_session=; path=/; max-age=0; samesite=lax'
+      await mutateAuthSession({ valid: false }, false)
+      setIsLoggingOut(false)
+      window.location.reload()
+    }
+  }, [isLoggingOut, mutateAuthSession])
 
   return (
     <>
@@ -102,6 +125,22 @@ export default function Sidebar() {
 
         {/* Footer */}
         <div className={styles.footer}>
+          {authConfig?.enabled && authSession?.valid && (
+            <div className={styles.authPanel}>
+              <div className={styles.authMeta}>
+                <span className={styles.authLabel}>Signed in</span>
+                <span className={styles.authEmail}>{authSession.email ?? 'Approved session'}</span>
+              </div>
+              <button
+                className={styles.logoutButton}
+                onClick={handleLogout}
+                disabled={isLoggingOut}
+              >
+                {isLoggingOut ? 'Logging out…' : 'Log out'}
+              </button>
+            </div>
+          )}
+
           <div className={styles.statusRow}>
             <span className={`status-dot ${isOnline ? 'healthy' : 'unhealthy'}`} />
             <span className={styles.statusText}>

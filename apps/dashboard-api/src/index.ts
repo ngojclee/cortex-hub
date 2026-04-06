@@ -172,14 +172,28 @@ app.route('/api/webhooks', webhooksRouter)
 // where MCP must be reachable without a separate port or VPN.
 const MCP_UPSTREAM = process.env['MCP_INTERNAL_URL'] || 'http://cortex-mcp:8317'
 
+function getForwardedHeaders(req: Request): {
+  host: string
+  proto: string
+} {
+  const url = new URL(req.url)
+  return {
+    host: req.headers.get('x-forwarded-host') || req.headers.get('host') || url.host,
+    proto: req.headers.get('x-forwarded-proto') || url.protocol.replace(':', ''),
+  }
+}
+
 app.all('/mcp', async (c) => {
   const upstream = `${MCP_UPSTREAM}/mcp`
 
   try {
     const headers = new Headers(c.req.raw.headers)
+    const forwarded = getForwardedHeaders(c.req.raw)
     // Remove hop-by-hop headers that shouldn't be forwarded
     headers.delete('host')
     headers.delete('connection')
+    headers.set('x-forwarded-host', forwarded.host)
+    headers.set('x-forwarded-proto', forwarded.proto)
 
     const upstreamRes = await fetch(upstream, {
       method: c.req.method,
@@ -218,9 +232,15 @@ for (const oauthPath of [
   app.all(oauthPath, async (c) => {
     try {
       const upstream = `${MCP_UPSTREAM}${oauthPath}`
+      const forwarded = getForwardedHeaders(c.req.raw)
+      const headers = new Headers({
+        'Content-Type': 'application/json',
+        'x-forwarded-host': forwarded.host,
+        'x-forwarded-proto': forwarded.proto,
+      })
       const res = await fetch(upstream, {
         method: c.req.method,
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         signal: AbortSignal.timeout(5_000),
       })
       const data = await res.json() as Record<string, unknown>

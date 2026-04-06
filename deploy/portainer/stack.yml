@@ -65,6 +65,10 @@ services:
       CLIPROXY_MANAGEMENT_KEY: ${CLIPROXY_MANAGEMENT_KEY:-cortex2026}
       GITNEXUS_URL: http://gitnexus:4848
       DASHBOARD_URL: ${DASHBOARD_URL:-https://cortexhub.lengoc.me}
+      AUTH_ENABLED: ${AUTH_ENABLED:-false}
+      AUTH_SESSION_TTL_HOURS: ${AUTH_SESSION_TTL_HOURS:-168}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       MCP_INTERNAL_URL: http://cortex-mcp:8317
     depends_on:
       - qdrant

@@ -60,6 +60,19 @@ function inferClientApp(headers: Headers, agentId?: string): string | undefined 
   return match?.[1] ?? agentId
 }
 
+function getRequestOrigin(req: Request): string {
+  const headers = req.headers
+  const forwardedProto = getHeaderValue(headers, 'x-forwarded-proto')
+  const forwardedHost = getHeaderValue(headers, 'x-forwarded-host')
+
+  if (forwardedHost) {
+    const proto = forwardedProto ?? 'https'
+    return `${proto}://${forwardedHost}`
+  }
+
+  return new URL(req.url).origin
+}
+
 // Bridge process.env → c.env for Node.js runtime
 // (In Cloudflare Workers, c.env is auto-populated from wrangler bindings.
 //  In Node.js, c.env is empty — this middleware fills it from process.env.)
@@ -107,21 +120,21 @@ app.get('/health', (c) => {
 
 // RFC 9728: Protected Resource Metadata (path-aware for /mcp)
 app.get('/.well-known/oauth-protected-resource/mcp', (c) => {
-  const docsUrl = new URL(c.req.url).origin
+  const origin = getRequestOrigin(c.req.raw)
   return c.json({
-    resource: `${c.req.url.replace('/.well-known/oauth-protected-resource/mcp', '/mcp')}`,
+    resource: `${origin}/mcp`,
     bearer_methods_supported: ['header'],
-    resource_documentation: docsUrl,
+    resource_documentation: origin,
   })
 })
 
 // Fallback: root-level Protected Resource Metadata
 app.get('/.well-known/oauth-protected-resource', (c) => {
-  const docsUrl = new URL(c.req.url).origin
+  const origin = getRequestOrigin(c.req.raw)
   return c.json({
-    resource: c.req.url.replace('/.well-known/oauth-protected-resource', '/'),
+    resource: `${origin}/`,
     bearer_methods_supported: ['header'],
-    resource_documentation: docsUrl,
+    resource_documentation: origin,
   })
 })
 

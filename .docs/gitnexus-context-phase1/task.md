@@ -85,8 +85,17 @@
 - [x] Split the `Sessions` page so it shows both dashboard login sessions and agent/API/MCP work sessions
 - [x] Standardize connection-source metadata for new sessions (`transport`, `clientApp`, `clientHost`, `clientUserAgent`, `clientIp`)
 - [x] Forward connection-source headers from `hub-mcp` into `dashboard-api`
-- [ ] Redeploy and verify live `/api/auth/config` flips to `enabled=true` when the host env is set correctly
+- [x] Redeploy and verify live `/api/auth/config` flips to `enabled=true` when the host env is set correctly
 - [ ] Redeploy and verify `/sessions` now shows the active agent/API/MCP connection(s) that were previously hidden behind the user-login empty state
+
+### Phase 5F: MCP Public Discovery & Access Parity
+- [x] Reproduce the live MCP discovery issue where `/.well-known/oauth-protected-resource*` returned the internal `http://cortex-mcp:8317` origin instead of the public Cortex Hub domain
+- [x] Forward public `x-forwarded-host` / `x-forwarded-proto` headers from `dashboard-api` when proxying `/mcp` and `/.well-known/*`
+- [x] Teach `hub-mcp` protected-resource discovery responses to prefer forwarded headers over the internal container origin
+- [x] Keep `deploy/portainer/stack.yml` aligned with the checked-in auth/session env wiring used by `infra/docker-compose.yml`
+- [ ] Redeploy and verify `/.well-known/oauth-protected-resource/mcp` returns `https://cortexhub.lengoc.me/mcp`
+- [ ] Verify an external MCP client reconnects successfully and starts surfacing a visible work session again
+- [ ] Decide whether public `/api/*` routes should stay behind Cloudflare Access or regain an explicit API bypass for operator diagnostics
 
 ## Verification Notes
 - [x] 2026-04-05: `http://10.21.1.108:4000/health` reports version `0.2.39`, commit `7fae1cf`, all core services `ok`
@@ -137,3 +146,6 @@
 - [x] 2026-04-05: local `pnpm --filter @cortex/dashboard-api typecheck`, `pnpm --filter @cortex/dashboard-web typecheck`, and `pnpm --filter @cortex/hub-mcp typecheck` after adding generic-cluster label inference, health-check narrowing, and the rename workflow design doc
 - [x] 2026-04-06: local `pnpm --filter @cortex/shared-types build` after extending the shared metadata contract with optional connection-source fields
 - [x] 2026-04-06: local `pnpm --filter @cortex/dashboard-api typecheck`, `pnpm --filter @cortex/dashboard-web typecheck`, and `pnpm --filter @cortex/hub-mcp typecheck` after wiring auth envs, adding dashboard logout, splitting the Sessions page, and forwarding MCP connection-source metadata
+- [x] 2026-04-06: live `GET https://cortexhub.lengoc.me/api/auth/config` returns `{\"enabled\":true,\"telegramConfigured\":true}` after the auth-runtime deployment
+- [x] 2026-04-06: live `GET https://cortexhub.lengoc.me/.well-known/oauth-protected-resource/mcp` returned `resource=http://cortex-mcp:8317/mcp` before the MCP discovery proxy fix, confirming the public-connectivity bug
+- [x] 2026-04-06: local `pnpm --filter @cortex/dashboard-api typecheck`, `pnpm --filter @cortex/hub-mcp typecheck`, and `pnpm --filter @cortex/dashboard-web typecheck` after forwarding public origin headers for `/mcp` discovery and syncing the Portainer stack

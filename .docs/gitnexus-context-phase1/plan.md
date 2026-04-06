@@ -233,6 +233,16 @@ This feature should be delivered in two layers:
 - Add a visible logout affordance in the dashboard shell whenever auth is enabled and a session is approved
 - Use this observability layer as the prerequisite before heavier graph/tree UX work, because the operator first needs trustworthy session identity and routing data
 
+## Phase 5F: MCP Public Discovery & Access Parity
+**Goal:** Make remote MCP clients connect reliably through the public Cortex Hub domain instead of leaking internal container URLs.
+
+- Ensure `/mcp` and the RFC 9728 protected-resource discovery endpoints advertise the public dashboard origin, not `http://cortex-mcp:8317`
+- Forward `x-forwarded-host` and `x-forwarded-proto` from `dashboard-api` when proxying both `/mcp` and `/.well-known/*` discovery paths
+- Teach `hub-mcp` discovery responses to prefer forwarded headers over the internal `req.url` origin when running behind reverse proxies or Cloudflare Tunnel
+- Keep the Portainer deployment stack in sync with the checked-in Compose auth/session env wiring so runtime behavior matches local expectations
+- Verify at least one external MCP client can complete Bearer discovery again and starts surfacing active work sessions in `/sessions`
+- Clarify whether `/api/*` routes are intentionally behind Cloudflare Access on the public host or whether an API bypass rule is still expected
+
 ## Phase 6: Testing Phase
 **Goal:** Validate both the release path and the new context model.
 
@@ -250,6 +260,8 @@ This feature should be delivered in two layers:
   - favicon asset resolves as a real icon response, not a fallback HTML route
   - linked project indexing uses the intended GitNexus/native path
   - quality reports appear after explicit submission and are reflected in dashboard summary cards
+  - `/.well-known/oauth-protected-resource/mcp` returns the public Cortex Hub URL instead of the internal container hostname
+  - an external MCP client can connect through the public domain and create a visible work session again
 
 ## Risks
 - MCP SDK support for `server.resource(...)` may differ between local Node and deployed transports

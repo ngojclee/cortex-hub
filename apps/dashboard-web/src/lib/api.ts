@@ -1154,3 +1154,26 @@ export async function getMemories(projectId?: string, limit: number = 50) {
 export async function deleteMemory(id: string) {
   return apiFetch<{ success: boolean }>(`/api/mem9/${id}`, { method: 'DELETE' })
 }
+
+// ── Auth & Sessions ──
+export interface AuthSession {
+  id: string
+  email: string
+  status: string
+  ip_address: string
+  user_agent: string
+  created_at: string
+}
+
+export async function getAuthSessions() {
+  return apiFetch<{ sessions: AuthSession[] }>('/api/auth/sessions')
+}
+
+export async function revokeSession(id: string) {
+  return apiFetch<{ success: boolean; message: string }>(`/api/auth/sessions/${id}`, { method: 'DELETE' })
+}
+
+export async function revokeAllSessions() {
+  return apiFetch<{ success: boolean; revokedCount: number }>('/api/auth/sessions', { method: 'DELETE' })
+}
+

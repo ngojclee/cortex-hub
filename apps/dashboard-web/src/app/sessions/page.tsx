@@ -1,372 +1,173 @@
 'use client'
 
-import { useState, useMemo } from 'react'
-import DashboardLayout from '@/components/layout/DashboardLayout'
+import { useCallback, useMemo, useState } from 'react'
 import useSWR from 'swr'
-import { getSessions, type SessionHandoff } from '@/lib/api'
-import styles from './page.module.css'
 
-// ── Types ──
-type StatusFilter = 'all' | 'pending' | 'claimed' | 'completed'
+import DashboardLayout from '@/components/layout/DashboardLayout'
+import { getAuthSessions, revokeSession, revokeAllSessions } from '@/lib/api'
+import styles from './Sessions.module.css'
 
-// ── Components ──
-function PriorityBadge({ priority }: { priority: number }) {
-  const label = priority <= 3 ? 'high' : priority <= 6 ? 'medium' : 'low'
-  const variant = priority <= 3 ? 'error' : priority <= 6 ? 'warning' : 'healthy'
-  return (
-    <span className={`badge badge-${variant}`}>
-      {label} ({priority})
-    </span>
-  )
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const variant =
-    status === 'completed'
-      ? 'healthy'
-      : status === 'claimed'
-        ? 'warning'
-        : status === 'pending'
-          ? 'warning'
-          : 'error'
-  return <span className={`badge badge-${variant}`}>{status}</span>
-}
-
-function ModeBadge({ mode }: { mode?: string }) {
-  const normalized = (mode ?? 'development').toLowerCase()
-  const variant =
-    normalized === 'production'
-      ? 'healthy'
-      : normalized === 'review' || normalized === 'onboarding'
-        ? 'warning'
-        : 'healthy'
-  return <span className={`badge badge-${variant}`}>{normalized}</span>
-}
-
-function TimeAgo({ date }: { date: string }) {
-  const now = new Date()
-  const past = new Date(date)
-  const diff = Math.floor((now.getTime() - past.getTime()) / 1000)
-  if (diff < 60) return <span>{diff}s ago</span>
-  if (diff < 3600) return <span>{Math.floor(diff / 60)}m ago</span>
-  if (diff < 86400) return <span>{Math.floor(diff / 3600)}h ago</span>
-  return <span>{Math.floor(diff / 86400)}d ago</span>
-}
-
-function SessionCard({
-  session,
-  onSelect,
-}: {
-  session: SessionHandoff
-  onSelect: () => void
-}) {
-  return (
-    <div className={`card ${styles.sessionCard}`} onClick={onSelect}>
-      <div className={styles.sessionHeader}>
-        <div className={styles.sessionIdRow}>
-          <code className={styles.sessionId}>{session.id.slice(0, 8)}</code>
-          {session.api_key_name && (
-            <span className={styles.apiKeyTag}>🔑 {session.api_key_name}</span>
-          )}
-        </div>
-        <StatusBadge status={session.status} />
-      </div>
-
-      <p className={styles.taskSummary}>{session.task_summary}</p>
-
-      <div className={styles.metaGrid}>
-        <div className={styles.metaItem}>
-          <span className={styles.metaLabel}>Project</span>
-          <span className={styles.metaValue}>{session.project}</span>
-        </div>
-        <div className={styles.metaItem}>
-          <span className={styles.metaLabel}>From</span>
-          <code className={styles.agentName}>{session.from_agent}</code>
-        </div>
-        <div className={styles.metaItem}>
-          <span className={styles.metaLabel}>Mode</span>
-          <div className={styles.modeValue}>
-            <ModeBadge mode={session.mode} />
-          </div>
-        </div>
-        <div className={styles.metaItem}>
-          <span className={styles.metaLabel}>To</span>
-          <code className={styles.agentName}>{session.to_agent ?? '—'}</code>
-        </div>
-        <div className={styles.metaItem}>
-          <span className={styles.metaLabel}>Priority</span>
-          <PriorityBadge priority={session.priority} />
-        </div>
-      </div>
-
-      <div className={styles.sessionFooter}>
-        <span className={styles.timestamp}>
-          {session.created_at ? <TimeAgo date={session.created_at} /> : '—'}
-        </span>
-        {session.savings && session.savings.tokensSaved > 0 && (
-          <span className={styles.savingsBadge}>
-            💎 {session.savings.tokensSaved >= 1000 ? `${(session.savings.tokensSaved / 1000).toFixed(1)}k` : session.savings.tokensSaved} tokens · {session.savings.toolCalls} calls
-          </span>
-        )}
-        {session.claimed_by && (
-          <span className={styles.claimedBy}>
-            Claimed by <code>{session.claimed_by}</code>
-          </span>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function SessionDetail({
-  session,
-  onClose,
-}: {
-  session: SessionHandoff
-  onClose: () => void
-}) {
-  return (
-    <div className={styles.detailOverlay} onClick={onClose}>
-      <div className={styles.detailPanel} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.detailHeader}>
-          <h2 className={styles.detailTitle}>Session Details</h2>
-          <button className={styles.detailClose} onClick={onClose}>
-            ×
-          </button>
-        </div>
-
-        <div className={styles.detailBody}>
-          <div className={styles.detailRow}>
-            <span className={styles.detailLabel}>ID</span>
-            <code className={styles.detailValue}>{session.id}</code>
-          </div>
-          <div className={styles.detailRow}>
-            <span className={styles.detailLabel}>Status</span>
-            <StatusBadge status={session.status} />
-          </div>
-          <div className={styles.detailRow}>
-            <span className={styles.detailLabel}>Project</span>
-            <span className={styles.detailValue}>{session.project}</span>
-          </div>
-          <div className={styles.detailRow}>
-            <span className={styles.detailLabel}>From Agent</span>
-            <code className={styles.detailValue}>{session.from_agent}</code>
-          </div>
-          <div className={styles.detailRow}>
-            <span className={styles.detailLabel}>Mode</span>
-            <div className={styles.detailModeValue}>
-              <ModeBadge mode={session.mode} />
-            </div>
-          </div>
-          {session.api_key_name && (
-            <div className={styles.detailRow}>
-              <span className={styles.detailLabel}>API Key</span>
-              <span className={styles.detailValue}>🔑 {session.api_key_name}</span>
-            </div>
-          )}
-          <div className={styles.detailRow}>
-            <span className={styles.detailLabel}>To Agent</span>
-            <code className={styles.detailValue}>{session.to_agent ?? 'Not assigned'}</code>
-          </div>
-          <div className={styles.detailRow}>
-            <span className={styles.detailLabel}>Priority</span>
-            <PriorityBadge priority={session.priority} />
-          </div>
-          {session.claimed_by && (
-            <div className={styles.detailRow}>
-              <span className={styles.detailLabel}>Claimed By</span>
-              <code className={styles.detailValue}>{session.claimed_by}</code>
-            </div>
-          )}
-          <div className={styles.detailRow}>
-            <span className={styles.detailLabel}>Created</span>
-            <span className={styles.detailValue}>
-              {session.created_at ? new Date(session.created_at).toLocaleString() : '—'}
-            </span>
-          </div>
-          {session.expires_at && (
-            <div className={styles.detailRow}>
-              <span className={styles.detailLabel}>Expires</span>
-              <span className={styles.detailValue}>
-                {new Date(session.expires_at).toLocaleString()}
-              </span>
-            </div>
-          )}
-
-          {/* Task Summary */}
-          <div className={styles.detailSection}>
-            <h3 className={styles.detailSectionTitle}>Task Summary</h3>
-            <p className={styles.detailText}>{session.task_summary}</p>
-          </div>
-
-          {/* Context */}
-          {session.context && (
-            <div className={styles.detailSection}>
-              <h3 className={styles.detailSectionTitle}>Context</h3>
-              <pre className={styles.detailCode}>{session.context}</pre>
-            </div>
-          )}
-
-          {/* Timeline */}
-          <div className={styles.detailSection}>
-            <h3 className={styles.detailSectionTitle}>Timeline</h3>
-            <div className={styles.timeline}>
-              <div className={`${styles.timelineItem} ${styles.timelineDone}`}>
-                <div className={styles.timelineDot} />
-                <span>Created</span>
-                <span className={styles.timelineTime}>
-                  {session.created_at ? new Date(session.created_at).toLocaleTimeString() : '—'}
-                </span>
-              </div>
-              <div
-                className={`${styles.timelineItem} ${session.claimed_by ? styles.timelineDone : ''}`}
-              >
-                <div className={styles.timelineDot} />
-                <span>Claimed</span>
-                <span className={styles.timelineTime}>
-                  {session.claimed_by ?? 'Waiting...'}
-                </span>
-              </div>
-              <div
-                className={`${styles.timelineItem} ${session.status === 'completed' ? styles.timelineDone : ''}`}
-              >
-                <div className={styles.timelineDot} />
-                <span>Completed</span>
-                <span className={styles.timelineTime}>
-                  {session.status === 'completed' ? '✓' : 'Pending...'}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
+function formatDate(dateStr: string | null): string {
+  if (!dateStr) return 'Unknown'
+  const date = new Date(dateStr)
+  if (Number.isNaN(date.getTime())) return 'Unknown'
+  return date.toLocaleString()
 }
 
 export default function SessionsPage() {
-  const { data, error, isLoading, mutate } = useSWR('sessions', () => getSessions(100), {
-    refreshInterval: 15000,
-  })
+  const [search, setSearch] = useState('')
+  const [isRevoking, setIsRevoking] = useState<string | null>(null)
+  const [isRevokingAll, setIsRevokingAll] = useState(false)
 
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
-  const [selectedSession, setSelectedSession] = useState<SessionHandoff | null>(null)
+  const { data, error, mutate, isLoading } = useSWR(
+    'sessions',
+    getAuthSessions,
+    { refreshInterval: 10000 },
+  )
 
-  const allSessions = data?.sessions ?? []
+  const sessions = data?.sessions ?? []
 
   const filteredSessions = useMemo(() => {
-    if (statusFilter === 'all') return allSessions
-    return allSessions.filter((s) => s.status === statusFilter)
-  }, [allSessions, statusFilter])
+    const query = search.trim().toLowerCase()
+    if (!query) return sessions
 
-  const pendingCount = allSessions.filter((s) => s.status === 'pending').length
-  const claimedCount = allSessions.filter((s) => s.status === 'claimed').length
-  const completedCount = allSessions.filter((s) => s.status === 'completed').length
+    return sessions.filter((session) => {
+      const haystack = [
+        session.email,
+        session.ip_address,
+        session.user_agent,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
 
-  const filterTabs: { key: StatusFilter; label: string; count: number }[] = [
-    { key: 'all', label: 'All', count: allSessions.length },
-    { key: 'pending', label: '⏳ Pending', count: pendingCount },
-    { key: 'claimed', label: '🔄 In Progress', count: claimedCount },
-    { key: 'completed', label: '✅ Completed', count: completedCount },
-  ]
+      return haystack.includes(query)
+    })
+  }, [sessions, search])
+
+  const handleRevoke = useCallback(async (id: string, email: string) => {
+    if (!confirm(`Are you sure you want to revoke the session for ${email}? They will be logged out immediately.`)) return
+
+    setIsRevoking(id)
+    try {
+      await revokeSession(id)
+      await mutate()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to revoke session')
+    } finally {
+      setIsRevoking(null)
+    }
+  }, [mutate])
+
+  const handleRevokeAll = useCallback(async () => {
+    if (!confirm('DANGER: Are you sure you want to revoke ALL active sessions? Everyone (including you) will be logged out!')) return
+
+    setIsRevokingAll(true)
+    try {
+      await revokeAllSessions()
+      await mutate()
+      // Current user is also revoked, force a reload to trigger login prompt
+      window.location.reload()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to revoke sessions')
+    } finally {
+      setIsRevokingAll(false)
+    }
+  }, [mutate])
 
   return (
-    <DashboardLayout title="Sessions" subtitle="Agent task handoffs and execution tracking">
-      {/* Stats */}
+    <DashboardLayout
+      title="Active Sessions"
+      subtitle="Manage user access and connected devices for Cortex Hub"
+    >
       <div className={styles.statsGrid}>
-        <div className={`card ${styles.statCard}`}>
-          <span className={styles.statIcon}>📋</span>
-          <div>
-            <div className={styles.statValue}>{allSessions.length}</div>
-            <div className={styles.statLabel}>Total Sessions</div>
-          </div>
-        </div>
-        <div className={`card ${styles.statCard}`}>
-          <span className={styles.statIcon}>⏳</span>
-          <div>
-            <div className={styles.statValue}>{pendingCount}</div>
-            <div className={styles.statLabel}>Pending</div>
-          </div>
-        </div>
-        <div className={`card ${styles.statCard}`}>
-          <span className={styles.statIcon}>🔄</span>
-          <div>
-            <div className={styles.statValue}>{claimedCount}</div>
-            <div className={styles.statLabel}>In Progress</div>
-          </div>
-        </div>
-        <div className={`card ${styles.statCard}`}>
-          <span className={styles.statIcon}>✅</span>
-          <div>
-            <div className={styles.statValue}>{completedCount}</div>
-            <div className={styles.statLabel}>Completed</div>
-          </div>
+        <div className={styles.statCard}>
+          <span className={styles.statValue}>{sessions.length}</span>
+          <span className={styles.statLabel}>Active Sessions</span>
         </div>
       </div>
 
-      {/* Sessions List */}
-      <div className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <h2 className={styles.sectionTitle}>Session Handoffs</h2>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={() => mutate()}
-            disabled={isLoading}
-          >
-            {isLoading ? 'Loading…' : 'Refresh'}
-          </button>
+      <div className={styles.actionBar}>
+        <div className={styles.searchBox}>
+          <span className={styles.searchIcon}>🔍</span>
+          <input
+            type="text"
+            placeholder="Search email, IP address, user agent..."
+            className={styles.searchInput}
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
         </div>
+        
+        <button 
+          className={styles.revokeAllBtn}
+          onClick={handleRevokeAll}
+          disabled={isRevokingAll || sessions.length === 0}
+        >
+          {isRevokingAll ? 'Revoking...' : '⚠ Revoke All Sessions'}
+        </button>
+      </div>
 
-        {/* Status Filter Tabs */}
-        <div className={styles.filterTabs}>
-          {filterTabs.map((tab) => (
-            <button
-              key={tab.key}
-              className={`${styles.filterTab} ${statusFilter === tab.key ? styles.filterTabActive : ''}`}
-              onClick={() => setStatusFilter(tab.key)}
-            >
-              {tab.label}
-              <span className={styles.filterCount}>{tab.count}</span>
-            </button>
+      {error ? (
+        <div className="panel error">
+          Failed to load sessions: {error.message}
+        </div>
+      ) : isLoading && !data ? (
+        <div className="panel">
+          <div className="loading-spinner"></div>
+          <p style={{ textAlign: 'center', marginTop: '1rem', color: 'var(--text-dim)' }}>
+            Loading sessions...
+          </p>
+        </div>
+      ) : filteredSessions.length === 0 ? (
+        <div className={styles.emptyState}>
+          <div className={styles.emptyIcon}>🔐</div>
+          <h3>No Active Sessions</h3>
+          <p>
+            {search ? 'No sessions match your search.' : 'There are currently no active user sessions.'}
+          </p>
+        </div>
+      ) : (
+        <div className={styles.sessionList}>
+          {filteredSessions.map((session) => (
+            <article key={session.id} className={styles.card}>
+              <div className={styles.cardHeader}>
+                <div>
+                  <span className={styles.email}>{session.email}</span>
+                  <span className={styles.date}>Started: {formatDate(session.created_at)}</span>
+                </div>
+                <div className={styles.statusTag}>Active</div>
+              </div>
+
+              <div className={styles.metaGrid}>
+                <div className={styles.metaItem}>
+                  <span className={styles.metaLabel}>IP Address</span>
+                  <span className={styles.metaValue}>{session.ip_address}</span>
+                </div>
+                <div className={styles.metaItem}>
+                  <span className={styles.metaLabel}>Device / Browser</span>
+                  <span className={styles.metaValue}>{session.user_agent}</span>
+                </div>
+                <div className={styles.metaItem}>
+                  <span className={styles.metaLabel}>Session ID</span>
+                  <span className={styles.metaValue}>{session.id.slice(0, 8)}...</span>
+                </div>
+              </div>
+
+              <div className={styles.cardFooter}>
+                <button
+                  className={`${styles.revokeBtn} ${isRevoking === session.id ? styles.revoking : ''}`}
+                  onClick={() => handleRevoke(session.id, session.email)}
+                  disabled={isRevoking === session.id}
+                  title="Revoke access for this device"
+                >
+                  <span className={styles.deleteIcon}>⛔</span>
+                  Revoke Session
+                </button>
+              </div>
+            </article>
           ))}
         </div>
-
-        {error && (
-          <div className={styles.errorBanner}>⚠️ Failed to load sessions</div>
-        )}
-
-        {filteredSessions.length === 0 && !isLoading ? (
-          <div className={`card ${styles.emptyState}`}>
-            <span className={styles.emptyIcon}>⇄</span>
-            <p>
-              {allSessions.length > 0
-                ? 'No sessions match the current filter.'
-                : 'No session handoffs yet.'}
-            </p>
-            <p className={styles.emptyHint}>
-              Sessions appear when agents start tasks via the{' '}
-              <code>cortex.session.start</code> MCP tool.
-            </p>
-          </div>
-        ) : (
-          <div className={styles.sessionsGrid}>
-            {filteredSessions.map((session) => (
-              <SessionCard
-                key={session.id}
-                session={session}
-                onSelect={() => setSelectedSession(session)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Session Detail Slide-over */}
-      {selectedSession && (
-        <SessionDetail
-          session={selectedSession}
-          onClose={() => setSelectedSession(null)}
-        />
       )}
     </DashboardLayout>
   )

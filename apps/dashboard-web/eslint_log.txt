@@ -1,0 +1,12 @@
+
+D:\Python\projects\cortex-hub\apps\dashboard-web\src\app\orgs\page.tsx
+  176:45  warning  Forbidden non-null assertion  @typescript-eslint/no-non-null-assertion
+  176:69  warning  Forbidden non-null assertion  @typescript-eslint/no-non-null-assertion
+  185:45  warning  Forbidden non-null assertion  @typescript-eslint/no-non-null-assertion
+  185:69  warning  Forbidden non-null assertion  @typescript-eslint/no-non-null-assertion
+
+D:\Python\projects\cortex-hub\apps\dashboard-web\src\app\sessions\page.tsx
+  8:15  error  'AuthSession' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+✖ 5 problems (1 error, 4 warnings)
+

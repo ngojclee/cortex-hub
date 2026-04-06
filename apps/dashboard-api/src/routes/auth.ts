@@ -185,7 +185,55 @@ authRouter.get('/validate', (c) => {
 
 // ── Logout ──
 authRouter.post('/logout', (c) => {
+  const token = c.req.header('Authorization')?.replace('Bearer ', '') ||
+    parseCookie(c.req.header('cookie') || '', 'cortex_session')
+
+  if (token) {
+    db.prepare("UPDATE auth_requests SET status = 'revoked', resolved_at = datetime('now') WHERE token = ? AND status = 'approved'").run(token)
+    logger.info(`Session logged out & revoked for token (truncated): ${token.slice(0, 8)}...`)
+  }
+
   return c.json({ success: true }, 200)
+})
+
+// ── List Active Sessions ──
+authRouter.get('/sessions', (c) => {
+  const ttlHours = AUTH_SESSION_TTL_HOURS()
+  const sessions = db.prepare(
+    `SELECT id, email, status, ip_address, user_agent, created_at 
+     FROM auth_requests 
+     WHERE status = 'approved' AND created_at > datetime('now', '-${ttlHours} hours')
+     ORDER BY created_at DESC`
+  ).all()
+
+  return c.json({ sessions })
+})
+
+// ── Revoke Single Session ──
+authRouter.delete('/sessions/:id', (c) => {
+  const id = c.req.param('id')
+  
+  const result = db.prepare("UPDATE auth_requests SET status = 'revoked', resolved_at = datetime('now') WHERE id = ? AND status = 'approved'").run(id)
+  
+  if (result.changes === 0) {
+    return c.json({ error: 'Session not found or already revoked/expired' }, 404)
+  }
+
+  logger.info(`Session ${id} explicitly revoked by admin action.`)
+  return c.json({ success: true, message: 'Session revoked' })
+})
+
+// ── Revoke ALL Sessions (Panic Button) ──
+authRouter.delete('/sessions', (c) => {
+  const ttlHours = AUTH_SESSION_TTL_HOURS()
+  const result = db.prepare(
+    `UPDATE auth_requests 
+     SET status = 'revoked', resolved_at = datetime('now') 
+     WHERE status = 'approved' AND created_at > datetime('now', '-${ttlHours} hours')`
+  ).run()
+
+  logger.warn(`ALL active sessions revoked! (${result.changes} sessions impacted)`)
+  return c.json({ success: true, revokedCount: result.changes })
 })
 
 // ── Helpers ──

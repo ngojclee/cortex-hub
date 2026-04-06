@@ -19,15 +19,15 @@
 - [x] indexer.ts: added pre-flight DNS check with actionable error message
 - [x] indexer.ts: added GIT_TERMINAL_PROMPT=0 to git clone env
 
-## Phase B: Graph Explorer Enhancement (FUTURE)
+## Phase B: Graph Explorer Enhancement
 - [x] Add GET /api/intel/resources/project/:id/cluster/:name/members endpoint
 - [x] Add GET /api/intel/resources/project/:id/cross-links endpoint
 - [x] Add detail sidebar panel to graph page (click cluster → member list)
 - [x] Add inter-cluster edge rendering (SVG paths from cross-links data)
-- [x] Typecheck: pnpm --filter @cortex/dashboard-api typecheck
-- [ ] Typecheck: pnpm --filter @cortex/dashboard-web typecheck
+- [x] Typecheck: pnpm --filter @cortex/dashboard-api typecheck ✅
+- [x] Typecheck: pnpm --filter @cortex/dashboard-web typecheck ✅
 
-## Phase C: GitNexus Tool Expansion (FUTURE)
+## Phase C: GitNexus Tool Expansion
 - [x] Implement cortex_code_rename MCP tool (preview mode)
 - [x] Add POST /api/intel/rename API endpoint
 - [x] Implement cortex_wiki_generate MCP tool
@@ -35,10 +35,18 @@
 - [x] Add GET /api/intel/resources/project/:id/symbol/:name/tree endpoint
 - [x] Implement cortex_code_tree MCP tool
 - [x] Integrate Symbol Tree (Dependency Tree) into Graph Explorer (v0.3.2.0)
-- [x] Typecheck: pnpm --filter @cortex/hub-mcp typecheck
-- [x] Typecheck: pnpm --filter @cortex/dashboard-api typecheck
-- [x] Typecheck: pnpm --filter @cortex/dashboard-web typecheck
-- [ ] Typecheck: pnpm --filter @cortex/dashboard-api build
+- [x] Typecheck: pnpm --filter @cortex/hub-mcp typecheck ✅
+- [x] Typecheck: pnpm --filter @cortex/dashboard-api typecheck ✅
+- [x] Typecheck: pnpm --filter @cortex/dashboard-web typecheck ✅
+- [x] Build: pnpm --filter @cortex/dashboard-api build ✅
+- [x] Build: pnpm --filter @cortex/dashboard-web build ✅ (fixed ESLint errors: no-explicit-any, unused vars)
+
+## Phase D: Session Management UI (PLANNED)
+- [ ] Add GET /api/auth/sessions → list all active sessions with email, IP, user-agent, created_at
+- [ ] Add DELETE /api/auth/sessions/:id → revoke specific session
+- [ ] Add DELETE /api/auth/sessions → revoke all sessions (admin panic button)
+- [ ] Create /sessions page in dashboard-web with session list, revoke buttons
+- [ ] Add session expiry display and auto-cleanup logic
 
 ## Verification Notes
 - LN-OMS project ID: `proj-f9ebd495`, slug: `ln-oms`
@@ -51,4 +59,9 @@
 - Symbol Tree (v0.3.2.0):
   - Graph Explorer now includes a "Tree" action for every symbol in cluster sidebars.
   - Retreives and visualizes recursive dependency paths via GitNexus Cypher matching.
+- Docker Build Fix (v0.3.2.0):
+  - Fixed ESLint `no-explicit-any` error in SymbolTreeViewer.tsx (replaced `any` with proper interfaces).
+  - Fixed `loadingTree` unused variable error by using it as loading indicator UI.
+  - Fixed `totalCount` property error (does not exist on API response, used `members.length` instead).
+  - Fixed non-null assertions (`projects[0]!`, `selectedCluster!`) with safe alternatives.
 - DNS Note: Container needs `dns: [8.8.8.8, 1.1.1.1]` in Portainer config if repo host is unreachable.

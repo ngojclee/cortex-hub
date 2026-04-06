@@ -313,6 +313,32 @@ export async function updateAppSettings(settings: Record<string, string | null>)
   })
 }
 
+// ── Auth ──
+export async function getAuthConfig() {
+  return apiFetch<{ enabled: boolean; telegramConfigured: boolean }>('/api/auth/config')
+}
+
+export async function requestAccess(email: string) {
+  return apiFetch<{ requestId: string; message: string }>('/api/auth/request', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  })
+}
+
+export async function getAuthStatus(requestId: string) {
+  return apiFetch<{ id: string; status: string; sessionToken?: string; reason?: string }>(
+    `/api/auth/status/${requestId}`
+  )
+}
+
+export async function validateSession() {
+  return apiFetch<{ valid: boolean; email?: string }>('/api/auth/validate')
+}
+
+export async function logout() {
+  return apiFetch<{ success: boolean }>('/api/auth/logout', { method: 'POST' })
+}
+
 export { ApiError }
 
 // ── Organizations ──

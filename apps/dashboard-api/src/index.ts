@@ -28,6 +28,8 @@ import { systemRouter } from './routes/system.js'
 import { accountsRouter } from './routes/accounts.js'
 import { webhooksRouter } from './routes/webhooks.js'
 import { knowledgeRouter } from './routes/knowledge.js'
+import { authRouter } from './routes/auth.js'
+import { dashboardAuth } from './middleware/auth.js'
 
 const app = new Hono()
 const logger = createLogger('dashboard-api')
@@ -139,6 +141,10 @@ app.get('/health', async (c) => {
   })
 })
 
+// Auth middleware — guards /api/* when AUTH_ENABLED=true
+app.use('*', dashboardAuth())
+
+app.route('/api/auth', authRouter)
 app.route('/api/setup', setupRouter)
 app.route('/api/keys', keysRouter)
 app.route('/api/llm', llmRouter)

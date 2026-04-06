@@ -1,0 +1,170 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: var(--bg-primary);
+  gap: 1rem;
+}
+
+.card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 2.5rem;
+  width: min(420px, 90vw);
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.logo {
+  font-size: 2.5rem;
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-glow);
+  border-radius: var(--radius-md);
+  margin: 0 auto var(--space-4);
+}
+
+.title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 var(--space-2);
+}
+
+.subtitle {
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+  margin: 0 0 var(--space-6);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.label {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  text-align: left;
+}
+
+.input {
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+
+.input:focus {
+  border-color: var(--primary);
+}
+
+.button {
+  padding: var(--space-3) var(--space-5);
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.button:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Pending state */
+.pendingBox {
+  padding: var(--space-4) 0;
+}
+
+.pendingIcon {
+  margin-bottom: var(--space-4);
+}
+
+.pendingText {
+  font-size: 0.9375rem;
+  color: var(--text-primary);
+  margin: 0 0 var(--space-2);
+  font-weight: 500;
+}
+
+.pendingHint {
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+  margin: 0;
+}
+
+/* Denied state */
+.deniedBox {
+  padding: var(--space-4) 0;
+}
+
+.deniedText {
+  font-size: 0.9375rem;
+  color: var(--danger, #ef4444);
+  margin: 0 0 var(--space-4);
+}
+
+.retryButton {
+  padding: var(--space-2) var(--space-4);
+  background: transparent;
+  color: var(--primary);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.retryButton:hover {
+  background: var(--primary);
+  color: white;
+}
+
+/* Error */
+.errorText {
+  font-size: 0.8125rem;
+  color: var(--danger, #ef4444);
+  margin: var(--space-2) 0 0;
+}
+
+/* Spinner */
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto;
+}
+
+.loadingText {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+@keyframes spin {
+  100% { transform: rotate(360deg); }
+}

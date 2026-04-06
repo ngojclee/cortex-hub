@@ -216,5 +216,19 @@ CREATE TABLE IF NOT EXISTS app_settings (
     updated_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS auth_requests (
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL,
+    token TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'denied')),
+    ip_address TEXT,
+    user_agent TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    resolved_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_requests_token ON auth_requests(token);
+CREATE INDEX IF NOT EXISTS idx_auth_requests_status ON auth_requests(status, created_at DESC);
+
 -- Insert default uncompleted setup status
 INSERT OR IGNORE INTO setup_status (id, completed) VALUES (1, 0);

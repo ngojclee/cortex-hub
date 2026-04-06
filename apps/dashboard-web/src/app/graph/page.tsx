@@ -382,7 +382,8 @@ export default function GraphPage() {
 
   useEffect(() => {
     if (!projectId && projects.length > 0) {
-      setProjectId(projects[0]!.projectId)
+      const first = projects[0]
+      if (first) setProjectId(first.projectId)
     }
   }, [projectId, projects])
 
@@ -417,12 +418,12 @@ export default function GraphPage() {
 
   const [selectedCluster, setSelectedCluster] = useState<string | null>(null)
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null)
-  const [symbolTree, setSymbolTree] = useState<any>(null)
+  const [symbolTree, setSymbolTree] = useState<Record<string, unknown> | null>(null)
   const [loadingTree, setLoadingTree] = useState(false)
 
   const { data: clusterMembersData } = useSWR(
     projectId && selectedCluster ? ['intel-project-cluster-members', projectId, selectedCluster] : null,
-    () => getIntelProjectClusterMembers(projectId, selectedCluster!),
+    () => getIntelProjectClusterMembers(projectId, selectedCluster ?? ''),
     { refreshInterval: 60000 },
   )
 
@@ -632,14 +633,18 @@ export default function GraphPage() {
       )}
 
       {selectedSymbol && (
-        <SymbolTreeViewer 
-          symbolName={selectedSymbol} 
-          treeData={symbolTree} 
-          onClose={() => {
-            setSelectedSymbol(null)
-            setSymbolTree(null)
-          }} 
-        />
+        loadingTree ? (
+          <div className="card" style={{ padding: '2rem', textAlign: 'center' }}>Loading dependency tree for {selectedSymbol}…</div>
+        ) : (
+          <SymbolTreeViewer 
+            symbolName={selectedSymbol} 
+            treeData={symbolTree} 
+            onClose={() => {
+              setSelectedSymbol(null)
+              setSymbolTree(null)
+            }} 
+          />
+        )
       )}
     </DashboardLayout>
   )

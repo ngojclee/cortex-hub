@@ -2,22 +2,43 @@
 
 import styles from './SymbolTreeViewer.module.css'
 
-interface SymbolTreeNode {
+interface GraphNode {
   id: string
-  name: string
+  labels: string[]
+  properties: Record<string, unknown>
+}
+
+interface GraphRelationship {
   type: string
-  file?: string
-  children: SymbolTreeNode[]
+  id: string
+  properties: Record<string, unknown>
+}
+
+interface PathSegment {
+  start: GraphNode
+  end: GraphNode
+  relationship: GraphRelationship
+}
+
+interface TreePath {
+  path?: Array<{ segments: PathSegment[] }>
+}
+
+interface SymbolTreeData {
+  success?: boolean
+  data?: {
+    uri?: string
+    results?: TreePath[]
+  }
 }
 
 interface SymbolTreeViewerProps {
   symbolName: string
-  treeData: any
+  treeData: SymbolTreeData | null
   onClose: () => void
 }
 
 export default function SymbolTreeViewer({ symbolName, treeData, onClose }: SymbolTreeViewerProps) {
-  // Convert graph response to nested tree if possible, or flat list of paths
   const paths = treeData?.data?.results || []
 
   return (
@@ -36,16 +57,15 @@ export default function SymbolTreeViewer({ symbolName, treeData, onClose }: Symb
             <div className={styles.empty}>No dependencies found for this symbol at current depth.</div>
           ) : (
             <div className={styles.treeGrid}>
-              {paths.map((pathObj: any, pIdx: number) => {
-                // path is an object with segments
+              {paths.map((pathObj: TreePath, pIdx: number) => {
                 const segments = pathObj.path?.[0]?.segments || []
                 return (
                   <div key={`path-${pIdx}`} className={styles.pathRow}>
                     <div className={styles.pathDots}>
-                      {segments.map((seg: any, sIdx: number) => (
+                      {segments.map((seg: PathSegment, sIdx: number) => (
                         <div key={`seg-${sIdx}`} className={styles.segment}>
                           <div className={styles.node}>
-                            <span className={styles.nodeName}>{seg?.start?.properties?.name ?? 'unknown'}</span>
+                            <span className={styles.nodeName}>{(seg?.start?.properties?.name as string) ?? 'unknown'}</span>
                             <span className={styles.nodeType}>{seg?.start?.labels?.[0] ?? 'Symbol'}</span>
                           </div>
                           <div className={styles.edge}>
@@ -54,7 +74,7 @@ export default function SymbolTreeViewer({ symbolName, treeData, onClose }: Symb
                           </div>
                           {sIdx === segments.length - 1 && (
                             <div className={styles.node}>
-                              <span className={styles.nodeName}>{seg?.end?.properties?.name ?? 'unknown'}</span>
+                              <span className={styles.nodeName}>{(seg?.end?.properties?.name as string) ?? 'unknown'}</span>
                               <span className={styles.nodeType}>{seg?.end?.labels?.[0] ?? 'Symbol'}</span>
                             </div>
                           )}

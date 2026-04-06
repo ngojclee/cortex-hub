@@ -242,17 +242,30 @@ setupRouter.get('/settings', (c) => {
 })
 
 // ── App Settings (key-value store) ──
+const SENSITIVE_KEYS = new Set(['global_git_token'])
+
 setupRouter.get('/app-settings', (c) => {
   const rows = db.prepare('SELECT key, value FROM app_settings').all() as Array<{ key: string; value: string | null }>
   const settings: Record<string, string> = {}
   for (const row of rows) {
-    settings[row.key] = row.value ?? ''
+    if (SENSITIVE_KEYS.has(row.key) && row.value) {
+      // Mask sensitive values: show only last 4 chars
+      settings[row.key] = row.value.length > 4 ? '••••' + row.value.slice(-4) : '••••'
+    } else {
+      settings[row.key] = row.value ?? ''
+    }
   }
   return c.json(settings)
 })
 
 setupRouter.put('/app-settings', async (c) => {
-  const body = await c.req.json() as Record<string, string | null>
+  let body = await c.req.json() as Record<string, string | null>
+
+  // Guard against double-serialized JSON strings
+  if (typeof body === 'string') {
+    try { body = JSON.parse(body) } catch { /* use as-is */ }
+  }
+
   const upsert = db.prepare(
     `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
@@ -260,6 +273,8 @@ setupRouter.put('/app-settings', async (c) => {
 
   const run = db.transaction(() => {
     for (const [key, value] of Object.entries(body)) {
+      // Skip masked values (user didn't change the field)
+      if (typeof value === 'string' && value.startsWith('••••')) continue
       upsert.run(key, value ?? null)
     }
   })

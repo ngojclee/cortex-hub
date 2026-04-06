@@ -309,7 +309,7 @@ export async function getAppSettings() {
 export async function updateAppSettings(settings: Record<string, string | null>) {
   return apiFetch<{ success: boolean }>('/api/setup/app-settings', {
     method: 'PUT',
-    body: JSON.stringify(settings),
+    body: settings,
   })
 }
 
@@ -321,7 +321,7 @@ export async function getAuthConfig() {
 export async function requestAccess(email: string) {
   return apiFetch<{ requestId: string; message: string }>('/api/auth/request', {
     method: 'POST',
-    body: JSON.stringify({ email }),
+    body: { email },
   })
 }
 

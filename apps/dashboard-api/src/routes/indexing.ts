@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto'
 import { existsSync } from 'fs'
 import { join } from 'path'
 import { db } from '../db/client.js'
-import { startIndexing, cancelJob, buildAuthUrl } from '../services/indexer.js'
+import { startIndexing, cancelJob, buildAuthUrl, resolveGitCredentials } from '../services/indexer.js'
 import { embedProject } from '../services/mem9-embedder.js'
 import { buildKnowledgeFromDocs } from '../services/docs-knowledge-builder.js'
 
@@ -172,7 +172,8 @@ indexingRouter.post('/:id/git/test', async (c) => {
 
     if (!project?.git_repo_url) return c.json({ success: false, error: 'No git repository URL configured' })
 
-    const authUrl = buildAuthUrl(project.git_repo_url, project.git_username, project.git_token)
+    const { username, token } = resolveGitCredentials(project)
+    const authUrl = buildAuthUrl(project.git_repo_url, username, token)
 
     const { execFileSync } = await import('child_process')
     try {
@@ -180,6 +181,7 @@ indexingRouter.post('/:id/git/test', async (c) => {
         timeout: 15000,
         encoding: 'utf-8',
         stdio: ['pipe', 'pipe', 'pipe'],
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
       })
 
       const branchCount = output.split('\n').filter(Boolean).length
@@ -215,7 +217,8 @@ indexingRouter.get('/:id/branches', async (c) => {
 
     if (!project?.git_repo_url) return c.json({ branches: [], error: 'No git repository URL' })
 
-    const authUrl = buildAuthUrl(project.git_repo_url, project.git_username, project.git_token)
+    const { username, token } = resolveGitCredentials(project)
+    const authUrl = buildAuthUrl(project.git_repo_url, username, token)
 
     // Use execFileSync (no shell) to avoid URL injection issues with @, :, etc.
     const { execFileSync } = await import('child_process')
@@ -225,6 +228,7 @@ indexingRouter.get('/:id/branches', async (c) => {
         timeout: 15000,
         encoding: 'utf-8',
         stdio: ['pipe', 'pipe', 'pipe'],
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
       })
     } catch (err: unknown) {
       const stderr = (err as { stderr?: string })?.stderr ?? String(err)

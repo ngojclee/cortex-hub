@@ -32,6 +32,10 @@ export function buildAuthUrl(url: string, username?: string | null, token?: stri
     const parsed = new URL(url)
     if (username) {
       parsed.username = encodeURIComponent(username)
+    } else {
+      // For many providers (GitHub, GitLab), we need a username even if using a token.
+      // 'git' or 'oauth2' or any non-empty string usually works.
+      parsed.username = 'git'
     }
     parsed.password = encodeURIComponent(token)
     return parsed.toString()
@@ -39,6 +43,27 @@ export function buildAuthUrl(url: string, username?: string | null, token?: stri
     // For non-standard URLs (e.g., SSH), return as-is
     return url
   }
+}
+
+/**
+ * Resolve project-specific or global git credentials.
+ */
+export function resolveGitCredentials(project: { git_username: string | null; git_token: string | null }): { username: string | null; token: string | null } {
+  let effectiveToken = project.git_token
+  let effectiveUsername = project.git_username
+
+  if (!effectiveToken) {
+    try {
+      const globalToken = db.prepare("SELECT value FROM app_settings WHERE key = 'global_git_token'").get() as { value: string } | undefined
+      const globalUsername = db.prepare("SELECT value FROM app_settings WHERE key = 'global_git_username'").get() as { value: string } | undefined
+      if (globalToken?.value) {
+        effectiveToken = globalToken.value
+        effectiveUsername = effectiveUsername || globalUsername?.value || null
+      }
+    } catch { /* ignore — table may not exist yet */ }
+  }
+
+  return { username: effectiveUsername, token: effectiveToken }
 }
 
 /**
@@ -338,18 +363,9 @@ export async function startIndexing(projectId: string, jobId: string, branch: st
     mkdirSync(repoDir, { recursive: true })
 
     // Resolve credentials: project-level → global fallback
-    let effectiveToken = project.git_token
-    let effectiveUsername = project.git_username
-    if (!effectiveToken) {
-      try {
-        const globalToken = db.prepare("SELECT value FROM app_settings WHERE key = 'global_git_token'").get() as { value: string } | undefined
-        const globalUsername = db.prepare("SELECT value FROM app_settings WHERE key = 'global_git_username'").get() as { value: string } | undefined
-        if (globalToken?.value) {
-          effectiveToken = globalToken.value
-          effectiveUsername = effectiveUsername || globalUsername?.value || null
-          appendLog(jobId, '[info] Using global Git token (no project-level token set)')
-        }
-      } catch { /* ignore — table may not exist yet */ }
+    const { username: effectiveUsername, token: effectiveToken } = resolveGitCredentials(project)
+    if (effectiveToken && !project.git_token) {
+      appendLog(jobId, '[info] Using global Git token (no project-level token set)')
     }
 
     const authUrl = buildAuthUrl(project.git_repo_url, effectiveUsername, effectiveToken)

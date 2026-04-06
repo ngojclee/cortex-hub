@@ -126,42 +126,34 @@ type OrbitNode = {
   variant: 'cluster' | 'process' | 'summary' | 'knowledge'
 }
 
-function buildOrbitNodes(
+function buildTreeLevel(
   items: Array<{ id: string; title: string; meta: string }>,
-  side: 'left' | 'right',
-  center: { x: number; y: number },
-  limit: number,
+  startX: number,
+  endX: number,
+  y: number,
+  variant: 'cluster' | 'process' | 'knowledge',
 ): OrbitNode[] {
-  const visible = items.slice(0, limit)
+  const maxVisible = 6
+  const visible = items.slice(0, maxVisible)
   const remaining = items.length - visible.length
-  const start = side === 'left' ? 225 : -45
-  const end = side === 'left' ? 135 : 45
   const count = visible.length + (remaining > 0 ? 1 : 0)
-  const step = count <= 1 ? 0 : (end - start) / (count - 1)
 
-  const positioned: OrbitNode[] = visible.map((item, index) => {
-    const angle = ((start + step * index) * Math.PI) / 180
-    const radiusX = 315
-    const radiusY = 170
-
-    return {
-      id: item.id,
-      title: truncateLabel(item.title),
-      meta: item.meta,
-      x: center.x + Math.cos(angle) * radiusX,
-      y: center.y + Math.sin(angle) * radiusY,
-      variant: side === 'left' ? 'cluster' : 'process',
-    }
-  })
+  const positioned: OrbitNode[] = visible.map((item, index) => ({
+    id: item.id,
+    title: truncateLabel(item.title),
+    meta: item.meta,
+    x: count <= 1 ? (startX + endX) / 2 : startX + (endX - startX) * index / (count - 1),
+    y,
+    variant: variant as OrbitNode['variant'],
+  }))
 
   if (remaining > 0) {
-    const angle = ((start + step * (count - 1)) * Math.PI) / 180
     positioned.push({
-      id: `${side}-overflow`,
+      id: `${variant}-overflow`,
       title: `+${remaining} more`,
-      meta: side === 'left' ? 'additional clusters' : 'additional processes',
-      x: center.x + Math.cos(angle) * 315,
-      y: center.y + Math.sin(angle) * 170,
+      meta: variant === 'cluster' ? 'additional clusters' : 'additional processes',
+      x: count <= 1 ? (startX + endX) / 2 : startX + (endX - startX) * visible.length / (count - 1),
+      y,
       variant: 'summary',
     })
   }
@@ -169,9 +161,9 @@ function buildOrbitNodes(
   return positioned
 }
 
-function linkPath(from: { x: number; y: number }, to: { x: number; y: number }): string {
-  const midX = (from.x + to.x) / 2
-  return `M ${from.x} ${from.y} C ${midX} ${from.y}, ${midX} ${to.y}, ${to.x} ${to.y}`
+function treeEdge(fromX: number, fromY: number, toX: number, toY: number): string {
+  const midY = (fromY + toY) / 2
+  return `M ${fromX} ${fromY} C ${fromX} ${midY}, ${toX} ${midY}, ${toX} ${toY}`
 }
 
 function GraphCanvas({
@@ -194,29 +186,28 @@ function GraphCanvas({
   selectedClusterId: string | null
 }) {
   const width = 1080
-  const height = 700
-  const center = { x: 540, y: 320 }
+  const height = 580
+  const rootX = width / 2
+  const rootY = 58
+  const level1Y = 240
+  const knowledgeY = 420
 
-  const clusterNodes = buildOrbitNodes(
+  const clusterNodes = buildTreeLevel(
     clusters.map((cluster, index) => ({
       id: cluster.id ?? `cluster-${index}`,
       title: cluster.name,
       meta: `${cluster.symbols} symbols`,
     })),
-    'left',
-    center,
-    6,
+    130, 430, level1Y, 'cluster',
   )
 
-  const processNodes = buildOrbitNodes(
+  const processNodes = buildTreeLevel(
     processes.map((process, index) => ({
       id: process.id ?? `process-${index}`,
       title: process.name,
       meta: `${process.steps} steps${process.type ? ` · ${process.type}` : ''}`,
     })),
-    'right',
-    center,
-    6,
+    650, 950, level1Y, 'process',
   )
 
   const knowledgeNode: OrbitNode | null = knowledgeDocs > 0 || knowledgeChunks > 0
@@ -224,8 +215,8 @@ function GraphCanvas({
         id: 'knowledge-node',
         title: 'Knowledge Base',
         meta: `${knowledgeDocs} docs · ${knowledgeChunks} chunks`,
-        x: center.x,
-        y: 585,
+        x: rootX,
+        y: knowledgeY,
         variant: 'knowledge',
       }
     : null
@@ -236,22 +227,22 @@ function GraphCanvas({
     <div className={`card ${styles.graphCard}`}>
       <div className={styles.cardHeader}>
         <div>
-          <h3 className={styles.cardTitle}>Context Graph</h3>
+          <h3 className={styles.cardTitle}>Context Tree</h3>
           <p className={styles.cardSub}>
-            The graph now scales as a hub with orbiting branches, so it can survive more clusters and processes without becoming a four-box mockup.
+            Hierarchical tree view: project root branches into clusters (left) and processes (right), with cross-community links shown between related clusters.
           </p>
         </div>
       </div>
 
       <div className={styles.graphViewport}>
-        <svg viewBox={`0 0 ${width} ${height}`} className={styles.graphSvg} role="img" aria-label="Project graph overview">
+        <svg viewBox={`0 0 ${width} ${height}`} className={styles.graphSvg} role="img" aria-label="Project tree overview">
           <defs>
-            <linearGradient id="graphLine" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="rgba(96, 165, 250, 0.18)" />
+            <linearGradient id="graphLine" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="rgba(96, 165, 250, 0.28)" />
               <stop offset="100%" stopColor="rgba(192, 132, 252, 0.52)" />
             </linearGradient>
-            <radialGradient id="graphGlow" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="rgba(124, 58, 237, 0.22)" />
+            <radialGradient id="graphGlow" cx="50%" cy="25%" r="50%">
+              <stop offset="0%" stopColor="rgba(124, 58, 237, 0.16)" />
               <stop offset="100%" stopColor="rgba(17, 24, 39, 0)" />
             </radialGradient>
             <linearGradient id="clusterNode" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -277,15 +268,14 @@ function GraphCanvas({
           </defs>
 
           <rect x="14" y="14" width={width - 28} height={height - 28} rx="34" className={styles.graphFrame} />
-          <circle cx={center.x} cy={center.y} r="250" fill="url(#graphGlow)" />
+          <ellipse cx={rootX} cy={level1Y - 40} rx="420" ry="180" fill="url(#graphGlow)" />
 
           {nodes.map((node) => (
             <path
               key={`edge-${node.id}`}
-              d={linkPath(center, node)}
+              d={treeEdge(rootX, rootY + 34, node.x, node.y - 28)}
               stroke="url(#graphLine)"
-              strokeWidth="2.2"
-              strokeDasharray={node.variant === 'knowledge' ? '0' : '6 8'}
+              strokeWidth="2"
               fill="none"
               className={styles.graphEdge}
             />
@@ -295,9 +285,9 @@ function GraphCanvas({
             const sourceNode = clusterNodes.find(n => n.id === link.source || n.title === link.source)
             const targetNode = clusterNodes.find(n => n.id === link.target || n.title === link.target)
             if (!sourceNode || !targetNode || sourceNode.id === targetNode.id) return null
-            
-            // Adjust SVG path for inter-cluster edges (curved paths between orbiting nodes)
-            const pathData = `M ${sourceNode.x} ${sourceNode.y} Q ${center.x - 200} ${center.y + 100} ${targetNode.x} ${targetNode.y}`
+
+            const midY = Math.max(sourceNode.y, targetNode.y) + 60
+            const pathData = `M ${sourceNode.x} ${sourceNode.y + 28} Q ${(sourceNode.x + targetNode.x) / 2} ${midY} ${targetNode.x} ${targetNode.y + 28}`
 
             return (
               <path
@@ -314,11 +304,10 @@ function GraphCanvas({
             )
           })}
 
-          <g transform={`translate(${center.x - 118}, ${center.y - 58})`}>
-            <rect width="236" height="116" rx="28" fill="url(#projectNode)" className={styles.graphCore} />
-            <text x="28" y="45" className={styles.graphCoreTitle}>{truncateLabel(projectName, 22)}</text>
-            <text x="28" y="72" className={styles.graphCoreMeta}>project context</text>
-            <text x="28" y="92" className={styles.graphCoreSmall}>
+          <g transform={`translate(${rootX - 118}, ${rootY - 28})`}>
+            <rect width="236" height="56" rx="28" fill="url(#projectNode)" className={styles.graphCore} />
+            <text x="22" y="24" className={styles.graphCoreTitle}>{truncateLabel(projectName, 22)}</text>
+            <text x="22" y="44" className={styles.graphCoreSmall}>
               {clusters.length} clusters · {processes.length} processes
             </text>
           </g>

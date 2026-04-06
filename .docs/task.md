@@ -36,3 +36,10 @@
 - [ ] **Phase A: Registration & Knowledge Cleanup** — See [.docs/multi-project-agent-intel/task.md](multi-project-agent-intel/task.md)
 - [ ] **Phase B: Graph Explorer Enhancement** (future)
 - [ ] **Phase C: GitNexus Tool Expansion** (future)
+
+### Database Project Normalization (Pending Live Run)
+- [x] Added SQLite audit/normalization script: `apps/dashboard-api/src/db/project-normalization.ts`
+- [x] Added package command: `pnpm --filter @cortex/dashboard-api run db:project-normalize`
+- [x] Added runbook: [.docs/database/project-normalization.md](database/project-normalization.md)
+- [ ] Run dry-run on live `cortex.db` and review findings
+- [ ] Run `--apply` on live `cortex.db` after backup review

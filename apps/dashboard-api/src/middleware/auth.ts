@@ -25,6 +25,7 @@ export function dashboardAuth() {
       path === '/health' ||
       path.startsWith('/api/auth/') ||
       path.startsWith('/api/setup/') ||
+      path === '/api/keys/verify' ||
       path.startsWith('/mcp') ||
       path.startsWith('/.well-known/') ||
       path.startsWith('/_next/') ||

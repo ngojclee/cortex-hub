@@ -56,6 +56,13 @@ Monorepo: pnpm + Turborepo. TypeScript strict. Hono API. Next.js 15 frontend. SQ
 
 camelCase vars/functions, PascalCase types. `@cortex/*` path aliases. No `any` without comment.
 
+## Project identity notes
+
+- Runtime SQLite tables should normalize `session_handoffs.project_id`, `query_logs.project_id`, and `quality_reports.project_id` to canonical `projects.id` values.
+- `session_handoffs.project` stays as the raw repo/reference string for session provenance.
+- Knowledge documents and mem9 vector metadata still use project slugs in the current ingestion flow; do not bulk-convert those when cleaning runtime tables.
+- DB maintenance script: `pnpm --filter @cortex/dashboard-api run db:project-normalize -- --db /path/to/cortex.db [--apply]`
+
 <!-- cortex-hub:auto-mcp -->
 ## Cortex Hub — Auto MCP (MANDATORY — every conversation)
 

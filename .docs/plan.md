@@ -56,3 +56,10 @@ See [multi-project-agent-intel/plan.md](multi-project-agent-intel/plan.md)
 - Phase A: Register projects, clean knowledge (current)
 - Phase B: Interactive graph explorer (future)
 - Phase C: GitNexus rename + wiki tools (future)
+
+### Database Project Normalization
+- Add an operator-safe SQLite maintenance script for project linkage cleanup
+- Normalize runtime `project_id` fields in `session_handoffs`, `query_logs`, and `quality_reports`
+- Delete only orphan sessions that cannot be mapped to any valid project
+- Create a backup automatically before any `UPDATE` / `DELETE`
+- Apply the normalization against the live server DB when host access is available

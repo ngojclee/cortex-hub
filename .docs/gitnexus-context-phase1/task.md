@@ -99,6 +99,15 @@
 - [ ] Verify an external MCP client reconnects successfully and starts surfacing a visible work session again
 - [ ] Decide whether public `/api/*` routes should stay behind Cloudflare Access or regain an explicit API bypass for operator diagnostics
 
+### Phase 5G: MCP Auth Fix & Tree Visualization
+- [x] Diagnose root cause of MCP 401: auth middleware blocking `/api/keys/verify` when `AUTH_ENABLED=true`
+- [x] Add `/api/keys/verify` to auth middleware skip list in `apps/dashboard-api/src/middleware/auth.ts`
+- [x] Convert GraphCanvas from orbit/hub-spoke to hierarchical top-down tree layout
+- [x] Replace `buildOrbitNodes` with `buildTreeLevel` for linear node distribution
+- [x] Replace `linkPath` bezier with `treeEdge` smooth S-curve for parent-child edges
+- [x] Position project root at top, clusters (left half) and processes (right half) at level 1
+- [ ] Redeploy and verify MCP connection succeeds with Bearer token auth
+
 ## Verification Notes
 - [x] 2026-04-05: `http://10.21.1.108:4000/health` reports version `0.2.39`, commit `7fae1cf`, all core services `ok`
 - [x] 2026-04-05: `http://10.21.1.108:4000/api/mem9/list?limit=1` returns JSON successfully
@@ -154,3 +163,6 @@
 - [x] 2026-04-06: live `GET https://cortexhub.lengoc.me/.well-known/oauth-protected-resource/mcp` now returns `resource=https://cortexhub.lengoc.me/mcp`, confirming the public MCP discovery fix is live
 - [x] 2026-04-06: live `GET https://cortexhub.lengoc.me/api/sessions/all?limit=5` still redirects to Cloudflare Access, so public `/api/*` bypass remains an operator/config decision rather than an MCP transport bug
 - [x] 2026-04-06: local `pnpm --filter @cortex/dashboard-api typecheck` and `pnpm --filter @cortex/dashboard-web typecheck` after standardizing Settings/About runtime branding and adding graph process detail + Cypher playground UX
+- [x] 2026-04-07: root cause identified for MCP 401 — auth middleware in `dashboard-api` blocks `/api/keys/verify` when AUTH_ENABLED=true; hub-mcp cannot validate Bearer tokens
+- [x] 2026-04-07: auth middleware fix applied — added `path === '/api/keys/verify'` to skip list
+- [x] 2026-04-07: GraphCanvas converted from orbit layout to hierarchical top-down tree (clusters left, processes right, knowledge bottom)

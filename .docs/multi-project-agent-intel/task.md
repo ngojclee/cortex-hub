@@ -2,17 +2,17 @@
 
 ## Phase A: Multi-Project Registration & Knowledge Cleanup
 - [x] Register LN-OMS project via session_start auto-create (proj-f9ebd495)
-- [ ] Trigger code indexing for LN-OMS via POST /api/projects/{id}/index?branch=main
+- [x] Trigger code indexing for LN-OMS via POST /api/projects/{id}/index?branch=main
   - **BLOCKED**: cortex-api container DNS cannot resolve github.com
   - Added pre-flight DNS check in indexer.ts for better error messages
   - User needs to verify `dns: [8.8.8.8, 1.1.1.1]` is on `cortex-api` service in Portainer
-- [ ] Wait for index completion, verify symbol count > 0
+- [x] Wait for index completion, verify symbol count > 0 // Manually pulled, auto-indexed 3190 symbols
 - [x] Remove misplaced knowledge doc kdoc-6e0101e9 (GitNexus npm README)
 - [x] Fix knowledge scoping: re-stored LN-OMS Constitution with project_id: ln-oms
 - [x] Store LN-OMS knowledge docs (Architecture, Tech Stack, Constitution, Bootstrap)
 - [x] Verify cortex_knowledge_search with projectId=ln-oms filter returns scoped results
 - [x] Verify cortex_session_start works with LN-OMS repo URL
-- [ ] Verify cortex_list_repos shows 2+ projects with symbol counts (needs indexing)
+- [x] Verify cortex_list_repos shows 2+ projects with symbol counts (needs indexing)
 
 ## Code Improvements (committed but not yet deployed)
 - [x] knowledge.ts PUT endpoint: added project_id update support
@@ -20,11 +20,11 @@
 - [x] indexer.ts: added GIT_TERMINAL_PROMPT=0 to git clone env
 
 ## Phase B: Graph Explorer Enhancement (FUTURE)
-- [ ] Add GET /api/intel/resources/project/:id/cluster/:name/members endpoint
-- [ ] Add GET /api/intel/resources/project/:id/cross-links endpoint
-- [ ] Add detail sidebar panel to graph page (click cluster → member list)
-- [ ] Add inter-cluster edge rendering (SVG paths from cross-links data)
-- [ ] Typecheck: pnpm --filter @cortex/dashboard-api typecheck
+- [x] Add GET /api/intel/resources/project/:id/cluster/:name/members endpoint
+- [x] Add GET /api/intel/resources/project/:id/cross-links endpoint
+- [x] Add detail sidebar panel to graph page (click cluster → member list)
+- [x] Add inter-cluster edge rendering (SVG paths from cross-links data)
+- [x] Typecheck: pnpm --filter @cortex/dashboard-api typecheck
 - [ ] Typecheck: pnpm --filter @cortex/dashboard-web typecheck
 
 ## Phase C: GitNexus Tool Expansion (FUTURE)

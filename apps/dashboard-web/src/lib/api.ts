@@ -570,6 +570,42 @@ export async function getIntelProjectProcesses(projectId: string, limit = 12) {
   }>(`/api/intel/resources/project/${projectId}/processes?limit=${limit}`)
 }
 
+export interface IntelClusterMember {
+  name: string
+  type: string
+  filePath: string
+}
+
+export async function getIntelProjectClusterMembers(projectId: string, clusterName: string) {
+  return apiFetch<{
+    success: boolean
+    data: {
+      uri: string
+      clusterName: string
+      members: IntelClusterMember[]
+      totalCount: number
+    }
+  }>(`/api/intel/resources/project/${projectId}/cluster/${encodeURIComponent(clusterName)}/members`)
+}
+
+export interface IntelCrossLink {
+  source: string
+  target: string
+  weight: number
+  processes: string[]
+}
+
+export async function getIntelProjectCrossLinks(projectId: string) {
+  return apiFetch<{
+    success: boolean
+    data: {
+      uri: string
+      crossLinks: IntelCrossLink[]
+      totalVisibleEdges: number
+    }
+  }>(`/api/intel/resources/project/${projectId}/cross-links`)
+}
+
 export async function createProject(orgId: string, data: {
   name: string
   description?: string

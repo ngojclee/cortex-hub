@@ -1812,6 +1812,112 @@ intelRouter.get('/resources/project/:projectId/cluster/:clusterName', async (c) 
   }
 })
 
+// ── Resource: cluster full members ──
+intelRouter.get('/resources/project/:projectId/cluster/:clusterName/members', async (c) => {
+  try {
+    const { projectId, clusterName } = c.req.param()
+    const context = await resolveResourceContext(projectId)
+    if (!context) return c.json({ success: false, error: 'Project not found' }, 404)
+    if (!context.gitnexusRepo) return c.json({ success: false, error: 'Project is not yet indexed in GitNexus' }, 409)
+
+    const decodedClusterName = decodeURIComponent(clusterName)
+    const safeClusterName = escapeCypherString(decodedClusterName)
+
+    const { rows: memberRows } = await queryProjectCypherRows(
+      context.project.id,
+      `MATCH (n)-[:CodeRelation {type: 'MEMBER_OF'}]->(c:Community)
+       WHERE c.id = "${safeClusterName}" OR c.label = "${safeClusterName}" OR c.heuristicLabel = "${safeClusterName}"
+       RETURN DISTINCT n.name AS name, labels(n)[0] AS type, n.filePath AS filePath
+       ORDER BY n.filePath, n.name`
+    )
+
+    const members = memberRows.map((row) => ({
+      name: normalizeStringValue(row.name) ?? 'unknown',
+      type: normalizeStringValue(row.type),
+      filePath: normalizeStringValue(row.filePath),
+    }))
+
+    return c.json({
+      success: true,
+      data: {
+        uri: `cortex://project/${context.project.id}/cluster/${encodeURIComponent(decodedClusterName)}/members`,
+        clusterName: decodedClusterName,
+        members,
+        totalCount: members.length
+      },
+    })
+  } catch (error) {
+    logger.error(`Cluster members resource failed: ${String(error)}`)
+    return c.json({ success: false, error: String(error) }, 500)
+  }
+})
+
+// ── Resource: cross-links (inter-cluster edges from processes) ──
+intelRouter.get('/resources/project/:projectId/cross-links', async (c) => {
+  try {
+    const { projectId } = c.req.param()
+    const context = await resolveResourceContext(projectId)
+    if (!context) return c.json({ success: false, error: 'Project not found' }, 404)
+    if (!context.gitnexusRepo) return c.json({ success: false, error: 'Project is not yet indexed in GitNexus' }, 409)
+
+    // Query all cross-community processes
+    const { rows: processRows } = await queryProjectCypherRows(
+      context.project.id,
+      `MATCH (p:Process {processType: 'cross_community'})
+       WHERE size(p.communities) > 1
+       RETURN p.id AS id, p.heuristicLabel AS label, p.communities AS communities`
+    )
+
+    const linkMap = new Map<string, { source: string, target: string, weight: number, processes: string[] }>()
+
+    for (const row of processRows) {
+      if (!Array.isArray(row.communities) || row.communities.length < 2) continue;
+      // GitNexus returns communities as an array of community IDs
+      const comms = row.communities as string[]
+      
+      // Create edges between consecutive communities in the process flow
+      for (let i = 0; i < comms.length - 1; i++) {
+        const source = comms[i]
+        const target = comms[i+1]
+        if (!source || !target || source === target) continue
+
+        // Build a unique edge key, undirected for simplicity, or directed. Let's make it directed.
+        const edgeKey = `${source}->${target}`
+        const existing = linkMap.get(edgeKey)
+        const processLabel = normalizeStringValue(row.label) ?? 'unknown'
+        
+        if (existing) {
+          existing.weight += 1
+          if (!existing.processes.includes(processLabel)) {
+             existing.processes.push(processLabel)
+          }
+        } else {
+          linkMap.set(edgeKey, {
+            source,
+            target,
+            weight: 1,
+            processes: [processLabel]
+          })
+        }
+      }
+    }
+
+    const crossLinks = Array.from(linkMap.values())
+
+    return c.json({
+      success: true,
+      data: {
+        uri: `cortex://project/${context.project.id}/cross-links`,
+        crossLinks,
+        totalVisibleEdges: crossLinks.length
+      },
+    })
+  } catch (error) {
+    logger.error(`Cross-links resource failed: ${String(error)}`)
+    return c.json({ success: false, error: String(error) }, 500)
+  }
+})
+
 // ── Resource: project processes ──
 intelRouter.get('/resources/project/:projectId/processes', async (c) => {
   try {

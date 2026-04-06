@@ -9,10 +9,13 @@ import {
   getIntelProjectClusters,
   getIntelProjectProcesses,
   getIntelProjectDiscovery,
+  getIntelProjectCrossLinks,
+  getIntelProjectClusterMembers,
   linkDiscoveredProject,
   type IntelClusterResource,
   type IntelDiscoveryCandidate,
   type IntelProcessResource,
+  type IntelCrossLink,
 } from '@/lib/api'
 import styles from './page.module.css'
 
@@ -139,12 +142,18 @@ function GraphCanvas({
   processes,
   knowledgeDocs,
   knowledgeChunks,
+  crossLinks,
+  onNodeClick,
+  selectedClusterId,
 }: {
   projectName: string
   clusters: IntelClusterResource[]
   processes: IntelProcessResource[]
   knowledgeDocs: number
   knowledgeChunks: number
+  crossLinks: IntelCrossLink[]
+  onNodeClick: (nodeId: string, nodeVariant: string) => void
+  selectedClusterId: string | null
 }) {
   const width = 1080
   const height = 700
@@ -244,6 +253,29 @@ function GraphCanvas({
             />
           ))}
 
+          {crossLinks.map((link) => {
+            const sourceNode = clusterNodes.find(n => n.id === link.source || n.title === link.source)
+            const targetNode = clusterNodes.find(n => n.id === link.target || n.title === link.target)
+            if (!sourceNode || !targetNode || sourceNode.id === targetNode.id) return null
+            
+            // Adjust SVG path for inter-cluster edges (curved paths between orbiting nodes)
+            const pathData = `M ${sourceNode.x} ${sourceNode.y} Q ${center.x - 200} ${center.y + 100} ${targetNode.x} ${targetNode.y}`
+
+            return (
+              <path
+                key={`crosslink-${link.source}-${link.target}`}
+                d={pathData}
+                stroke="rgba(192, 132, 252, 0.45)"
+                strokeWidth={Math.min(link.weight + 1, 6)}
+                fill="none"
+                style={{ strokeDasharray: '4 4' }}
+                opacity={selectedClusterId ? (sourceNode.id === selectedClusterId || targetNode.id === selectedClusterId ? 1 : 0.1) : 0.8}
+              >
+                <title>{link.weight} cross_community process(es): {link.processes.join(', ')}</title>
+              </path>
+            )
+          })}
+
           <g transform={`translate(${center.x - 118}, ${center.y - 58})`}>
             <rect width="236" height="116" rx="28" fill="url(#projectNode)" className={styles.graphCore} />
             <text x="28" y="45" className={styles.graphCoreTitle}>{truncateLabel(projectName, 22)}</text>
@@ -261,10 +293,27 @@ function GraphCanvas({
                 : node.variant === 'knowledge'
                   ? 'url(#knowledgeNode)'
                   : 'url(#summaryNode)'
+            
+            const isSelected = selectedClusterId === node.id || selectedClusterId === node.title
+            const highlightStroke = isSelected ? 'rgba(59, 130, 246, 0.9)' : 'rgba(255, 255, 255, 0.08)'
 
             return (
-              <g key={node.id} transform={`translate(${node.x - 112}, ${node.y - 30})`}>
-                <rect width="224" height="60" rx="20" fill={fill} className={styles.graphNode} />
+              <g 
+                key={node.id} 
+                transform={`translate(${node.x - 112}, ${node.y - 30})`}
+                className={node.variant === 'cluster' ? styles.graphNodeInteractive : ''}
+                onClick={() => {
+                  if (node.variant === 'cluster') onNodeClick(node.title, node.variant)
+                }}
+              >
+                <rect 
+                  width="224" 
+                  height="60" 
+                  rx="20" 
+                  fill={fill} 
+                  className={styles.graphNode} 
+                  style={{ stroke: highlightStroke, strokeWidth: isSelected ? 2 : 1 }} 
+                />
                 <text x="18" y="25" className={styles.graphNodeTitle}>{node.title}</text>
                 <text x="18" y="44" className={styles.graphNodeMeta}>{node.meta}</text>
               </g>
@@ -358,9 +407,24 @@ export default function GraphPage() {
     { refreshInterval: 30000 },
   )
 
+  const { data: crossLinksData } = useSWR(
+    projectId ? ['intel-project-crosslinks', projectId] : null,
+    () => getIntelProjectCrossLinks(projectId),
+    { refreshInterval: 60000 },
+  )
+
+  const [selectedCluster, setSelectedCluster] = useState<string | null>(null)
+
+  const { data: clusterMembersData } = useSWR(
+    projectId && selectedCluster ? ['intel-project-cluster-members', projectId, selectedCluster] : null,
+    () => getIntelProjectClusterMembers(projectId, selectedCluster!),
+    { refreshInterval: 60000 },
+  )
+
   const context = contextData?.data
   const clusters = clustersData?.data.clusters ?? []
   const processes = processesData?.data.processes ?? []
+  const crossLinks = crossLinksData?.data.crossLinks ?? []
   const freshnessTone = statusTone(context?.project.staleness.status)
 
   function handleLinkCandidate(candidate: IntelDiscoveryCandidate) {
@@ -466,13 +530,48 @@ export default function GraphPage() {
             <StatCard label="Knowledge" value={context.project.knowledge.docs} hint={`${context.project.knowledge.chunks} chunks`} />
           </div>
 
-          <GraphCanvas
-            projectName={selectedProject.name}
-            clusters={clusters}
-            processes={processes}
-            knowledgeDocs={context.project.knowledge.docs}
-            knowledgeChunks={context.project.knowledge.chunks}
-          />
+          <div className={styles.graphWrapper}>
+            <div className={styles.graphMain}>
+              <GraphCanvas
+                projectName={selectedProject.name}
+                clusters={clusters}
+                processes={processes}
+                knowledgeDocs={context.project.knowledge.docs}
+                knowledgeChunks={context.project.knowledge.chunks}
+                crossLinks={crossLinks}
+                onNodeClick={(id, variant) => {
+                  if (variant === 'cluster') setSelectedCluster(id === selectedCluster ? null : id)
+                }}
+                selectedClusterId={selectedCluster}
+              />
+            </div>
+            {selectedCluster && (
+              <div className={styles.graphSidebar}>
+                <div className={`card ${styles.sidebarCard}`}>
+                  <h3 className={styles.sidebarTitle}>{selectedCluster}</h3>
+                  <div className={styles.sidebarMeta}>
+                    {clusterMembersData?.data.totalCount ?? 0} members
+                  </div>
+                  
+                  {!clusterMembersData && <div className={styles.sidebarEmpty}>Loading members...</div>}
+                  {clusterMembersData && clusterMembersData.data.members.length === 0 && (
+                    <div className={styles.sidebarEmpty}>No members found.</div>
+                  )}
+                  {clusterMembersData && clusterMembersData.data.members.length > 0 && (
+                    <div className={styles.sidebarMemberList}>
+                      {clusterMembersData.data.members.map((member) => (
+                        <div key={`${member.filePath}-${member.name}`} className={styles.sidebarMember}>
+                          <span className={styles.memberName}>{member.name}</span>
+                          <span className={styles.memberType}>{member.type}</span>
+                          {member.filePath && <span className={styles.memberFile}>{member.filePath}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
 
           <div className={styles.columns}>
             <ColumnList

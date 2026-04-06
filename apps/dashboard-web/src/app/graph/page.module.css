@@ -422,7 +422,106 @@
     flex-direction: column;
   }
 
-  .discoveryHead {
+}
+
+.graphWrapper {
+  display: flex;
+  gap: var(--space-4);
+  align-items: stretch;
+}
+
+.graphMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.graphSidebar {
+  width: 320px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebarCard {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-5);
+  background: var(--bg-secondary);
+}
+
+.sidebarTitle {
+  margin: 0 0 4px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.sidebarMeta {
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-4);
+}
+
+.sidebarMemberList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  overflow-y: auto;
+  max-height: 500px;
+  padding-right: var(--space-2);
+}
+
+.sidebarMember {
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255,255,255,0.05);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  gap: 4px;
+}
+
+.memberName {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.memberType {
+  font-size: 0.7rem;
+  color: #c084fc;
+  text-transform: uppercase;
+}
+
+.memberFile {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  word-break: break-all;
+}
+
+.sidebarEmpty {
+  color: var(--text-secondary);
+  text-align: center;
+  padding: var(--space-4) 0;
+}
+
+.graphNodeInteractive {
+  cursor: pointer;
+  transition: transform 0.2s ease, filter 0.2s ease;
+}
+
+.graphNodeInteractive:hover .graphNode {
+  filter: drop-shadow(0 0 12px rgba(59, 130, 246, 0.6));
+}
+
+@media (max-width: 960px) {
+  .graphWrapper {
     flex-direction: column;
+  }
+  .graphSidebar {
+    width: 100%;
   }
 }

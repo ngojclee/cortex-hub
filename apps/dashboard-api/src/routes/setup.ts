@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { readFileSync } from 'node:fs'
 import { db } from '../db/client.js'
 
 export const setupRouter = new Hono()
@@ -20,6 +21,17 @@ const DASHBOARD_URL = (requestUrl?: string) => {
     }
   }
   return 'http://localhost:4000'
+}
+
+function runtimeVersion(): string {
+  if (process.env.APP_VERSION) return process.env.APP_VERSION
+  try {
+    const versionJson = JSON.parse(readFileSync('./version.json', 'utf-8')) as { version?: string }
+    if (versionJson.version) return versionJson.version
+  } catch {
+    // Fallback below.
+  }
+  return process.env.npm_package_version || '0.1.0'
 }
 
 function managementHeaders() {
@@ -237,7 +249,7 @@ setupRouter.get('/settings', (c) => {
     },
     geminiApiKey: hasGeminiProviderKey() ? 'configured' : 'not set',
     database: process.env.DATABASE_PATH || 'data/cortex.db',
-    version: process.env.APP_VERSION || process.env.npm_package_version || '0.1.0',
+    version: runtimeVersion(),
   })
 })
 

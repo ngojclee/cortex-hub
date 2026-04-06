@@ -109,7 +109,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       <div className={styles.card}>
         <div className={styles.logo}>◇</div>
         <h1 className={styles.title}>Cortex Hub</h1>
-        <p className={styles.subtitle}>Self-hosted MCP Intelligence Platform</p>
+        <p className={styles.subtitle}>Self-hosted AI Agent Intelligence Platform</p>
 
         {state === 'login' && (
           <form onSubmit={handleSubmit} className={styles.form}>

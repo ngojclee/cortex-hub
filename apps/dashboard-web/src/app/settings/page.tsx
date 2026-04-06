@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import useSWR from 'swr'
-import { getSettings, getAppSettings, updateAppSettings, restartService } from '@/lib/api'
+import { getSettings, getAppSettings, updateAppSettings, restartService, checkHealth } from '@/lib/api'
 import { config } from '@/lib/config'
 import styles from './page.module.css'
 
@@ -106,6 +106,7 @@ const SERVICE_LABELS: Record<string, string> = {
 
 export default function SettingsPage() {
   const { data, error, isLoading } = useSWR('settings', getSettings)
+  const { data: healthData } = useSWR('settings-health', checkHealth, { refreshInterval: 30000 })
   const { data: appSettings, mutate: mutateAppSettings } = useSWR('app-settings', getAppSettings)
   const [showResetDialog, setShowResetDialog] = useState(false)
   const [showClearDialog, setShowClearDialog] = useState(false)
@@ -135,6 +136,13 @@ export default function SettingsPage() {
     { containerName: 'cortex-gitnexus', label: 'GitNexus (Code Intelligence)', icon: '🧬' },
   ]
   const dashboardUrl = typeof window !== 'undefined' ? window.location.origin : config.api.base
+  const repositoryUrl = 'https://github.com/ngojclee/cortex-hub'
+  const docsUrl = `${repositoryUrl}/blob/master/.docs/guides/onboarding.md`
+  const displayVersion = healthData?.version ?? data?.version ?? '...'
+  const shortCommit = healthData?.commit ? healthData.commit.slice(0, 7) : null
+  const buildDate = healthData?.buildDate && healthData.buildDate !== 'unknown'
+    ? new Date(healthData.buildDate).toLocaleString()
+    : null
   const endpointLinks = [
     { label: 'Dashboard', url: dashboardUrl },
     { label: 'API', url: config.api.base },
@@ -441,19 +449,30 @@ export default function SettingsPage() {
             <div>
               <h3 className={styles.aboutName}>Cortex Hub</h3>
               <span className={styles.aboutVersion}>
-                v{data?.version ?? '0.1.0'} · Self-hosted MCP Intelligence Platform
+                v{displayVersion} · Self-hosted AI Agent Intelligence Platform
               </span>
+              <p className={styles.aboutTagline}>
+                Unified MCP gateway · Persistent memory · Code intelligence · Quality enforcement
+              </p>
             </div>
           </div>
+          <div className={styles.aboutMeta}>
+            <span className={styles.aboutMetaItem}>Host: {dashboardUrl.replace(/^https?:\/\//, '')}</span>
+            {shortCommit && <span className={styles.aboutMetaItem}>Commit: {shortCommit}</span>}
+            {buildDate && <span className={styles.aboutMetaItem}>Built: {buildDate}</span>}
+          </div>
           <div className={styles.aboutLinks}>
-            <a href="https://github.com/ngojclee/cortex-hub" target="_blank" rel="noreferrer" className={styles.aboutLink}>
+            <a href={repositoryUrl} target="_blank" rel="noreferrer" className={styles.aboutLink}>
               GitHub
             </a>
-            <a href="/docs" className={styles.aboutLink}>
+            <a href={docsUrl} target="_blank" rel="noreferrer" className={styles.aboutLink}>
               Documentation
             </a>
             <a href={dashboardUrl} className={styles.aboutLink}>
               Dashboard
+            </a>
+            <a href={config.mcp.endpoint} target="_blank" rel="noreferrer" className={styles.aboutLink}>
+              MCP
             </a>
           </div>
         </div>

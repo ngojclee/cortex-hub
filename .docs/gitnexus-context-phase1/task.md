@@ -75,6 +75,8 @@
 - [x] Refresh reused sessions so `mode` and session context update when `cortex_session_start` is called again
 - [x] Add discovery surfacing for unlinked repos and knowledge-only project spaces so operators can promote them into real Cortex projects
 - [x] Make the lightweight graph layout survive more branches than the original 4-node-per-side mockup
+- [x] Add a process step detail drill-down in `/graph` so operators can inspect the concrete steps behind a process node
+- [x] Add a read-only Cypher playground in `/graph` for direct graph debugging without leaving the dashboard
 - [ ] Keep `cortex_code_rename` deferred until the resource and process contracts are stable
 
 ### Phase 5E: Auth & Session Observability
@@ -149,3 +151,6 @@
 - [x] 2026-04-06: live `GET https://cortexhub.lengoc.me/api/auth/config` returns `{\"enabled\":true,\"telegramConfigured\":true}` after the auth-runtime deployment
 - [x] 2026-04-06: live `GET https://cortexhub.lengoc.me/.well-known/oauth-protected-resource/mcp` returned `resource=http://cortex-mcp:8317/mcp` before the MCP discovery proxy fix, confirming the public-connectivity bug
 - [x] 2026-04-06: local `pnpm --filter @cortex/dashboard-api typecheck`, `pnpm --filter @cortex/hub-mcp typecheck`, and `pnpm --filter @cortex/dashboard-web typecheck` after forwarding public origin headers for `/mcp` discovery and syncing the Portainer stack
+- [x] 2026-04-06: live `GET https://cortexhub.lengoc.me/.well-known/oauth-protected-resource/mcp` now returns `resource=https://cortexhub.lengoc.me/mcp`, confirming the public MCP discovery fix is live
+- [x] 2026-04-06: live `GET https://cortexhub.lengoc.me/api/sessions/all?limit=5` still redirects to Cloudflare Access, so public `/api/*` bypass remains an operator/config decision rather than an MCP transport bug
+- [x] 2026-04-06: local `pnpm --filter @cortex/dashboard-api typecheck` and `pnpm --filter @cortex/dashboard-web typecheck` after standardizing Settings/About runtime branding and adding graph process detail + Cypher playground UX

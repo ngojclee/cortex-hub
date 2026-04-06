@@ -3,7 +3,7 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: 'Cortex Hub',
-  description: 'The Neural Intelligence Platform for AI Agent Orchestration',
+  description: 'Self-hosted AI Agent Intelligence Platform with a unified MCP gateway, persistent memory, code intelligence, and quality enforcement.',
   icons: {
     icon: [{ url: '/icon.svg', type: 'image/svg+xml' }],
     shortcut: '/icon.svg',

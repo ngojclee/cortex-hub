@@ -388,8 +388,36 @@
   color: var(--text-tertiary);
 }
 
+.aboutTagline {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.55;
+  max-width: 52ch;
+}
+
+.aboutMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: var(--space-4);
+}
+
+.aboutMetaItem {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+}
+
 .aboutLinks {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-4);
   padding-top: var(--space-4);
   border-top: 1px solid var(--border-subtle);

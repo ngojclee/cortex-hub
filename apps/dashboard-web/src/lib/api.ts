@@ -492,6 +492,22 @@ export interface IntelProcessResource {
   steps: number
 }
 
+export interface IntelProcessStep {
+  step: number
+  name: string
+  type: string | null
+  filePath: string | null
+}
+
+export interface IntelProcessDetail {
+  id: string
+  name: string
+  label: string | null
+  heuristicLabel: string | null
+  type: string | null
+  steps: number
+}
+
 export async function getIntelProjectsResource() {
   return apiFetch<{
     success: boolean
@@ -583,6 +599,19 @@ export async function getIntelProjectProcesses(projectId: string, limit = 12) {
   }>(`/api/intel/resources/project/${projectId}/processes?limit=${limit}`)
 }
 
+export async function getIntelProjectProcessDetail(projectId: string, processName: string) {
+  return apiFetch<{
+    success: boolean
+    data: {
+      uri: string
+      repo?: string
+      project: IntelProjectResourceSummary
+      process: IntelProcessDetail
+      steps: IntelProcessStep[]
+    }
+  }>(`/api/intel/resources/project/${projectId}/process/${encodeURIComponent(processName)}`)
+}
+
 export interface IntelClusterMember {
   name: string
   type: string
@@ -665,6 +694,16 @@ export async function getIntelSymbolImpact(projectId: string, target: string, di
   }>('/api/intel/impact', {
     method: 'POST',
     body: { target, direction: direction ?? 'downstream', projectId },
+  })
+}
+
+export async function runIntelCypherQuery(projectId: string, query: string) {
+  return apiFetch<{
+    success: boolean
+    data: unknown
+  }>('/api/intel/cypher', {
+    method: 'POST',
+    body: { projectId, query },
   })
 }
 

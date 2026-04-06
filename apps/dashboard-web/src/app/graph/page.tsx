@@ -8,16 +8,19 @@ import {
   getIntelProjectContext,
   getIntelProjectClusters,
   getIntelProjectProcesses,
+  getIntelProjectProcessDetail,
   getIntelProjectDiscovery,
   getIntelProjectCrossLinks,
   getIntelProjectClusterMembers,
   getIntelProjectSymbolTree,
   getIntelSymbolContext,
   getIntelSymbolImpact,
+  runIntelCypherQuery,
   linkDiscoveredProject,
   type IntelClusterResource,
   type IntelDiscoveryCandidate,
   type IntelProcessResource,
+  type IntelProcessStep,
   type IntelCrossLink,
 } from '@/lib/api'
 import styles from './page.module.css'
@@ -82,6 +85,37 @@ function ColumnList({
     </div>
   )
 }
+
+function formatCypherOutput(value: unknown): string {
+  if (typeof value === 'string') return value
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
+const CYPHER_PRESETS = [
+  {
+    label: 'Top processes',
+    query: `MATCH (p:Process)
+RETURN p.label AS label, p.heuristicLabel AS heuristicLabel, p.stepCount AS steps
+LIMIT 12`,
+  },
+  {
+    label: 'Cluster nodes',
+    query: `MATCH (c:Cluster)
+RETURN c.label AS label, c.heuristicLabel AS heuristicLabel, c.cohesion AS cohesion
+LIMIT 12`,
+  },
+  {
+    label: 'Step flow',
+    query: `MATCH (n)-[r:CodeRelation {type: 'STEP_IN_PROCESS'}]->(p:Process)
+RETURN p.label AS process, n.name AS stepName, n.filePath AS filePath, r.step AS step
+ORDER BY process, step
+LIMIT 30`,
+  },
+]
 
 type OrbitNode = {
   id: string
@@ -305,9 +339,9 @@ function GraphCanvas({
               <g 
                 key={node.id} 
                 transform={`translate(${node.x - 112}, ${node.y - 30})`}
-                className={node.variant === 'cluster' ? styles.graphNodeInteractive : ''}
+                className={node.variant === 'cluster' || node.variant === 'process' ? styles.graphNodeInteractive : ''}
                 onClick={() => {
-                  if (node.variant === 'cluster') onNodeClick(node.title, node.variant)
+                  if (node.variant === 'cluster' || node.variant === 'process') onNodeClick(node.title, node.variant)
                 }}
               >
                 <rect 
@@ -366,7 +400,24 @@ function DiscoveryCard({
 export default function GraphPage() {
   const [projectId, setProjectId] = useState('')
   const [linkingKey, setLinkingKey] = useState<string | null>(null)
+  const [selectedProcess, setSelectedProcess] = useState<string | null>(null)
+  const [processDetail, setProcessDetail] = useState<{
+    process: {
+      id: string
+      name: string
+      label: string | null
+      heuristicLabel: string | null
+      type: string | null
+      steps: number
+    }
+    steps: IntelProcessStep[]
+  } | null>(null)
+  const [loadingProcess, setLoadingProcess] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const [cypherQuery, setCypherQuery] = useState(CYPHER_PRESETS[0]?.query ?? '')
+  const [cypherResult, setCypherResult] = useState<string | null>(null)
+  const [cypherError, setCypherError] = useState<string | null>(null)
+  const [runningCypher, setRunningCypher] = useState(false)
 
   const { data: projectsData, error: projectsError, mutate: mutateProjects } = useSWR(
     'intel-projects-resource',
@@ -388,6 +439,18 @@ export default function GraphPage() {
       if (first) setProjectId(first.projectId)
     }
   }, [projectId, projects])
+
+  useEffect(() => {
+    setSelectedCluster(null)
+    setSelectedProcess(null)
+    setProcessDetail(null)
+    setSymbolTree(null)
+    setSymbolContext(null)
+    setSymbolImpact(null)
+    setSelectedSymbol(null)
+    setCypherResult(null)
+    setCypherError(null)
+  }, [projectId])
 
   const selectedProject = useMemo(
     () => projects.find((project) => project.projectId === projectId) ?? null,
@@ -461,6 +524,27 @@ export default function GraphPage() {
     })
   }
 
+  const handleViewProcess = async (processName: string) => {
+    if (!projectId) return
+    setSelectedCluster(null)
+    setSelectedProcess(processName)
+    setProcessDetail(null)
+    setLoadingProcess(true)
+    try {
+      const data = await getIntelProjectProcessDetail(projectId, processName)
+      if (data.success) {
+        setProcessDetail({
+          process: data.data.process,
+          steps: data.data.steps,
+        })
+      }
+    } catch (err) {
+      console.error('Failed to load process detail:', err)
+    } finally {
+      setLoadingProcess(false)
+    }
+  }
+
   const handleViewTree = async (symbolName: string) => {
     if (!projectId) return
     setSelectedSymbol(symbolName)
@@ -506,6 +590,21 @@ export default function GraphPage() {
       console.error('Failed to load impact analysis:', err)
     } finally {
       setLoadingImpact(false)
+    }
+  }
+
+  const handleRunCypher = async () => {
+    if (!projectId || !cypherQuery.trim()) return
+    setRunningCypher(true)
+    setCypherError(null)
+    setCypherResult(null)
+    try {
+      const data = await runIntelCypherQuery(projectId, cypherQuery)
+      setCypherResult(formatCypherOutput(data.data))
+    } catch (err) {
+      setCypherError(err instanceof Error ? err.message : 'Cypher query failed')
+    } finally {
+      setRunningCypher(false)
     }
   }
 
@@ -601,7 +700,14 @@ export default function GraphPage() {
                 knowledgeChunks={context.project.knowledge.chunks}
                 crossLinks={crossLinks}
                 onNodeClick={(id, variant) => {
-                  if (variant === 'cluster') setSelectedCluster(id === selectedCluster ? null : id)
+                  if (variant === 'cluster') {
+                    setSelectedProcess(null)
+                    setProcessDetail(null)
+                    setSelectedCluster(id === selectedCluster ? null : id)
+                  }
+                  if (variant === 'process') {
+                    void handleViewProcess(id)
+                  }
                 }}
                 selectedClusterId={selectedCluster}
               />
@@ -673,6 +779,62 @@ export default function GraphPage() {
                 </div>
               </div>
             )}
+            {!selectedCluster && selectedProcess && (
+              <div className={styles.graphSidebar}>
+                <div className={`card ${styles.sidebarCard}`}>
+                  <div className={styles.sidebarHeader}>
+                    <div>
+                      <h3 className={styles.sidebarTitle}>{selectedProcess}</h3>
+                      <div className={styles.sidebarMeta}>
+                        {loadingProcess
+                          ? 'Loading process detail...'
+                          : `${processDetail?.steps.length ?? 0} steps${processDetail?.process.type ? ` · ${processDetail.process.type}` : ''}`}
+                      </div>
+                    </div>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => {
+                        setSelectedProcess(null)
+                        setProcessDetail(null)
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  {loadingProcess && <div className={styles.sidebarEmpty}>Loading process detail...</div>}
+                  {!loadingProcess && !processDetail && (
+                    <div className={styles.sidebarEmpty}>No process detail found for this process yet.</div>
+                  )}
+                  {!loadingProcess && processDetail && (
+                    <>
+                      <div className={styles.processMetaGrid}>
+                        <div className={styles.processMetaItem}>
+                          <span className={styles.processMetaLabel}>Type</span>
+                          <span className={styles.processMetaValue}>{processDetail.process.type ?? 'unknown'}</span>
+                        </div>
+                        <div className={styles.processMetaItem}>
+                          <span className={styles.processMetaLabel}>Steps</span>
+                          <span className={styles.processMetaValue}>{processDetail.process.steps}</span>
+                        </div>
+                      </div>
+                      <div className={styles.processSteps}>
+                        {processDetail.steps.map((step) => (
+                          <div key={`${processDetail.process.id}-${step.step}-${step.name}`} className={styles.processStep}>
+                            <div className={styles.processStepHead}>
+                              <span className={styles.processStepIndex}>Step {step.step}</span>
+                              {step.type && <span className={styles.processStepType}>{step.type}</span>}
+                            </div>
+                            <span className={styles.processStepName}>{step.name}</span>
+                            {step.filePath && <span className={styles.processStepFile}>{step.filePath}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className={styles.columns}>
@@ -702,6 +864,49 @@ export default function GraphPage() {
               {processesData?.data.hint && <p className={styles.hintText}>{processesData.data.hint}</p>}
             </div>
           )}
+
+          <div className={`card ${styles.playgroundCard}`}>
+            <div className={styles.playgroundHeader}>
+              <div>
+                <h3 className={styles.cardTitle}>Cypher Playground</h3>
+                <p className={styles.cardSub}>
+                  Run read-only GitNexus graph queries against the selected project when the overview view is not enough.
+                </p>
+              </div>
+              <div className={styles.playgroundPresets}>
+                {CYPHER_PRESETS.map((preset) => (
+                  <button
+                    key={preset.label}
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setCypherQuery(preset.query)}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <textarea
+              className={styles.playgroundInput}
+              value={cypherQuery}
+              onChange={(event) => setCypherQuery(event.target.value)}
+              spellCheck={false}
+            />
+
+            <div className={styles.playgroundActions}>
+              <span className={styles.playgroundHint}>
+                Scoped to project: {selectedProject.slug}
+              </span>
+              <button className="btn btn-primary btn-sm" onClick={handleRunCypher} disabled={runningCypher || !cypherQuery.trim()}>
+                {runningCypher ? 'Running…' : 'Run Query'}
+              </button>
+            </div>
+
+            {cypherError && <div className={styles.errorBanner}>{cypherError}</div>}
+            {cypherResult && (
+              <pre className={styles.playgroundOutput}>{cypherResult}</pre>
+            )}
+          </div>
         </>
       )}
 

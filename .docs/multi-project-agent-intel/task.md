@@ -34,8 +34,10 @@
 - [x] Add POST /api/intel/wiki API endpoint
 - [x] Add GET /api/intel/resources/project/:id/symbol/:name/tree endpoint
 - [x] Implement cortex_code_tree MCP tool
-- [ ] Typecheck: pnpm --filter @cortex/hub-mcp typecheck
-- [ ] Typecheck: pnpm --filter @cortex/dashboard-api typecheck
+- [x] Integrate Symbol Tree (Dependency Tree) into Graph Explorer (v0.3.2.0)
+- [x] Typecheck: pnpm --filter @cortex/hub-mcp typecheck
+- [x] Typecheck: pnpm --filter @cortex/dashboard-api typecheck
+- [x] Typecheck: pnpm --filter @cortex/dashboard-web typecheck
 - [ ] Typecheck: pnpm --filter @cortex/dashboard-api build
 
 ## Verification Notes
@@ -46,5 +48,7 @@
   - Fixed "could not read Username" error in Project Settings > Test Connection.
   - Added global token fallback to connection test and branch listing.
   - Set `GIT_TERMINAL_PROMPT=0` to prevent interactive hangs in all services.
-  - Defaulted HTTPS username to `git` when token is provided without a username.
+- Symbol Tree (v0.3.2.0):
+  - Graph Explorer now includes a "Tree" action for every symbol in cluster sidebars.
+  - Retreives and visualizes recursive dependency paths via GitNexus Cypher matching.
 - DNS Note: Container needs `dns: [8.8.8.8, 1.1.1.1]` in Portainer config if repo host is unreachable.

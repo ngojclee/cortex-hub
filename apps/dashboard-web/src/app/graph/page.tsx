@@ -11,6 +11,7 @@ import {
   getIntelProjectDiscovery,
   getIntelProjectCrossLinks,
   getIntelProjectClusterMembers,
+  getIntelProjectSymbolTree,
   linkDiscoveredProject,
   type IntelClusterResource,
   type IntelDiscoveryCandidate,
@@ -18,6 +19,7 @@ import {
   type IntelCrossLink,
 } from '@/lib/api'
 import styles from './page.module.css'
+import SymbolTreeViewer from '@/components/intel/SymbolTreeViewer'
 
 function formatIndexedAt(value: string | null | undefined): string {
   if (!value) return 'Not indexed'
@@ -414,6 +416,9 @@ export default function GraphPage() {
   )
 
   const [selectedCluster, setSelectedCluster] = useState<string | null>(null)
+  const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null)
+  const [symbolTree, setSymbolTree] = useState<any>(null)
+  const [loadingTree, setLoadingTree] = useState(false)
 
   const { data: clusterMembersData } = useSWR(
     projectId && selectedCluster ? ['intel-project-cluster-members', projectId, selectedCluster] : null,
@@ -446,6 +451,20 @@ export default function GraphPage() {
         setLinkingKey(null)
       }
     })
+  }
+
+  const handleViewTree = async (symbolName: string) => {
+    if (!projectId) return
+    setSelectedSymbol(symbolName)
+    setLoadingTree(true)
+    try {
+      const data = await getIntelProjectSymbolTree(projectId, symbolName, { depth: 2 })
+      setSymbolTree(data)
+    } catch (err) {
+      console.error('Failed to load symbol tree:', err)
+    } finally {
+      setLoadingTree(false)
+    }
   }
 
   return (
@@ -561,7 +580,16 @@ export default function GraphPage() {
                     <div className={styles.sidebarMemberList}>
                       {clusterMembersData.data.members.map((member) => (
                         <div key={`${member.filePath}-${member.name}`} className={styles.sidebarMember}>
-                          <span className={styles.memberName}>{member.name}</span>
+                          <div className={styles.sidebarMemberHead}>
+                            <span className={styles.memberName}>{member.name}</span>
+                            <button 
+                              className="btn btn-sm btn-secondary" 
+                              style={{ padding: '2px 8px', fontSize: '10px' }}
+                              onClick={() => handleViewTree(member.name)}
+                            >
+                              Tree
+                            </button>
+                          </div>
                           <span className={styles.memberType}>{member.type}</span>
                           {member.filePath && <span className={styles.memberFile}>{member.filePath}</span>}
                         </div>
@@ -601,6 +629,17 @@ export default function GraphPage() {
             </div>
           )}
         </>
+      )}
+
+      {selectedSymbol && (
+        <SymbolTreeViewer 
+          symbolName={selectedSymbol} 
+          treeData={symbolTree} 
+          onClose={() => {
+            setSelectedSymbol(null)
+            setSymbolTree(null)
+          }} 
+        />
       )}
     </DashboardLayout>
   )

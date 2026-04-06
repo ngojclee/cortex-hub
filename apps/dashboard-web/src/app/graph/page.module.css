@@ -482,6 +482,13 @@
   gap: 4px;
 }
 
+.sidebarMemberHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
 .memberName {
   font-size: 0.875rem;
   font-weight: 600;

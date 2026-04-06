@@ -606,6 +606,53 @@ export async function getIntelProjectCrossLinks(projectId: string) {
   }>(`/api/intel/resources/project/${projectId}/cross-links`)
 }
 
+export async function getIntelProjectSymbolTree(projectId: string, name: string, opts?: { depth?: number; direction?: 'upstream' | 'downstream' }) {
+  const qs = new URLSearchParams()
+  if (opts?.depth) qs.set('depth', String(opts.depth))
+  if (opts?.direction) qs.set('direction', opts.direction)
+  return apiFetch<{
+    success: boolean
+    data: {
+      uri: string
+      results: Array<{
+        path?: Array<{
+          segments: Array<{
+            start: { id: string; labels: string[]; properties: Record<string, unknown> }
+            end: { id: string; labels: string[]; properties: Record<string, unknown> }
+            relationship: { type: string; id: string; properties: Record<string, unknown> }
+          }>
+        }>
+      }>
+    }
+  }>(`/api/intel/resources/project/${projectId}/symbol/${encodeURIComponent(name)}/tree?${qs.toString()}`)
+}
+
+export async function previewSymbolRename(data: {
+  projectId: string
+  symbol: string
+  newName: string
+  file?: string
+  dryRun?: boolean
+}) {
+  return apiFetch<{
+    success: boolean
+    data: {
+      refs: Array<{ caller: string; file: string; type: string[] }>
+    }
+  }>('/api/intel/rename', { method: 'POST', body: data })
+}
+
+export async function generateProjectWiki(projectId: string) {
+  return apiFetch<{
+    success: boolean
+    data: {
+      title: string
+      content: string
+      storedInKnowledge: boolean
+    }
+  }>('/api/intel/wiki', { method: 'POST', body: { projectId } })
+}
+
 export async function createProject(orgId: string, data: {
   name: string
   description?: string

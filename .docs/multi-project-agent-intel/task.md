@@ -42,6 +42,9 @@
 - LN-OMS project ID: `proj-f9ebd495`, slug: `ln-oms`
 - Cortex-hub project ID: `proj-44576c69`, slug: `cortex-hub`
 - Knowledge search filter uses slug (not UUID): `projectId=ln-oms`
-- Knowledge docs for LN-OMS: kdoc-8f944278 (Architecture), kdoc-00ca71e7 (Tech Stack), kdoc-ba0fffee (Constitution), kdoc-aa6a88fc (Bootstrap)
-- DNS error in container: "fatal: could not read Username for 'https://github.com': No such device or address"
-- Portainer stack needs `dns: [8.8.8.8, 1.1.1.1]` on `cortex-api` service specifically
+- Git Auth Fix (v0.3.1.0):
+  - Fixed "could not read Username" error in Project Settings > Test Connection.
+  - Added global token fallback to connection test and branch listing.
+  - Set `GIT_TERMINAL_PROMPT=0` to prevent interactive hangs in all services.
+  - Defaulted HTTPS username to `git` when token is provided without a username.
+- DNS Note: Container needs `dns: [8.8.8.8, 1.1.1.1]` in Portainer config if repo host is unreachable.

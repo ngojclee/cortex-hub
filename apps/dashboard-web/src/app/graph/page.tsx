@@ -420,7 +420,6 @@ export default function GraphPage() {
 
   const [selectedCluster, setSelectedCluster] = useState<string | null>(null)
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null)
-  const [selectedProcess, setSelectedProcess] = useState<string | null>(null)
   const [symbolTree, setSymbolTree] = useState<Record<string, unknown> | null>(null)
   const [symbolContext, setSymbolContext] = useState<{ name: string; raw: string } | null>(null)
   const [symbolImpact, setSymbolImpact] = useState<{ target: string; direction: string; results: unknown } | null>(null)

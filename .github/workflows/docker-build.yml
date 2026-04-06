@@ -3,7 +3,22 @@ name: Build & Push Docker Images
 on:
   push:
     branches: [master]
-  workflow_dispatch:  # Allow manual trigger
+    paths:
+      - 'apps/**'
+      - 'packages/**'
+      - 'infra/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'turbo.json'
+      - 'tsconfig*.json'
+      - 'version.json'
+      - '.github/workflows/docker-build.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: docker-build-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   REGISTRY: ghcr.io
@@ -32,11 +47,13 @@ jobs:
 
       - name: Extract metadata
         id: meta
+        shell: bash
         run: |
-          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-          echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
+          echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+          VERSION=$(node -p 'require("./version.json").version')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      # ── Build cortex-api (Dashboard API + Web) ──
       - name: Build & Push cortex-api
         uses: docker/build-push-action@v5
         with:
@@ -45,14 +62,14 @@ jobs:
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.OWNER }}/cortex-api:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/cortex-api:v${{ steps.meta.outputs.version }}
             ${{ env.REGISTRY }}/${{ env.OWNER }}/cortex-api:${{ steps.meta.outputs.sha_short }}
           build-args: |
             COMMIT_SHA=${{ steps.meta.outputs.sha_short }}
             BUILD_DATE=${{ steps.meta.outputs.build_date }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=cortex-api
+          cache-to: type=gha,scope=cortex-api,mode=max
 
-      # ── Build cortex-mcp (MCP Gateway) ──
       - name: Build & Push cortex-mcp
         uses: docker/build-push-action@v5
         with:
@@ -61,11 +78,14 @@ jobs:
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.OWNER }}/cortex-mcp:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/cortex-mcp:v${{ steps.meta.outputs.version }}
             ${{ env.REGISTRY }}/${{ env.OWNER }}/cortex-mcp:${{ steps.meta.outputs.sha_short }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          build-args: |
+            COMMIT_SHA=${{ steps.meta.outputs.sha_short }}
+            BUILD_DATE=${{ steps.meta.outputs.build_date }}
+          cache-from: type=gha,scope=cortex-mcp
+          cache-to: type=gha,scope=cortex-mcp,mode=max
 
-      # ── Build cortex-gitnexus (Code Intelligence) ──
       - name: Build & Push cortex-gitnexus
         uses: docker/build-push-action@v5
         with:
@@ -74,18 +94,23 @@ jobs:
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.OWNER }}/cortex-gitnexus:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/cortex-gitnexus:v${{ steps.meta.outputs.version }}
             ${{ env.REGISTRY }}/${{ env.OWNER }}/cortex-gitnexus:${{ steps.meta.outputs.sha_short }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          build-args: |
+            COMMIT_SHA=${{ steps.meta.outputs.sha_short }}
+            BUILD_DATE=${{ steps.meta.outputs.build_date }}
+          cache-from: type=gha,scope=cortex-gitnexus
+          cache-to: type=gha,scope=cortex-gitnexus,mode=max
 
       - name: Summary
+        shell: bash
         run: |
-          echo "## 🚀 Docker Images Published" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Image | Tag |" >> $GITHUB_STEP_SUMMARY
-          echo "|-------|-----|" >> $GITHUB_STEP_SUMMARY
-          echo "| cortex-api | \`latest\`, \`${{ steps.meta.outputs.sha_short }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| cortex-mcp | \`latest\`, \`${{ steps.meta.outputs.sha_short }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| cortex-gitnexus | \`latest\`, \`${{ steps.meta.outputs.sha_short }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Watchtower will auto-pull within 5 minutes." >> $GITHUB_STEP_SUMMARY
+          echo "## Docker Images Published" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Image | Tags |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-------|------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| cortex-api | latest, v${{ steps.meta.outputs.version }}, ${{ steps.meta.outputs.sha_short }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| cortex-mcp | latest, v${{ steps.meta.outputs.version }}, ${{ steps.meta.outputs.sha_short }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| cortex-gitnexus | latest, v${{ steps.meta.outputs.version }}, ${{ steps.meta.outputs.sha_short }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Previous in-progress Docker builds for the same branch are auto-cancelled by workflow concurrency." >> "$GITHUB_STEP_SUMMARY"

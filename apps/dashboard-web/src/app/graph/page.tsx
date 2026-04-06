@@ -123,15 +123,19 @@ type OrbitNode = {
   meta: string
   x: number
   y: number
+  w: number
+  h: number
   variant: 'cluster' | 'process' | 'summary' | 'knowledge'
 }
 
-function buildTreeLevel(
+function layoutRow(
   items: Array<{ id: string; title: string; meta: string }>,
   startX: number,
   endX: number,
   y: number,
   variant: 'cluster' | 'process' | 'knowledge',
+  nodeW = 152,
+  nodeH = 52,
 ): OrbitNode[] {
   const maxVisible = 6
   const visible = items.slice(0, maxVisible)
@@ -140,20 +144,24 @@ function buildTreeLevel(
 
   const positioned: OrbitNode[] = visible.map((item, index) => ({
     id: item.id,
-    title: truncateLabel(item.title),
+    title: truncateLabel(item.title, 18),
     meta: item.meta,
     x: count <= 1 ? (startX + endX) / 2 : startX + (endX - startX) * index / (count - 1),
     y,
+    w: nodeW,
+    h: nodeH,
     variant: variant as OrbitNode['variant'],
   }))
 
   if (remaining > 0) {
     positioned.push({
       id: `${variant}-overflow`,
-      title: `+${remaining} more`,
-      meta: variant === 'cluster' ? 'additional clusters' : 'additional processes',
+      title: `+${remaining}`,
+      meta: 'more',
       x: count <= 1 ? (startX + endX) / 2 : startX + (endX - startX) * visible.length / (count - 1),
       y,
+      w: 64,
+      h: nodeH,
       variant: 'summary',
     })
   }
@@ -161,7 +169,7 @@ function buildTreeLevel(
   return positioned
 }
 
-function treeEdge(fromX: number, fromY: number, toX: number, toY: number): string {
+function treePath(fromX: number, fromY: number, toX: number, toY: number): string {
   const midY = (fromY + toY) / 2
   return `M ${fromX} ${fromY} C ${fromX} ${midY}, ${toX} ${midY}, ${toX} ${toY}`
 }
@@ -175,6 +183,8 @@ function GraphCanvas({
   crossLinks,
   onNodeClick,
   selectedClusterId,
+  clusterMembers,
+  processSteps,
 }: {
   projectName: string
   clusters: IntelClusterResource[]
@@ -184,44 +194,69 @@ function GraphCanvas({
   crossLinks: IntelCrossLink[]
   onNodeClick: (nodeId: string, nodeVariant: string) => void
   selectedClusterId: string | null
+  clusterMembers: Array<{ name: string; type: string; filePath?: string }> | undefined
+  processSteps: Array<{ name: string; type: string; filePath?: string; index?: number }> | undefined
 }) {
   const width = 1080
-  const height = 580
+  const svgH = 640
   const rootX = width / 2
-  const rootY = 58
-  const level1Y = 240
-  const knowledgeY = 420
+  const rootY = 52
+  const LEVEL1 = 180
+  const LEVEL2 = 330
+  const LEVEL3 = 470
 
-  const clusterNodes = buildTreeLevel(
-    clusters.map((cluster, index) => ({
-      id: cluster.id ?? `cluster-${index}`,
-      title: cluster.name,
-      meta: `${cluster.symbols} symbols`,
-    })),
-    130, 430, level1Y, 'cluster',
+  /* ── Level 1: clusters (left) + processes (right) ── */
+  const clusterNodes = layoutRow(
+    clusters.map((c, i) => ({ id: c.id ?? `cluster-${i}`, title: c.name, meta: `${c.symbols} sym` })),
+    90, 440, LEVEL1, 'cluster',
+  )
+  const processNodes = layoutRow(
+    processes.map((p, i) => ({ id: p.id ?? `process-${i}`, title: p.name, meta: `${p.steps} steps` })),
+    640, 990, LEVEL1, 'process',
   )
 
-  const processNodes = buildTreeLevel(
-    processes.map((process, index) => ({
-      id: process.id ?? `process-${index}`,
-      title: process.name,
-      meta: `${process.steps} steps${process.type ? ` · ${process.type}` : ''}`,
-    })),
-    650, 950, level1Y, 'process',
-  )
+  /* ── Level 2: expanded cluster symbols ── */
+  const selectedClusterNode = clusterNodes.find(n => selectedClusterId === n.id || selectedClusterId === n.title)
+  const memberNodes: OrbitNode[] = useMemo(() => {
+    if (!selectedClusterNode || !clusterMembers?.length) return []
+    const max = 8
+    const items = clusterMembers.slice(0, max).map((m, i) => ({
+      id: `member-${i}`,
+      title: m.name,
+      meta: m.type,
+    }))
+    const cx = selectedClusterNode.x
+    return layoutRow(items, cx - 160, cx + 160, LEVEL2, 'cluster', 120, 36)
+  }, [selectedClusterNode, clusterMembers])
 
+  /* ── Level 2: expanded process steps ── */
+  const stepNodes: OrbitNode[] = useMemo(() => {
+    if (!processSteps?.length || !selectedClusterId) return []
+    const firstProcess = processNodes[0]
+    if (!firstProcess) return []
+    const max = 8
+    const items = processSteps.slice(0, max).map((s, i) => ({
+      id: `step-${i}`,
+      title: s.name,
+      meta: `Step ${s.index ?? i + 1}`,
+    }))
+    const cx = firstProcess.x
+    return layoutRow(items, cx - 160, cx + 160, LEVEL2, 'process', 120, 36)
+  }, [processSteps, selectedClusterId, processNodes])
+
+  /* ── Knowledge node ── */
   const knowledgeNode: OrbitNode | null = knowledgeDocs > 0 || knowledgeChunks > 0
-    ? {
-        id: 'knowledge-node',
-        title: 'Knowledge Base',
-        meta: `${knowledgeDocs} docs · ${knowledgeChunks} chunks`,
-        x: rootX,
-        y: knowledgeY,
-        variant: 'knowledge',
-      }
+    ? { id: 'knowledge-node', title: 'Knowledge', meta: `${knowledgeDocs} docs`, x: rootX, y: LEVEL3, w: 160, h: 48, variant: 'knowledge' }
     : null
 
-  const nodes = [...clusterNodes, ...processNodes, ...(knowledgeNode ? [knowledgeNode] : [])]
+  const allNodes = [...clusterNodes, ...processNodes, ...memberNodes, ...stepNodes, ...(knowledgeNode ? [knowledgeNode] : [])]
+
+  /* ── Colors ── */
+  const fillFor = (v: string) =>
+    v === 'cluster' ? 'url(#clusterNode)' :
+    v === 'process' ? 'url(#processNode)' :
+    v === 'knowledge' ? 'url(#knowledgeNode)' :
+    'url(#summaryNode)'
 
   return (
     <div className={`card ${styles.graphCard}`}>
@@ -229,120 +264,109 @@ function GraphCanvas({
         <div>
           <h3 className={styles.cardTitle}>Context Tree</h3>
           <p className={styles.cardSub}>
-            Hierarchical tree view: project root branches into clusters (left) and processes (right), with cross-community links shown between related clusters.
+            Hierarchical tree: project → clusters &amp; processes → symbols &amp; steps. Click a node to expand its children.
           </p>
         </div>
       </div>
 
       <div className={styles.graphViewport}>
-        <svg viewBox={`0 0 ${width} ${height}`} className={styles.graphSvg} role="img" aria-label="Project tree overview">
+        <svg viewBox={`0 0 ${width} ${svgH}`} className={styles.graphSvg} role="img" aria-label="Project tree">
           <defs>
             <linearGradient id="graphLine" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="rgba(96, 165, 250, 0.28)" />
-              <stop offset="100%" stopColor="rgba(192, 132, 252, 0.52)" />
+              <stop offset="0%" stopColor="rgba(96,165,250,0.25)" />
+              <stop offset="100%" stopColor="rgba(192,132,252,0.45)" />
             </linearGradient>
-            <radialGradient id="graphGlow" cx="50%" cy="25%" r="50%">
-              <stop offset="0%" stopColor="rgba(124, 58, 237, 0.16)" />
-              <stop offset="100%" stopColor="rgba(17, 24, 39, 0)" />
+            <radialGradient id="graphGlow" cx="50%" cy="30%" r="55%">
+              <stop offset="0%" stopColor="rgba(124,58,237,0.12)" />
+              <stop offset="100%" stopColor="transparent" />
             </radialGradient>
-            <linearGradient id="clusterNode" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#102f58" />
-              <stop offset="100%" stopColor="#2563eb" />
-            </linearGradient>
-            <linearGradient id="processNode" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#163b29" />
-              <stop offset="100%" stopColor="#22c55e" />
-            </linearGradient>
-            <linearGradient id="summaryNode" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#3b305f" />
-              <stop offset="100%" stopColor="#7c3aed" />
-            </linearGradient>
-            <linearGradient id="knowledgeNode" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#5b3413" />
-              <stop offset="100%" stopColor="#f59e0b" />
-            </linearGradient>
-            <linearGradient id="projectNode" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#24103d" />
-              <stop offset="100%" stopColor="#5d2f8e" />
-            </linearGradient>
+            <linearGradient id="clusterNode" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#0f2d52" /><stop offset="100%" stopColor="#2563eb" /></linearGradient>
+            <linearGradient id="processNode" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#143826" /><stop offset="100%" stopColor="#22c55e" /></linearGradient>
+            <linearGradient id="summaryNode" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#2e2552" /><stop offset="100%" stopColor="#7c3aed" /></linearGradient>
+            <linearGradient id="knowledgeNode" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#4a2c10" /><stop offset="100%" stopColor="#f59e0b" /></linearGradient>
+            <linearGradient id="projectNode" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#1f0d34" /><stop offset="100%" stopColor="#6d28d9" /></linearGradient>
           </defs>
 
-          <rect x="14" y="14" width={width - 28} height={height - 28} rx="34" className={styles.graphFrame} />
-          <ellipse cx={rootX} cy={level1Y - 40} rx="420" ry="180" fill="url(#graphGlow)" />
+          {/* Background */}
+          <rect x="14" y="14" width={width - 28} height={svgH - 28} rx="32" className={styles.graphFrame} />
+          <ellipse cx={rootX} cy={LEVEL1} rx="460" ry="260" fill="url(#graphGlow)" />
 
-          {nodes.map((node) => (
-            <path
-              key={`edge-${node.id}`}
-              d={treeEdge(rootX, rootY + 34, node.x, node.y - 28)}
-              stroke="url(#graphLine)"
-              strokeWidth="2"
-              fill="none"
-              className={styles.graphEdge}
-            />
+          {/* ── Edges: Root → Level 1 ── */}
+          {[...clusterNodes, ...processNodes].map(n => (
+            <path key={`e-${n.id}`} d={treePath(rootX, rootY + 26, n.x, n.y - n.h / 2)} stroke="url(#graphLine)" strokeWidth="1.8" fill="none" className={styles.graphEdge} />
           ))}
 
-          {crossLinks.map((link) => {
-            const sourceNode = clusterNodes.find(n => n.id === link.source || n.title === link.source)
-            const targetNode = clusterNodes.find(n => n.id === link.target || n.title === link.target)
-            if (!sourceNode || !targetNode || sourceNode.id === targetNode.id) return null
+          {/* ── Edges: Level 1 → Level 2 (expanded cluster members) ── */}
+          {selectedClusterNode && memberNodes.map(m => (
+            <path key={`em-${m.id}`} d={treePath(selectedClusterNode.x, selectedClusterNode.y + selectedClusterNode.h / 2, m.x, m.y - m.h / 2)} stroke="rgba(96,165,250,0.35)" strokeWidth="1.4" fill="none" />
+          ))}
 
-            const midY = Math.max(sourceNode.y, targetNode.y) + 60
-            const pathData = `M ${sourceNode.x} ${sourceNode.y + 28} Q ${(sourceNode.x + targetNode.x) / 2} ${midY} ${targetNode.x} ${targetNode.y + 28}`
+          {/* ── Edges: Level 1 → Level 2 (expanded process steps) ── */}
+          {selectedClusterId && stepNodes.length > 0 && processNodes[0] && stepNodes.map(s => (
+            <path key={`es-${s.id}`} d={treePath(processNodes[0].x, processNodes[0].y + processNodes[0].h / 2, s.x, s.y - s.h / 2)} stroke="rgba(34,197,94,0.35)" strokeWidth="1.4" fill="none" />
+          ))}
 
+          {/* ── Edge: Root → Knowledge ── */}
+          {knowledgeNode && (
+            <path d={treePath(rootX, rootY + 26, knowledgeNode.x, knowledgeNode.y - knowledgeNode.h / 2)} stroke="url(#graphLine)" strokeWidth="1.8" fill="none" className={styles.graphEdge} />
+          )}
+
+          {/* ── Cross-links between clusters ── */}
+          {crossLinks.map(link => {
+            const src = clusterNodes.find(n => n.id === link.source || n.title === link.source)
+            const tgt = clusterNodes.find(n => n.id === link.target || n.title === link.target)
+            if (!src || !tgt || src.id === tgt.id) return null
+            const arcY = Math.max(src.y, tgt.y) + 50
             return (
-              <path
-                key={`crosslink-${link.source}-${link.target}`}
-                d={pathData}
-                stroke="rgba(192, 132, 252, 0.45)"
-                strokeWidth={Math.min(link.weight + 1, 6)}
-                fill="none"
-                style={{ strokeDasharray: '4 4' }}
-                opacity={selectedClusterId ? (sourceNode.id === selectedClusterId || targetNode.id === selectedClusterId ? 1 : 0.1) : 0.8}
+              <path key={`x-${link.source}-${link.target}`}
+                d={`M ${src.x} ${src.y + src.h / 2} Q ${(src.x + tgt.x) / 2} ${arcY} ${tgt.x} ${tgt.y + tgt.h / 2}`}
+                stroke="rgba(192,132,252,0.4)" strokeWidth={Math.min(link.weight + 1, 5)} fill="none"
+                strokeDasharray="4 4"
+                opacity={selectedClusterId && src.id !== selectedClusterId && tgt.id !== selectedClusterId ? 0.12 : 0.75}
               >
-                <title>{link.weight} cross_community process(es): {link.processes.join(', ')}</title>
+                <title>{link.weight} shared process(es): {link.processes.join(', ')}</title>
               </path>
             )
           })}
 
-          <g transform={`translate(${rootX - 118}, ${rootY - 28})`}>
-            <rect width="236" height="56" rx="28" fill="url(#projectNode)" className={styles.graphCore} />
-            <text x="22" y="24" className={styles.graphCoreTitle}>{truncateLabel(projectName, 22)}</text>
-            <text x="22" y="44" className={styles.graphCoreSmall}>
-              {clusters.length} clusters · {processes.length} processes
-            </text>
+          {/* ── Root Node ── */}
+          <g transform={`translate(${rootX - 118}, ${rootY - 24})`}>
+            <rect width="236" height="48" rx="24" fill="url(#projectNode)" className={styles.graphCore} />
+            <text x="20" y="20" className={styles.graphCoreTitle}>{truncateLabel(projectName, 20)}</text>
+            <text x="20" y="38" className={styles.graphCoreSmall}>{clusters.length} clusters · {processes.length} processes</text>
           </g>
 
-          {nodes.map((node) => {
-            const fill = node.variant === 'cluster'
-              ? 'url(#clusterNode)'
-              : node.variant === 'process'
-                ? 'url(#processNode)'
-                : node.variant === 'knowledge'
-                  ? 'url(#knowledgeNode)'
-                  : 'url(#summaryNode)'
-            
+          {/* ── Level 1 & 2 Nodes ── */}
+          {allNodes.map(node => {
+            const isExpanded = selectedClusterNode?.id === node.id
             const isSelected = selectedClusterId === node.id || selectedClusterId === node.title
-            const highlightStroke = isSelected ? 'rgba(59, 130, 246, 0.9)' : 'rgba(255, 255, 255, 0.08)'
+            const stroke = isExpanded ? 'rgba(250,204,21,0.8)' : isSelected ? 'rgba(59,130,246,0.8)' : 'rgba(255,255,255,0.06)'
+            const isL2 = node.id.startsWith('member-') || node.id.startsWith('step-')
+            const nodeW = node.w
+            const nodeH = node.h
 
             return (
-              <g 
-                key={node.id} 
-                transform={`translate(${node.x - 112}, ${node.y - 30})`}
-                className={node.variant === 'cluster' || node.variant === 'process' ? styles.graphNodeInteractive : ''}
+              <g key={node.id}
+                transform={`translate(${node.x - nodeW / 2}, ${node.y - nodeH / 2})`}
+                className={!isL2 && (node.variant === 'cluster' || node.variant === 'process') ? styles.graphNodeInteractive : ''}
                 onClick={() => {
                   if (node.variant === 'cluster' || node.variant === 'process') onNodeClick(node.title, node.variant)
                 }}
               >
-                <rect 
-                  width="224" 
-                  height="60" 
-                  rx="20" 
-                  fill={fill} 
-                  className={styles.graphNode} 
-                  style={{ stroke: highlightStroke, strokeWidth: isSelected ? 2 : 1 }} 
+                <rect width={nodeW} height={nodeH} rx={isL2 ? 10 : 16} fill={fillFor(node.variant)}
+                  className={isL2 ? '' : styles.graphNode}
+                  style={{ stroke, strokeWidth: isExpanded || isSelected ? 2 : 1 }}
                 />
-                <text x="18" y="25" className={styles.graphNodeTitle}>{node.title}</text>
-                <text x="18" y="44" className={styles.graphNodeMeta}>{node.meta}</text>
+                <text x={isL2 ? 10 : 16} y={nodeH / 2 - 4} className={isL2 ? styles.graphNodeMeta : styles.graphNodeTitle}
+                  style={isL2 ? { fontSize: '11px' } : undefined}
+                >{node.title}</text>
+                <text x={isL2 ? 10 : 16} y={nodeH / 2 + 12} className={styles.graphNodeMeta}
+                  style={isL2 ? { fontSize: '9px' } : undefined}
+                >{node.meta}</text>
+                {/* expand indicator for selected cluster */}
+                {isExpanded && (
+                  <text x={nodeW - 14} y={nodeH / 2 + 4} fill="rgba(250,204,21,0.8)" fontSize="12" fontWeight="700">▾</text>
+                )}
               </g>
             )
           })}
@@ -699,6 +723,8 @@ export default function GraphPage() {
                   }
                 }}
                 selectedClusterId={selectedCluster}
+                clusterMembers={clusterMembersData?.data?.members}
+                processSteps={processDetail?.steps.map((s, i) => ({ name: s.name, type: s.type ?? 'step', filePath: s.file, index: i + 1 }))}
               />
             </div>
             {selectedCluster && (

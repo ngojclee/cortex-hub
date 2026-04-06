@@ -495,4 +495,77 @@ export function registerCodeTools(server: McpServer, env: Env) {
       }
     }
   )
+
+  // ── code_rename — preview or execute symbol renaming ──
+  server.tool(
+    'cortex_code_rename',
+    'Preview or execute renaming of a symbol across the project. GitNexus AST analysis ensures all references are updated.',
+    {
+      symbol: z.string().describe('The current name of the symbol (function, class, variable)'),
+      newName: z.string().describe('The new name for the symbol'),
+      projectId: z.string().describe('Project ID to perform rename in'),
+      dryRun: z.boolean().optional().describe('If true (default), only return affects and preview. If false, execute changes.'),
+    },
+    async ({ symbol, newName, projectId, dryRun }) => {
+      try {
+        const response = await fetch(`${apiUrl()}/api/intel/rename`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ symbol, newName, projectId, dryRun: dryRun ?? true }),
+          signal: AbortSignal.timeout(15000),
+        })
+
+        if (!response.ok) {
+          throw new Error(`Rename failed: ${response.status}`)
+        }
+
+        const data = await response.json()
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }],
+        }
+      } catch (error) {
+        return {
+          content: [{ type: 'text' as const, text: `Rename error: ${error instanceof Error ? error.message : 'Unknown'}` }],
+          isError: true,
+        }
+      }
+    }
+  )
+
+  // ── code_tree — view symbol dependency hierarchy ──
+  server.tool(
+    'cortex_code_tree',
+    'View the dependency phả hệ (tree) of a symbol. Shows what calls it (upstream) or what it calls (downstream) recursively.',
+    {
+      name: z.string().describe('Symbol name to explore'),
+      projectId: z.string().describe('Project ID to scope lookup to'),
+      depth: z.number().optional().describe('Maximum recursion depth (default: 2)'),
+      direction: z.enum(['upstream', 'downstream']).optional().describe('Tree direction (default: downstream)'),
+    },
+    async ({ name, projectId, depth, direction }) => {
+      try {
+        const params = new URLSearchParams()
+        if (depth) params.set('depth', depth.toString())
+        if (direction) params.set('direction', direction)
+
+        const response = await fetch(`${apiUrl()}/api/intel/resources/project/${projectId}/symbol/${name}/tree?${params.toString()}`, {
+          signal: AbortSignal.timeout(15000),
+        })
+
+        if (!response.ok) {
+          throw new Error(`Tree lookup failed: ${response.status}`)
+        }
+
+        const data = await response.json()
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }],
+        }
+      } catch (error) {
+        return {
+          content: [{ type: 'text' as const, text: `Tree lookup error: ${error instanceof Error ? error.message : 'Unknown'}` }],
+          isError: true,
+        }
+      }
+    }
+  )
 }

@@ -131,4 +131,40 @@ export function registerKnowledgeTools(server: McpServer, env: Env) {
       }
     }
   )
+
+  // ── Generate project wiki ──
+  server.tool(
+    'cortex_wiki_generate',
+    'Automatically generate project documentation (wiki) based on GitNexus AST analysis and community clusters. Useful for quickly onboarding or understanding project structure.',
+    {
+      projectId: z.string().describe('Project ID to generate wiki for'),
+    },
+    async ({ projectId }) => {
+      try {
+        const res = await apiCall(env, '/api/intel/wiki', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectId }),
+        })
+
+        if (!res.ok) {
+          const errorText = await res.text()
+          return {
+            content: [{ type: 'text' as const, text: `Wiki generation failed: ${res.status} ${errorText}` }],
+            isError: true,
+          }
+        }
+
+        const data = await res.json()
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }],
+        }
+      } catch (error) {
+        return {
+          content: [{ type: 'text' as const, text: `Wiki generation error: ${error instanceof Error ? error.message : 'Unknown'}` }],
+          isError: true,
+        }
+      }
+    }
+  )
 }

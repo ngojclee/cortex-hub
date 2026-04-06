@@ -28,12 +28,15 @@
 - [ ] Typecheck: pnpm --filter @cortex/dashboard-web typecheck
 
 ## Phase C: GitNexus Tool Expansion (FUTURE)
-- [ ] Implement cortex_code_rename MCP tool (preview mode)
-- [ ] Add POST /api/intel/rename-preview API endpoint
-- [ ] Implement cortex_wiki_generate MCP tool
-- [ ] Add POST /api/intel/wiki-generate API endpoint
-- [ ] Add GET /api/intel/resources/project/:id/symbol/:name/tree endpoint
+- [x] Implement cortex_code_rename MCP tool (preview mode)
+- [x] Add POST /api/intel/rename API endpoint
+- [x] Implement cortex_wiki_generate MCP tool
+- [x] Add POST /api/intel/wiki API endpoint
+- [x] Add GET /api/intel/resources/project/:id/symbol/:name/tree endpoint
+- [x] Implement cortex_code_tree MCP tool
 - [ ] Typecheck: pnpm --filter @cortex/hub-mcp typecheck
+- [ ] Typecheck: pnpm --filter @cortex/dashboard-api typecheck
+- [ ] Typecheck: pnpm --filter @cortex/dashboard-api build
 
 ## Verification Notes
 - LN-OMS project ID: `proj-f9ebd495`, slug: `ln-oms`

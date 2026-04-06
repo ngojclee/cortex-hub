@@ -1,32 +1,18 @@
 # Cortex Hub — Docker Compose Stack
-# Services: CLIProxy (LLM Gateway), Qdrant, GitNexus, Dashboard API, Hub MCP
-# CLIProxy provides OpenAI-compatible API via OAuth — no API key required
-# mem9 runs in-process within the Dashboard API container
-# GitNexus runs as a standalone eval-server for code intelligence
+# Services: Qdrant (Vector DB), CLIProxy (LLM Gateway), GitNexus (Code Intelligence),
+#           Cortex API (Dashboard API + Web), Cortex MCP (MCP Gateway), Watchtower (Auto-updater)
 
 services:
-  # ─────────────────────────────────────────────
-  # Qdrant — Vector Database
-  # ─────────────────────────────────────────────
+  # ── Vector Database ──
   qdrant:
     image: qdrant/qdrant:v1.13.6
     container_name: cortex-qdrant
     restart: unless-stopped
-    ports:
-      - "6333:6333"   # REST API
-      - "6334:6334"   # gRPC
     volumes:
-      - qdrant-data:/qdrant/storage
+      - ${STACK_DATA_ROOT:-/home/Docker/cortex-hub}/qdrant-data:/qdrant/storage
     environment:
+      TZ: ${TZ:-Europe/Paris}
       QDRANT__SERVICE__GRPC_PORT: 6334
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-    ulimits:
-      nofile:
-        soft: 65535
-        hard: 65535
     healthcheck:
       test: ["CMD-SHELL", "bash -c '(echo > /dev/tcp/localhost/6333) 2>/dev/null'"]
       interval: 30s
@@ -34,170 +20,98 @@ services:
       retries: 3
       start_period: 10s
 
-  # ─────────────────────────────────────────────
-  # CLIProxy — LLM Gateway (OAuth-based)
-  # API:  http://localhost:8317/v1 (OpenAI-compatible)
-  # Zero SQL, zero Redis — just config + OAuth tokens
-  # ─────────────────────────────────────────────
+  # ── LLM Proxy (OpenAI-compatible gateway) ──
   llm-proxy:
     image: eceasy/cli-proxy-api:latest
     container_name: cortex-llm-proxy
     restart: unless-stopped
-    ports:
-      - "8317:8317"   # OpenAI-compatible API
+    entrypoint: ["/bin/sh", "-c", "mkdir -p /CLIProxyAPI/auth && printf 'port: 8317\\nauth-dir: /CLIProxyAPI/auth\\n' > /CLIProxyAPI/config.yaml && exec /CLIProxyAPI/CLIProxyAPI"]
     volumes:
-      - cliproxy-auth:/CLIProxyAPI/auth
-      - ./cliproxy-config.yaml:/CLIProxyAPI/config.yaml
+      - ${STACK_DATA_ROOT:-/home/Docker/cortex-hub}/cliproxy-auth:/CLIProxyAPI/auth
     environment:
-      TZ: Asia/Ho_Chi_Minh
-      MANAGEMENT_PASSWORD: ${MANAGEMENT_PASSWORD:-cortex2026}
-    deploy:
-      resources:
-        limits:
-          memory: 256M
+      TZ: ${TZ:-Europe/Paris}
+      MANAGEMENT_PASSWORD: ${CLIPROXY_MANAGEMENT_KEY:-cortex2026}
     healthcheck:
-      test: ["CMD-SHELL", "(echo > /dev/tcp/localhost/8317) 2>/dev/null || exit 1"]
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8317/ || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 15s
 
-  # ─────────────────────────────────────────────
-  # GitNexus — Code Intelligence Service
-  # API:  http://localhost:4848 (eval-server)
-  # Provides: AST graph search, impact analysis, symbol context
-  # ─────────────────────────────────────────────
+  # ── Code Indexer (GitNexus) ──
   gitnexus:
-    build:
-      context: ..
-      dockerfile: infra/Dockerfile.gitnexus
     image: ghcr.io/ngojclee/cortex-gitnexus:latest
     container_name: cortex-gitnexus
     restart: unless-stopped
+    volumes:
+      - ${STACK_DATA_ROOT:-/home/Docker/cortex-hub}/gitnexus-data:/root/.gitnexus
+      - ${STACK_DATA_ROOT:-/home/Docker/cortex-hub}/api-data:/app/data
     dns:
       - 8.8.8.8
       - 1.1.1.1
-    ports:
-      - "4848:4848"
-    volumes:
-      - api-data:/app/data
-      - gitnexus-data:/root/.gitnexus
     environment:
+      TZ: ${TZ:-Europe/Paris}
       PORT: 4848
-    deploy:
-      resources:
-        limits:
-          memory: 4G
-    healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:4848/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))\""]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 300s
 
-  # ─────────────────────────────────────────────
-  # Cortex Dashboard API (+ Dashboard Web static)
-  # ─────────────────────────────────────────────
+  # ── Dashboard API + Web UI ──
   cortex-api:
-    build:
-      context: ..
-      dockerfile: infra/Dockerfile.dashboard-api
-      args:
-        COMMIT_SHA: ${COMMIT_SHA:-dev}
-        BUILD_DATE: ${BUILD_DATE:-}
     image: ghcr.io/ngojclee/cortex-api:latest
     container_name: cortex-api
     restart: unless-stopped
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
     ports:
-      - "4000:4000"
-      - "3000:4000" # Backward compatibility for dashboard port
+      - "${API_PORT:-4000}:4000"
     volumes:
-      - api-data:/app/data
-      - gitnexus-data:/root/.gitnexus
-      - cliproxy-auth:/app/cliproxy-auth
+      - ${STACK_DATA_ROOT:-/home/Docker/cortex-hub}/api-data:/app/data
+      - ${STACK_DATA_ROOT:-/home/Docker/cortex-hub}/gitnexus-data:/root/.gitnexus
+      - ${STACK_DATA_ROOT:-/home/Docker/cortex-hub}/cliproxy-auth:/app/cliproxy-auth
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
+      TZ: ${TZ:-Europe/Paris}
       PORT: 4000
-      NODE_ENV: production
+      NODE_ENV: ${NODE_ENV:-production}
       DATABASE_PATH: /app/data/cortex.db
       QDRANT_URL: http://qdrant:6333
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-proxy-key}
-      OPENAI_API_BASE: http://llm-proxy:8317/v1
-      LLM_PROXY_URL: http://llm-proxy:8317
+      LLM_PROXY_URL: ${LLM_PROXY_URL:-http://llm-proxy:8317}
       CLIPROXY_AUTH_DIR: /app/cliproxy-auth
-      CLIPROXY_MANAGEMENT_KEY: ${MANAGEMENT_PASSWORD:-cortex2026}
-      DASHBOARD_URL: ${DASHBOARD_URL:-http://localhost:4000}
+      CLIPROXY_MANAGEMENT_KEY: ${CLIPROXY_MANAGEMENT_KEY:-cortex2026}
+      GITNEXUS_URL: http://gitnexus:4848
+      DASHBOARD_URL: ${DASHBOARD_URL:-https://cortexhub.lengoc.me}
+      MCP_INTERNAL_URL: http://cortex-mcp:8317
       AUTH_ENABLED: ${AUTH_ENABLED:-false}
       AUTH_SESSION_TTL_HOURS: ${AUTH_SESSION_TTL_HOURS:-168}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
-      # mem9 Configuration
-      MEM9_LLM_MODEL: ${MEM9_LLM_MODEL:-gpt-5.4-mini}
-      MEM9_EMBEDDING_MODEL: ${MEM9_EMBEDDING_MODEL:-gemini-embedding-2-preview}
-      # GitNexus
-      GITNEXUS_URL: http://gitnexus:4848
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     depends_on:
-      qdrant:
-        condition: service_healthy
-      gitnexus:
-        condition: service_started
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-    healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:4000/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))\""]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
+      - qdrant
+      - llm-proxy
+      - gitnexus
 
-  # ─────────────────────────────────────────────
-  # Cortex Hub MCP Gateway (standalone)
-  # ─────────────────────────────────────────────
+  # ── MCP Gateway (reverse-proxied via cortex-api on /mcp) ──
   cortex-mcp:
-    build:
-      context: ..
-      dockerfile: infra/Dockerfile.hub-mcp
     image: ghcr.io/ngojclee/cortex-mcp:latest
     container_name: cortex-mcp
     restart: unless-stopped
-    ports:
-      - "8318:8317"
     environment:
+      TZ: ${TZ:-Europe/Paris}
       PORT: 8317
-      NODE_ENV: production
+      NODE_ENV: ${NODE_ENV:-production}
       DASHBOARD_API_URL: http://cortex-api:4000
       QDRANT_URL: http://qdrant:6333
-      CLIPROXY_URL: http://llm-proxy:8317
+      CLIPROXY_URL: ${LLM_PROXY_URL:-http://llm-proxy:8317}
       GITNEXUS_URL: http://gitnexus:4848
-      MCP_SERVER_NAME: "cortex-hub"
-      MCP_SERVER_VERSION: "0.1.0"
-      API_KEYS: ${MCP_API_KEYS:-}
+      MCP_SERVER_NAME: cortex-hub
+      MCP_SERVER_VERSION: "0.2.0.0"
+      MCP_AUTH_REQUIRED: "true"
     depends_on:
-      cortex-api:
-        condition: service_healthy
-      qdrant:
-        condition: service_healthy
-      gitnexus:
-        condition: service_started
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-    healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:8317/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))\""]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
+      - cortex-api
+      - qdrant
+      - llm-proxy
+      - gitnexus
 
-  # ─────────────────────────────────────────────
-  # Watchtower — Auto-update containers
-  # ─────────────────────────────────────────────
+  # ── Auto-updater ──
   watchtower:
     image: containrrr/watchtower:latest
     container_name: cortex-watchtower
@@ -205,21 +119,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
+      TZ: ${TZ:-Europe/Paris}
       WATCHTOWER_CLEANUP: "true"
       WATCHTOWER_POLL_INTERVAL: 300
       WATCHTOWER_LABEL_ENABLE: "false"
-      DOCKER_API_VERSION: "1.43"
-    deploy:
-      resources:
-        limits:
-          memory: 128M
-
-volumes:
-  qdrant-data:
-    name: cortex-qdrant-data
-  api-data:
-    name: cortex-api-data
-  gitnexus-data:
-    name: cortex-gitnexus-data
-  cliproxy-auth:
-    name: cortex-cliproxy-auth

@@ -338,9 +338,22 @@ export async function startIndexing(projectId: string, jobId: string, branch: st
     mkdirSync(repoDir, { recursive: true })
 
     const authUrl = buildAuthUrl(project.git_repo_url, project.git_username, project.git_token)
+
+    // Pre-flight DNS check — give actionable error if DNS is broken
+    try {
+      const { lookup } = await import('dns/promises')
+      const repoHost = new URL(authUrl).hostname
+      await lookup(repoHost)
+    } catch (dnsErr) {
+      const msg = `DNS resolution failed for ${new URL(authUrl).hostname}. Ensure the container has dns: [8.8.8.8, 1.1.1.1] in its Docker/Portainer config.`
+      updateJob(jobId, { status: 'error', error: msg, progress: 5, completed_at: new Date().toISOString() })
+      appendLog(jobId, `[error] ${msg}`)
+      return
+    }
+
     const cloneResult = await runCommand('git', [
       'clone', '--branch', branch, '--depth', '1', '--single-branch', authUrl, '.'
-    ], repoDir, jobId)
+    ], repoDir, jobId, { GIT_TERMINAL_PROMPT: '0' })
 
     if (cloneResult.code !== 0) {
       updateJob(jobId, { status: 'error', error: `git clone failed (exit ${cloneResult.code})`, progress: 5, completed_at: new Date().toISOString() })

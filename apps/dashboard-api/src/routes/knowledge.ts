@@ -203,7 +203,7 @@ knowledgeRouter.get('/:id', (c) => {
 knowledgeRouter.put('/:id', async (c) => {
   const id = c.req.param('id')
   const body = await c.req.json()
-  const { title, tags, status } = body as { title?: string; tags?: string[]; status?: string }
+  const { title, tags, status, project_id } = body as { title?: string; tags?: string[]; status?: string; project_id?: string }
 
   const existing = db.prepare('SELECT id FROM knowledge_documents WHERE id = ?').get(id)
   if (!existing) return c.json({ error: 'Document not found' }, 404)
@@ -216,6 +216,9 @@ knowledgeRouter.put('/:id', async (c) => {
   }
   if (status) {
     db.prepare("UPDATE knowledge_documents SET status = ?, updated_at = datetime('now') WHERE id = ?").run(status, id)
+  }
+  if (project_id !== undefined) {
+    db.prepare("UPDATE knowledge_documents SET project_id = ?, updated_at = datetime('now') WHERE id = ?").run(project_id, id)
   }
 
   const doc = db.prepare('SELECT * FROM knowledge_documents WHERE id = ?').get(id)

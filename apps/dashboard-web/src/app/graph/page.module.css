@@ -767,6 +767,205 @@
   filter: drop-shadow(0 0 12px rgba(59, 130, 246, 0.6));
 }
 
+/* ── 360° Context Visual ── */
+.contextSection {
+  margin-bottom: var(--space-4);
+}
+.contextSectionTitle {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: var(--space-2);
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.contextCallersTitle { color: #60a5fa; }
+.contextCalleesTitle { color: #34d399; }
+.contextRelatedTitle { color: #c084fc; }
+.contextEntry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  margin-bottom: 4px;
+  border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.04);
+  font-size: 0.8125rem;
+}
+.contextEntrySymbol {
+  font-weight: 600;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+.contextEntryType {
+  font-size: 0.68rem;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(96,165,250,0.15);
+  color: #93c5fd;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.contextEntryEdge {
+  font-size: 0.68rem;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-weight: 500;
+}
+.edgeCALLS { background: rgba(34,211,238,0.15); color: #67e8f9; }
+.edgeIMPORTS { background: rgba(192,132,252,0.15); color: #d8b4fe; }
+.edgeEXTENDS { background: rgba(250,204,21,0.15); color: #fde68a; }
+.edgeIMPLEMENTS { background: rgba(52,211,153,0.15); color: #6ee7b7; }
+.edgeOVERRIDES { background: rgba(251,146,60,0.15); color: #fdba74; }
+.edgeACCESSES { background: rgba(244,63,94,0.15); color: #fda4af; }
+.edgeDEFAULT { background: rgba(148,163,184,0.15); color: #cbd5e1; }
+.contextEntryFile {
+  margin-left: auto;
+  font-size: 0.68rem;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.contextEmpty {
+  padding: var(--space-2);
+  color: var(--text-tertiary);
+  font-size: 0.8125rem;
+  font-style: italic;
+}
+.contextHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.contextSymbolBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(96,165,250,0.2), rgba(192,132,252,0.2));
+  border: 1px solid rgba(96,165,250,0.3);
+}
+.contextSymbolName {
+  font-weight: 700;
+  font-size: 0.9375rem;
+  color: var(--text-primary);
+}
+
+/* ── Impact Analysis Visual ── */
+.impactDepthGroup {
+  margin-bottom: var(--space-4);
+}
+.impactDepthHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: var(--space-2);
+}
+.impactDepthBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.depthDirect { background: rgba(239,68,68,0.2); color: #fca5a5; border: 1px solid rgba(239,68,68,0.3); }
+.depthLikely { background: rgba(245,158,11,0.2); color: #fde68a; border: 1px solid rgba(245,158,11,0.3); }
+.depthMaybe { background: rgba(59,130,246,0.2); color: #93c5fd; border: 1px solid rgba(59,130,246,0.3); }
+.impactSymbolList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.impactSymbol {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.04);
+  font-size: 0.8125rem;
+}
+.impactSymbolName {
+  font-weight: 600;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+.impactSymbolFile {
+  margin-left: auto;
+  font-size: 0.68rem;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Change Detection ── */
+.changeDetectionCard {
+  margin-top: var(--space-5);
+  padding: var(--space-5);
+  background:
+    radial-gradient(circle at top left, rgba(59,130,246,0.08), transparent 34%),
+    var(--bg-secondary);
+}
+.changeFile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-3);
+  margin-bottom: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.05);
+}
+.changeFileName {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+.changeSymbols {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.changeSymbol {
+  font-size: 0.68rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(250,204,21,0.15);
+  border: 1px solid rgba(250,204,21,0.2);
+  color: #fde68a;
+}
+
+/* ── Entry Point Score ── */
+.entryPointBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+.entryHigh { background: rgba(34,197,94,0.2); color: #86efac; border: 1px solid rgba(34,197,94,0.3); }
+.entryMedium { background: rgba(245,158,11,0.2); color: #fde68a; border: 1px solid rgba(245,158,11,0.3); }
+.entryLow { background: rgba(148,163,184,0.15); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.2); }
+
 @media (max-width: 960px) {
   .graphWrapper {
     flex-direction: column;

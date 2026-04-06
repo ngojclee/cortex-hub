@@ -46,6 +46,298 @@ function truncateLabel(value: string, max = 28): string {
   return value.length > max ? `${value.slice(0, max - 1)}…` : value
 }
 
+/* ── Parse GitNexus raw text into categorized sections ── */
+interface ParsedEntry {
+  symbol: string
+  edge?: string
+  file?: string
+  type?: string
+}
+
+interface ParsedContext {
+  sections: {
+    key: string
+    title: string
+    entries: ParsedEntry[]
+  }[]
+}
+
+function parseGitNexusContext(raw: string): ParsedContext {
+  const lines = raw.split('\n')
+  const sections: ParsedContext['sections'] = []
+  let currentSection: ParsedContext['sections'][number] | null = null
+
+  const sectionPatterns: Array<{ pattern: RegExp; key: string; title: string }> = [
+    { pattern: /===\s*CALLERS?\s*===/i, key: 'callers', title: 'Callers (Who uses this)' },
+    { pattern: /===\s*CALLEES?\s*===/i, key: 'callees', title: 'Callees (What this uses)' },
+    { pattern: /===\s*IMPORTS?\s*===/i, key: 'imports', title: 'Imports' },
+    { pattern: /===\s*EXTENDS?\s*===/i, key: 'extends', title: 'Extends / Inherits' },
+    { pattern: /===\s*IMPLEMENTS?\s*===/i, key: 'implements', title: 'Implements' },
+    { pattern: /===\s*OVERRIDES?\s*===/i, key: 'overrides', title: 'Overrides' },
+    { pattern: /===\s*ACCESSES?\s*===/i, key: 'accesses', title: 'Accesses' },
+    { pattern: /===\s*MEMBERS?\s*===/i, key: 'members', title: 'Members' },
+    { pattern: /===\s*USED BY\s*===/i, key: 'usedby', title: 'Used By' },
+    { pattern: /===\s*USES\s*===/i, key: 'uses', title: 'Uses' },
+    { pattern: /===\s*RELATED\s*===/i, key: 'related', title: 'Related Symbols' },
+    { pattern: /===\s*.+\s*===/, key: 'other', title: 'Other' },
+  ]
+
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('Symbol:') || trimmed.startsWith('File:') || trimmed.startsWith('Type:')) continue
+
+    // Check for section header
+    let matched = false
+    for (const sp of sectionPatterns) {
+      if (sp.pattern.test(trimmed)) {
+        currentSection = { key: sp.key, title: sp.title, entries: [] }
+        sections.push(currentSection)
+        matched = true
+        break
+      }
+    }
+    if (matched) continue
+
+    // Parse entry line: "- symbolName (Type) [EDGE_TYPE] @ filePath"
+    if (currentSection && trimmed) {
+      const entryMatch = trimmed.match(/^[-•*]\s+(.+?)(?:\s*\((\w+)\))?(?:\s*\[(\w+)\])?(?:\s*@\s*(.+))?$/)
+      if (entryMatch) {
+        currentSection.entries.push({
+          symbol: entryMatch[1]?.trim() ?? trimmed.replace(/^[-•*]\s*/, ''),
+          type: entryMatch[2] || undefined,
+          edge: entryMatch[3] || undefined,
+          file: entryMatch[4]?.trim() || undefined,
+        })
+      } else if (!trimmed.startsWith('-') && !trimmed.startsWith('•') && trimmed.length > 2) {
+        // Non-bullet line that isn't a header — could be a description
+        currentSection.entries.push({ symbol: trimmed })
+      }
+    }
+  }
+
+  // If no sections parsed, try a flat parse
+  if (sections.length === 0) {
+    const entries: ParsedEntry[] = []
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      const entryMatch = trimmed.match(/^[-•*]\s+(.+?)(?:\s*\((\w+)\))?(?:\s*\[(\w+)\])?(?:\s*@\s*(.+))?$/)
+      if (entryMatch) {
+        entries.push({
+          symbol: entryMatch[1]?.trim() ?? '',
+          type: entryMatch[2] || undefined,
+          edge: entryMatch[3] || undefined,
+          file: entryMatch[4]?.trim() || undefined,
+        })
+      }
+    }
+    if (entries.length > 0) {
+      sections.push({ key: 'all', title: 'All References', entries })
+    }
+  }
+
+  return { sections }
+}
+
+function ContextVisual({ raw }: { raw: string }) {
+  const parsed = useMemo(() => parseGitNexusContext(raw), [raw])
+
+  if (parsed.sections.length === 0) {
+    return <pre className={styles.contextPre}>{raw}</pre>
+  }
+
+  const titleClass = (key: string) =>
+    key === 'callers' || key === 'usedby' ? styles.contextCallersTitle :
+    key === 'callees' || key === 'uses' ? styles.contextCalleesTitle :
+    styles.contextRelatedTitle
+
+  const edgeClass = (edge?: string) => {
+    if (!edge) return styles.edgeDEFAULT
+    const e = edge.toUpperCase()
+    if (e.includes('CALL')) return styles.edgeCALLS
+    if (e.includes('IMPORT')) return styles.edgeIMPORTS
+    if (e.includes('EXTEND')) return styles.edgeEXTENDS
+    if (e.includes('IMPLEM')) return styles.edgeIMPLEMENTS
+    if (e.includes('OVERRIDE')) return styles.edgeOVERRIDES
+    if (e.includes('ACCESS')) return styles.edgeACCESSES
+    return styles.edgeDEFAULT
+  }
+
+  return (
+    <div>
+      {parsed.sections.map(section => (
+        <div key={section.key} className={styles.contextSection}>
+          <div className={`${styles.contextSectionTitle} ${titleClass(section.key)}`}>
+            {section.title} ({section.entries.length})
+          </div>
+          {section.entries.length === 0 ? (
+            <div className={styles.contextEmpty}>No entries found.</div>
+          ) : (
+            section.entries.map((entry, i) => (
+              <div key={`${section.key}-${i}`} className={styles.contextEntry}>
+                <span className={styles.contextEntrySymbol}>{entry.symbol}</span>
+                {entry.type && <span className={styles.contextEntryType}>{entry.type}</span>}
+                {entry.edge && <span className={`${styles.contextEntryEdge} ${edgeClass(entry.edge)}`}>{entry.edge}</span>}
+                {entry.file && <span className={styles.contextEntryFile} title={entry.file}>{entry.file}</span>}
+              </div>
+            ))
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/* ── Parse GitNexus impact results into depth groups ── */
+interface ImpactSymbol {
+  name: string
+  file?: string
+  type?: string
+  edge?: string
+}
+
+interface ImpactDepthGroup {
+  depth: number
+  label: string
+  severity: 'critical' | 'warning' | 'info'
+  symbols: ImpactSymbol[]
+}
+
+function parseImpactResults(results: unknown): ImpactDepthGroup[] {
+  const groups: ImpactDepthGroup[] = []
+
+  // Handle string results
+  if (typeof results === 'string') {
+    const lines = results.split('\n').filter(l => l.trim())
+    const symbols: ImpactSymbol[] = []
+    for (const line of lines) {
+      const match = line.match(/^[-•*]?\s*(.+?)(?:\s*\((\w+)\))?(?:\s*\[(\w+)\])?(?:\s*@\s*(.+))?$/)
+      if (match) {
+        symbols.push({ name: match[1]?.trim() ?? '', type: match[2], edge: match[3], file: match[4]?.trim() })
+      }
+    }
+    if (symbols.length > 0) {
+      groups.push({ depth: 1, label: 'Direct Impact', severity: 'critical', symbols })
+    }
+    return groups
+  }
+
+  // Handle JSON results (could be structured depth data)
+  if (typeof results === 'object' && results !== null) {
+    const r = results as Record<string, unknown>
+    // Try depth-based structure: { depth_1: [...], depth_2: [...] }
+    for (const key of Object.keys(r)) {
+      const depthMatch = key.match(/depth[_-]?(\d+)/i)
+      if (depthMatch) {
+        const depth = parseInt(depthMatch[1] ?? '0')
+        const arr = Array.isArray(r[key]) ? r[key] : []
+        const symbols: ImpactSymbol[] = arr.map((item: unknown) => {
+          const obj = item as Record<string, unknown>
+          return {
+            name: String(obj.name ?? obj.symbol ?? obj.target ?? 'unknown'),
+            file: obj.file?.toString() ?? obj.filePath?.toString(),
+            type: obj.type?.toString(),
+            edge: obj.edge?.toString() ?? obj.relationship?.toString(),
+          }
+        })
+        groups.push({
+          depth,
+          label: depth <= 1 ? 'Direct Impact (WILL BREAK)' : depth === 2 ? 'Likely Affected' : 'May Need Testing',
+          severity: depth <= 1 ? 'critical' : depth === 2 ? 'warning' : 'info',
+          symbols,
+        })
+      }
+    }
+
+    // Fallback: flat array of symbols
+    if (groups.length === 0) {
+      const symbols: ImpactSymbol[] = []
+      // results could be an array of strings or objects
+      if (Array.isArray(r.results)) {
+        for (const item of r.results) {
+          if (typeof item === 'string') {
+            symbols.push({ name: item })
+          } else if (typeof item === 'object') {
+            const obj = item as Record<string, unknown>
+            symbols.push({
+              name: String(obj.name ?? obj.symbol ?? 'unknown'),
+              file: obj.file?.toString() ?? obj.filePath?.toString(),
+              type: obj.type?.toString(),
+              edge: obj.edge?.toString(),
+            })
+          }
+        }
+      } else if (Array.isArray(results)) {
+        for (const item of results) {
+          if (typeof item === 'string') {
+            symbols.push({ name: item })
+          } else if (typeof item === 'object') {
+            const obj = item as Record<string, unknown>
+            symbols.push({ name: String(obj.name ?? 'unknown'), file: obj.filePath?.toString() })
+          }
+        }
+      }
+      if (symbols.length > 0) {
+        groups.push({ depth: 1, label: 'Direct Impact', severity: 'critical', symbols })
+      }
+    }
+  }
+
+  return groups
+}
+
+function ImpactVisual({ target, direction, results }: { target: string; direction: string; results: unknown }) {
+  const groups = useMemo(() => parseImpactResults(results), [results])
+
+  if (groups.length === 0) {
+    return (
+      <div>
+        <p style={{ color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+          No downstream impact found for <strong>{target}</strong>.
+        </p>
+        <pre className={styles.contextPre}>{typeof results === 'string' ? results : JSON.stringify(results, null, 2)}</pre>
+      </div>
+    )
+  }
+
+  const totalAffected = groups.reduce((sum, g) => sum + g.symbols.length, 0)
+
+  return (
+    <div>
+      <div style={{ marginBottom: '1rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+        <strong>{totalAffected}</strong> symbols affected {direction === 'upstream' ? 'upstream' : 'downstream'} from <strong>{target}</strong>
+      </div>
+
+      {groups.map(group => (
+        <div key={`depth-${group.depth}`} className={styles.impactDepthGroup}>
+          <div className={styles.impactDepthHeader}>
+            <span className={`${styles.impactDepthBadge} ${
+              group.severity === 'critical' ? styles.depthDirect :
+              group.severity === 'warning' ? styles.depthLikely :
+              styles.depthMaybe
+            }`}>
+              {group.severity === 'critical' ? '⚠' : group.severity === 'warning' ? '⚡' : 'ℹ'} Depth {group.depth}
+            </span>
+            <span style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
+              {group.label} — {group.symbols.length} symbol{group.symbols.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+          <div className={styles.impactSymbolList}>
+            {group.symbols.map((sym, i) => (
+              <div key={`sym-${group.depth}-${i}`} className={styles.impactSymbol}>
+                <span className={styles.impactSymbolName}>{sym.name}</span>
+                {sym.type && <span className={styles.contextEntryType}>{sym.type}</span>}
+                {sym.edge && <span className={`${styles.contextEntryEdge} ${styles.edgeDEFAULT}`}>{sym.edge}</span>}
+                {sym.file && <span className={styles.impactSymbolFile}>{sym.file}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function StatCard({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
   return (
     <div className={`card ${styles.statCard}`}>
@@ -302,9 +594,10 @@ function GraphCanvas({
           ))}
 
           {/* ── Edges: Level 1 → Level 2 (expanded process steps) ── */}
-          {selectedClusterId && stepNodes.length > 0 && processNodes[0] && stepNodes.map(s => (
-            <path key={`es-${s.id}`} d={treePath(processNodes[0].x, processNodes[0].y + processNodes[0].h / 2, s.x, s.y - s.h / 2)} stroke="rgba(34,197,94,0.35)" strokeWidth="1.4" fill="none" />
-          ))}
+          {selectedClusterId && stepNodes.length > 0 && processNodes[0] && stepNodes.map(s => {
+            const pn = processNodes[0]!
+            return <path key={`es-${s.id}`} d={treePath(pn.x, pn.y + pn.h / 2, s.x, s.y - s.h / 2)} stroke="rgba(34,197,94,0.35)" strokeWidth="1.4" fill="none" />
+          })}
 
           {/* ── Edge: Root → Knowledge ── */}
           {knowledgeNode && (
@@ -724,7 +1017,7 @@ export default function GraphPage() {
                 }}
                 selectedClusterId={selectedCluster}
                 clusterMembers={clusterMembersData?.data?.members}
-                processSteps={processDetail?.steps.map((s, i) => ({ name: s.name, type: s.type ?? 'step', filePath: s.file, index: i + 1 }))}
+                processSteps={processDetail?.steps.map((s, i) => ({ name: s.name, type: s.type ?? 'step', filePath: s.filePath ?? undefined, index: i + 1 }))}
               />
             </div>
             {selectedCluster && (
@@ -940,18 +1233,22 @@ export default function GraphPage() {
         )
       )}
 
-      {/* Symbol Context Panel */}
+      {/* Symbol Context Panel — 360° Visual */}
       {selectedSymbol && symbolContext && !loadingContext && (
         <div className={`card ${styles.contextPanel}`}>
           <div className={styles.panelHeader}>
             <div>
-              <span className={styles.panelKicker}>360° Symbol View</span>
-              <h3 className={styles.panelTitle}>{symbolContext.name}</h3>
+              <span className={styles.panelKicker}>360° Symbol Context</span>
+              <div className={styles.contextHeader}>
+                <div className={styles.contextSymbolBadge}>
+                  <span className={styles.contextSymbolName}>{symbolContext.name}</span>
+                </div>
+              </div>
             </div>
             <button className="btn btn-ghost" onClick={() => { setSelectedSymbol(null); setSymbolContext(null) }}>Close</button>
           </div>
           <div className={styles.contextContent}>
-            <pre className={styles.contextPre}>{symbolContext.raw}</pre>
+            <ContextVisual raw={symbolContext.raw} />
           </div>
         </div>
       )}
@@ -960,7 +1257,7 @@ export default function GraphPage() {
         <div className="card" style={{ padding: '2rem', textAlign: 'center' }}>Loading context for {selectedSymbol}…</div>
       )}
 
-      {/* Impact Analysis Panel */}
+      {/* Impact Analysis Panel — Visual Blast Radius */}
       {selectedSymbol && symbolImpact && !loadingImpact && (
         <div className={`card ${styles.impactPanel}`}>
           <div className={styles.panelHeader}>
@@ -972,11 +1269,7 @@ export default function GraphPage() {
             <button className="btn btn-ghost" onClick={() => { setSelectedSymbol(null); setSymbolImpact(null) }}>Close</button>
           </div>
           <div className={styles.impactContent}>
-            {typeof symbolImpact.results === 'string' ? (
-              <pre className={styles.contextPre}>{symbolImpact.results as string}</pre>
-            ) : (
-              <pre className={styles.contextPre}>{JSON.stringify(symbolImpact.results, null, 2)}</pre>
-            )}
+            <ImpactVisual target={symbolImpact.target} direction={symbolImpact.direction} results={symbolImpact.results} />
           </div>
         </div>
       )}

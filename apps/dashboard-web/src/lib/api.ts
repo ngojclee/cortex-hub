@@ -301,6 +301,18 @@ export async function getSettings() {
   return apiFetch<SettingsData>('/api/setup/settings')
 }
 
+// ── App Settings (key-value) ──
+export async function getAppSettings() {
+  return apiFetch<Record<string, string>>('/api/setup/app-settings')
+}
+
+export async function updateAppSettings(settings: Record<string, string | null>) {
+  return apiFetch<{ success: boolean }>('/api/setup/app-settings', {
+    method: 'PUT',
+    body: JSON.stringify(settings),
+  })
+}
+
 export { ApiError }
 
 // ── Organizations ──

@@ -210,5 +210,11 @@ ON quality_reports(project_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_quality_reports_agent
 ON quality_reports(agent_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT,
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+
 -- Insert default uncompleted setup status
 INSERT OR IGNORE INTO setup_status (id, completed) VALUES (1, 0);

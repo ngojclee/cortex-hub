@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import useSWR from 'swr'
-import { getSettings, restartService } from '@/lib/api'
+import { getSettings, getAppSettings, updateAppSettings, restartService } from '@/lib/api'
 import { config } from '@/lib/config'
 import styles from './page.module.css'
 
@@ -106,6 +106,7 @@ const SERVICE_LABELS: Record<string, string> = {
 
 export default function SettingsPage() {
   const { data, error, isLoading } = useSWR('settings', getSettings)
+  const { data: appSettings, mutate: mutateAppSettings } = useSWR('app-settings', getAppSettings)
   const [showResetDialog, setShowResetDialog] = useState(false)
   const [showClearDialog, setShowClearDialog] = useState(false)
   const [restartingService, setRestartingService] = useState<string | null>(null)
@@ -113,6 +114,20 @@ export default function SettingsPage() {
     type: 'success' | 'error'
     message: string
   } | null>(null)
+
+  // Git credentials state
+  const [gitUsername, setGitUsername] = useState('')
+  const [gitToken, setGitToken] = useState('')
+  const [gitDirty, setGitDirty] = useState(false)
+  const [gitSaving, setGitSaving] = useState(false)
+
+  // Sync from fetched app settings
+  const gitLoaded = useState(false)
+  if (appSettings && !gitLoaded[0]) {
+    if (appSettings.global_git_username) setGitUsername(appSettings.global_git_username)
+    if (appSettings.global_git_token) setGitToken(appSettings.global_git_token)
+    gitLoaded[1](true)
+  }
 
   const dockerServices: DockerServiceProps[] = [
     { containerName: 'cortex-llm-proxy', label: 'CLIProxy (LLM)', icon: '🤖' },
@@ -182,6 +197,23 @@ export default function SettingsPage() {
         type: 'error',
         message: `Clear failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
       })
+    }
+  }
+
+  async function handleSaveGitCredentials() {
+    setGitSaving(true)
+    try {
+      await updateAppSettings({
+        global_git_username: gitUsername || null,
+        global_git_token: gitToken || null,
+      })
+      setGitDirty(false)
+      mutateAppSettings()
+      setActionStatus({ type: 'success', message: 'Global Git credentials saved.' })
+    } catch (err) {
+      setActionStatus({ type: 'error', message: `Save failed: ${err instanceof Error ? err.message : String(err)}` })
+    } finally {
+      setGitSaving(false)
     }
   }
 
@@ -299,6 +331,50 @@ export default function SettingsPage() {
               </button>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Git Credentials */}
+      <div className={styles.section}>
+        <h2 className={styles.sectionTitle}>Global Git Credentials</h2>
+        <div className={`card ${styles.gitCard}`}>
+          <p className={styles.gitHint}>
+            Fallback credentials used when a project has no token configured. Required for indexing private repositories.
+          </p>
+          <div className={styles.gitFields}>
+            <div className={styles.gitField}>
+              <label className={styles.gitLabel}>Username (optional)</label>
+              <input
+                className={styles.gitInput}
+                type="text"
+                placeholder="github-username"
+                value={gitUsername}
+                onChange={(e) => { setGitUsername(e.target.value); setGitDirty(true) }}
+              />
+            </div>
+            <div className={styles.gitField}>
+              <label className={styles.gitLabel}>Personal Access Token</label>
+              <input
+                className={styles.gitInput}
+                type="password"
+                placeholder="ghp_xxxx"
+                value={gitToken}
+                onChange={(e) => { setGitToken(e.target.value); setGitDirty(true) }}
+              />
+            </div>
+          </div>
+          <div className={styles.gitActions}>
+            <span className={styles.gitStatus}>
+              {appSettings?.global_git_token ? 'Token configured' : 'No token set'}
+            </span>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={handleSaveGitCredentials}
+              disabled={!gitDirty || gitSaving}
+            >
+              {gitSaving ? 'Saving...' : 'Save'}
+            </button>
+          </div>
         </div>
       </div>
 

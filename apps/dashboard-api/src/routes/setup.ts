@@ -241,6 +241,33 @@ setupRouter.get('/settings', (c) => {
   })
 })
 
+// ── App Settings (key-value store) ──
+setupRouter.get('/app-settings', (c) => {
+  const rows = db.prepare('SELECT key, value FROM app_settings').all() as Array<{ key: string; value: string | null }>
+  const settings: Record<string, string> = {}
+  for (const row of rows) {
+    settings[row.key] = row.value ?? ''
+  }
+  return c.json(settings)
+})
+
+setupRouter.put('/app-settings', async (c) => {
+  const body = await c.req.json() as Record<string, string | null>
+  const upsert = db.prepare(
+    `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+  )
+
+  const run = db.transaction(() => {
+    for (const [key, value] of Object.entries(body)) {
+      upsert.run(key, value ?? null)
+    }
+  })
+  run()
+
+  return c.json({ success: true })
+})
+
 // ── Reset Setup Wizard (preserve keys + data) ──
 setupRouter.post('/reset', (c) => {
   try {

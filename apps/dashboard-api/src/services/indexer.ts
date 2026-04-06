@@ -337,7 +337,22 @@ export async function startIndexing(projectId: string, jobId: string, branch: st
     }
     mkdirSync(repoDir, { recursive: true })
 
-    const authUrl = buildAuthUrl(project.git_repo_url, project.git_username, project.git_token)
+    // Resolve credentials: project-level → global fallback
+    let effectiveToken = project.git_token
+    let effectiveUsername = project.git_username
+    if (!effectiveToken) {
+      try {
+        const globalToken = db.prepare("SELECT value FROM app_settings WHERE key = 'global_git_token'").get() as { value: string } | undefined
+        const globalUsername = db.prepare("SELECT value FROM app_settings WHERE key = 'global_git_username'").get() as { value: string } | undefined
+        if (globalToken?.value) {
+          effectiveToken = globalToken.value
+          effectiveUsername = effectiveUsername || globalUsername?.value || null
+          appendLog(jobId, '[info] Using global Git token (no project-level token set)')
+        }
+      } catch { /* ignore — table may not exist yet */ }
+    }
+
+    const authUrl = buildAuthUrl(project.git_repo_url, effectiveUsername, effectiveToken)
 
     // Pre-flight DNS check — give actionable error if DNS is broken
     try {

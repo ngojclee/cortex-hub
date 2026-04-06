@@ -135,6 +135,70 @@
   white-space: nowrap;
 }
 
+/* Git Credentials Card */
+.gitCard {
+  padding: var(--space-6);
+}
+
+.gitHint {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  margin: 0 0 var(--space-5) 0;
+  line-height: 1.5;
+}
+
+.gitFields {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.gitField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.gitLabel {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 500;
+}
+
+.gitInput {
+  padding: var(--space-3);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.gitInput:focus {
+  border-color: var(--primary);
+}
+
+.gitActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.gitStatus {
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+}
+
+@media (max-width: 768px) {
+  .gitFields { grid-template-columns: 1fr; }
+}
+
 /* Code Card */
 .codeCard {
   padding: var(--space-6);

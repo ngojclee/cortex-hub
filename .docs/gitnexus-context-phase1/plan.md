@@ -147,7 +147,65 @@ This feature should be delivered in two layers:
   - `/quality`
   - session history and any downstream analytics that consume shared metadata
 
-## Phase 5D: UX Follow-Ups After Data Quality Stabilizes
+## Phase 5D: Graph Visual Improvements (Deferred from Phase 5)
+**Goal:** Improve graph visualization to match GitNexus capabilities after data quality stabilizes.
+
+### Current Graph Implementation vs GitNexus
+
+#### What cortex-hub currently has:
+- Static 2D SVG orbit visualization of clusters and processes
+- Cluster nodes (name, cohesion, symbols)
+- Process nodes (name, type, steps count)
+- Cross-links between clusters via shared processes
+- Symbol tree modal (basic path-based dependency view, depth=2 only)
+- Cluster members list (name, type, filePath only)
+
+#### What GitNexus provides:
+- **40+ node types**: Class, Function, Method, Interface, Route, Tool, Module, etc.
+- **20+ relationship types**: CALLS, IMPORTS, INHERITS, OVERRIDES, ACCESSES, STEP_IN_PROCESS, etc.
+- **360° symbol context**: callers, callees, imports, extends, implements all categorized
+- **Impact analysis**: blast radius by depth (d=1 WILL BREAK, d=2 LIKELY AFFECTED, d=3 MAY NEED TESTING)
+- **Change detection**: maps git diff to affected symbols + processes
+- **Process step detail**: full execution trace with name, filePath, type per step
+- **Cypher query interface**: direct graph query access
+- **Rename tool**: multi-file coordinated rename with confidence tagging
+- **Upstream/downstream control**: direction-aware symbol tree traversal
+- **Wiki generator**: auto-generate documentation from graph structure
+- **Hybrid search**: BM25 + semantic vector search for execution flows
+
+#### Critical gaps to address:
+
+| Priority | Gap | Description |
+|----------|-----|-------------|
+| P1 | Symbol-level graph view | Currently only cluster/process nodes. Need Class, Function, Method nodes |
+| P1 | `context` equivalent | 360° symbol view with callers/callees categorized by edge type |
+| P1 | `impact` analysis UI | Blast radius visualization grouped by depth with risk levels |
+| P2 | `detect_changes` UI | Visualize how git changes affect codebase |
+| P2 | Process step detail | Show each step's name, filePath, type instead of just count |
+| P2 | Upstream/downstream direction | Direction-aware symbol tree traversal |
+| P3 | Cypher query interface | Direct graph query access with schema docs |
+| P3 | Cluster member enrichment | Full node properties instead of just name/type/path |
+| P3 | Entry point scoring | Show entryPointScore and entryPointReason for processes |
+
+### Implementation Order (Phase 5D)
+
+1. **Graph API enrichment** - Add symbol-level nodes to graph endpoints
+2. **Symbol context modal** - 360° view like GitNexus context tool
+3. **Impact visualization** - Blast radius by depth with risk colors
+4. **Process step explorer** - Expand steps into clickable details
+5. **Direction-aware tree** - Upstream/downstream toggle
+6. **Change detection UI** - Visual diff → affected symbols mapping
+7. **Cypher playground** - Direct query interface (if MCP supports)
+
+### Constraints
+- Keep cluster/process overview as foundation (don't break current view)
+- Add symbol drilling on top, not replacement
+- Maintain API compatibility with existing MCP tools
+- Focus on data quality first before UI work
+
+---
+
+## UX Follow-Ups After Data Quality Stabilizes
 **Goal:** Decide on higher-level UX features only after underlying data becomes reliable.
 
 - Re-evaluate whether a visual graph explorer is still necessary once:

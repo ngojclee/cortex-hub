@@ -12,6 +12,8 @@ import {
   getIntelProjectCrossLinks,
   getIntelProjectClusterMembers,
   getIntelProjectSymbolTree,
+  getIntelSymbolContext,
+  getIntelSymbolImpact,
   linkDiscoveredProject,
   type IntelClusterResource,
   type IntelDiscoveryCandidate,
@@ -418,8 +420,14 @@ export default function GraphPage() {
 
   const [selectedCluster, setSelectedCluster] = useState<string | null>(null)
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null)
+  const [selectedProcess, setSelectedProcess] = useState<string | null>(null)
   const [symbolTree, setSymbolTree] = useState<Record<string, unknown> | null>(null)
+  const [symbolContext, setSymbolContext] = useState<{ name: string; raw: string } | null>(null)
+  const [symbolImpact, setSymbolImpact] = useState<{ target: string; direction: string; results: unknown } | null>(null)
   const [loadingTree, setLoadingTree] = useState(false)
+  const [loadingContext, setLoadingContext] = useState(false)
+  const [loadingImpact, setLoadingImpact] = useState(false)
+  const [treeDirection, setTreeDirection] = useState<'upstream' | 'downstream'>('downstream')
 
   const { data: clusterMembersData } = useSWR(
     projectId && selectedCluster ? ['intel-project-cluster-members', projectId, selectedCluster] : null,
@@ -459,12 +467,46 @@ export default function GraphPage() {
     setSelectedSymbol(symbolName)
     setLoadingTree(true)
     try {
-      const data = await getIntelProjectSymbolTree(projectId, symbolName, { depth: 2 })
+      const data = await getIntelProjectSymbolTree(projectId, symbolName, { depth: 2, direction: treeDirection })
       setSymbolTree(data)
     } catch (err) {
       console.error('Failed to load symbol tree:', err)
     } finally {
       setLoadingTree(false)
+    }
+  }
+
+  const handleViewContext = async (symbolName: string) => {
+    if (!projectId) return
+    setSelectedSymbol(symbolName)
+    setSymbolContext(null)
+    setLoadingContext(true)
+    try {
+      const data = await getIntelSymbolContext(projectId, symbolName)
+      if (data.success && data.data.results.raw) {
+        setSymbolContext({ name: symbolName, raw: data.data.results.raw })
+      }
+    } catch (err) {
+      console.error('Failed to load symbol context:', err)
+    } finally {
+      setLoadingContext(false)
+    }
+  }
+
+  const handleViewImpact = async (symbolName: string) => {
+    if (!projectId) return
+    setSelectedSymbol(symbolName)
+    setSymbolImpact(null)
+    setLoadingImpact(true)
+    try {
+      const data = await getIntelSymbolImpact(projectId, symbolName, 'downstream')
+      if (data.success) {
+        setSymbolImpact({ target: data.data.target, direction: data.data.direction, results: data.data.results })
+      }
+    } catch (err) {
+      console.error('Failed to load impact analysis:', err)
+    } finally {
+      setLoadingImpact(false)
     }
   }
 
@@ -568,11 +610,27 @@ export default function GraphPage() {
             {selectedCluster && (
               <div className={styles.graphSidebar}>
                 <div className={`card ${styles.sidebarCard}`}>
-                  <h3 className={styles.sidebarTitle}>{selectedCluster}</h3>
+                  <div className={styles.sidebarHeader}>
+                    <h3 className={styles.sidebarTitle}>{selectedCluster}</h3>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setSelectedCluster(null)}>×</button>
+                  </div>
                   <div className={styles.sidebarMeta}>
                     {clusterMembersData?.data?.members?.length ?? 0} members
                   </div>
-                  
+
+                  {/* Direction toggle */}
+                  <div className={styles.directionToggle}>
+                    <span>Tree direction:</span>
+                    <button
+                      className={`btn btn-sm ${treeDirection === 'upstream' ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => setTreeDirection('upstream')}
+                    >↑ Up</button>
+                    <button
+                      className={`btn btn-sm ${treeDirection === 'downstream' ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => setTreeDirection('downstream')}
+                    >↓ Down</button>
+                  </div>
+
                   {!clusterMembersData && <div className={styles.sidebarEmpty}>Loading members...</div>}
                   {clusterMembersData && clusterMembersData.data.members.length === 0 && (
                     <div className={styles.sidebarEmpty}>No members found.</div>
@@ -583,12 +641,28 @@ export default function GraphPage() {
                         <div key={`${member.filePath ?? 'root'}-${member.name}`} className={styles.sidebarMember}>
                           <div className={styles.sidebarMemberHead}>
                             <span className={styles.memberName}>{member.name}</span>
-                            <button 
-                              className="btn btn-sm btn-secondary" 
-                              style={{ padding: '2px 8px', fontSize: '10px' }}
+                          </div>
+                          <div className={styles.memberActions}>
+                            <button
+                              className="btn btn-sm btn-secondary"
+                              style={{ padding: '2px 6px', fontSize: '10px' }}
                               onClick={() => handleViewTree(member.name)}
                             >
                               Tree
+                            </button>
+                            <button
+                              className="btn btn-sm btn-secondary"
+                              style={{ padding: '2px 6px', fontSize: '10px' }}
+                              onClick={() => handleViewContext(member.name)}
+                            >
+                              Context
+                            </button>
+                            <button
+                              className="btn btn-sm btn-secondary"
+                              style={{ padding: '2px 6px', fontSize: '10px' }}
+                              onClick={() => handleViewImpact(member.name)}
+                            >
+                              Impact
                             </button>
                           </div>
                           <span className={styles.memberType}>{member.type}</span>
@@ -636,15 +710,60 @@ export default function GraphPage() {
         loadingTree ? (
           <div className="card" style={{ padding: '2rem', textAlign: 'center' }}>Loading dependency tree for {selectedSymbol}…</div>
         ) : (
-          <SymbolTreeViewer 
-            symbolName={selectedSymbol} 
-            treeData={symbolTree} 
+          <SymbolTreeViewer
+            symbolName={selectedSymbol}
+            treeData={symbolTree}
             onClose={() => {
               setSelectedSymbol(null)
               setSymbolTree(null)
-            }} 
+            }}
           />
         )
+      )}
+
+      {/* Symbol Context Panel */}
+      {selectedSymbol && symbolContext && !loadingContext && (
+        <div className={`card ${styles.contextPanel}`}>
+          <div className={styles.panelHeader}>
+            <div>
+              <span className={styles.panelKicker}>360° Symbol View</span>
+              <h3 className={styles.panelTitle}>{symbolContext.name}</h3>
+            </div>
+            <button className="btn btn-ghost" onClick={() => { setSelectedSymbol(null); setSymbolContext(null) }}>Close</button>
+          </div>
+          <div className={styles.contextContent}>
+            <pre className={styles.contextPre}>{symbolContext.raw}</pre>
+          </div>
+        </div>
+      )}
+
+      {selectedSymbol && loadingContext && (
+        <div className="card" style={{ padding: '2rem', textAlign: 'center' }}>Loading context for {selectedSymbol}…</div>
+      )}
+
+      {/* Impact Analysis Panel */}
+      {selectedSymbol && symbolImpact && !loadingImpact && (
+        <div className={`card ${styles.impactPanel}`}>
+          <div className={styles.panelHeader}>
+            <div>
+              <span className={styles.panelKicker}>Blast Radius Analysis</span>
+              <h3 className={styles.panelTitle}>{symbolImpact.target}</h3>
+              <span className={styles.panelSub}>Direction: {symbolImpact.direction}</span>
+            </div>
+            <button className="btn btn-ghost" onClick={() => { setSelectedSymbol(null); setSymbolImpact(null) }}>Close</button>
+          </div>
+          <div className={styles.impactContent}>
+            {typeof symbolImpact.results === 'string' ? (
+              <pre className={styles.contextPre}>{symbolImpact.results as string}</pre>
+            ) : (
+              <pre className={styles.contextPre}>{JSON.stringify(symbolImpact.results, null, 2)}</pre>
+            )}
+          </div>
+        </div>
+      )}
+
+      {selectedSymbol && loadingImpact && (
+        <div className="card" style={{ padding: '2rem', textAlign: 'center' }}>Loading impact analysis for {selectedSymbol}…</div>
       )}
     </DashboardLayout>
   )

@@ -515,6 +515,90 @@
   padding: var(--space-4) 0;
 }
 
+.sidebarHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-2);
+}
+
+.directionToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: var(--space-3);
+  padding: var(--space-2);
+  background: rgba(255,255,255,0.03);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.directionToggle .btn {
+  padding: 2px 8px;
+  font-size: 0.7rem;
+}
+
+.memberActions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+/* Context & Impact Panels */
+.contextPanel,
+.impactPanel {
+  margin-top: var(--space-4);
+  background: var(--bg-secondary);
+}
+
+.panelHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.panelKicker {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #c084fc;
+}
+
+.panelTitle {
+  margin: 4px 0 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.panelSub {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.contextContent,
+.impactContent {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.contextPre {
+  margin: 0;
+  padding: var(--space-3);
+  background: rgba(0,0,0,0.3);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 .graphNodeInteractive {
   cursor: pointer;
   transition: transform 0.2s ease, filter 0.2s ease;

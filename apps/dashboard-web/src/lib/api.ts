@@ -640,6 +640,34 @@ export async function getIntelProjectSymbolTree(projectId: string, name: string,
   }>(`/api/intel/resources/project/${projectId}/symbol/${encodeURIComponent(name)}/tree?${qs.toString()}`)
 }
 
+// ── Intel: Symbol context (360° view) ──
+export async function getIntelSymbolContext(projectId: string, name: string, file?: string) {
+  const body: { name: string; projectId: string; file?: string } = { name, projectId }
+  if (file) body.file = file
+  return apiFetch<{
+    success: boolean
+    data: {
+      name: string
+      results: { raw?: string }
+    }
+  }>('/api/intel/context', { method: 'POST', body })
+}
+
+// ── Intel: Impact analysis (blast radius) ──
+export async function getIntelSymbolImpact(projectId: string, target: string, direction?: 'upstream' | 'downstream') {
+  return apiFetch<{
+    success: boolean
+    data: {
+      target: string
+      direction: string
+      results: unknown
+    }
+  }>('/api/intel/impact', {
+    method: 'POST',
+    body: { target, direction: direction ?? 'downstream', projectId },
+  })
+}
+
 export async function previewSymbolRename(data: {
   projectId: string
   symbol: string

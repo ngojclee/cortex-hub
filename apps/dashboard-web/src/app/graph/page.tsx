@@ -569,7 +569,7 @@ export default function GraphPage() {
                 <div className={`card ${styles.sidebarCard}`}>
                   <h3 className={styles.sidebarTitle}>{selectedCluster}</h3>
                   <div className={styles.sidebarMeta}>
-                    {clusterMembersData?.data.totalCount ?? 0} members
+                    {clusterMembersData?.data?.members?.length ?? 0} members
                   </div>
                   
                   {!clusterMembersData && <div className={styles.sidebarEmpty}>Loading members...</div>}
@@ -579,7 +579,7 @@ export default function GraphPage() {
                   {clusterMembersData && clusterMembersData.data.members.length > 0 && (
                     <div className={styles.sidebarMemberList}>
                       {clusterMembersData.data.members.map((member) => (
-                        <div key={`${member.filePath}-${member.name}`} className={styles.sidebarMember}>
+                        <div key={`${member.filePath ?? 'root'}-${member.name}`} className={styles.sidebarMember}>
                           <div className={styles.sidebarMemberHead}>
                             <span className={styles.memberName}>{member.name}</span>
                             <button 

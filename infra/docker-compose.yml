@@ -103,8 +103,9 @@ services:
       CLIPROXY_URL: ${LLM_PROXY_URL:-http://llm-proxy:8317}
       GITNEXUS_URL: http://gitnexus:4848
       MCP_SERVER_NAME: cortex-hub
-      MCP_SERVER_VERSION: "0.2.0.0"
+      MCP_SERVER_VERSION: "0.3.0.0"
       MCP_AUTH_REQUIRED: "true"
+      PUBLIC_URL: ${DASHBOARD_URL:-https://cortexhub.lengoc.me}
     depends_on:
       - cortex-api
       - qdrant

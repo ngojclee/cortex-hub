@@ -109,7 +109,7 @@ orgsRouter.get('/:id/projects', (c) => {
   const { id } = c.req.param()
   try {
     const projects = db
-      .prepare('SELECT * FROM projects WHERE org_id = ? ORDER BY created_at DESC')
+      .prepare('SELECT * FROM projects WHERE org_id = ? ORDER BY LOWER(name) ASC, LOWER(slug) ASC, created_at DESC')
       .all(id)
     return c.json({ projects })
   } catch (error) {
@@ -295,7 +295,7 @@ projectsRouter.get('/', (c) => {
         `SELECT p.*, o.name as org_name, o.slug as org_slug
          FROM projects p
          JOIN organizations o ON o.id = p.org_id
-         ORDER BY p.created_at DESC`
+         ORDER BY LOWER(p.name) ASC, LOWER(p.slug) ASC, p.created_at DESC`
       )
       .all()
     return c.json({ projects })

@@ -283,6 +283,19 @@ interface BranchRelation {
   edge: string
 }
 
+interface BranchChainNode {
+  name: string
+  type: string
+  edge?: string
+}
+
+interface BranchTraceData {
+  upstream: BranchRelation[]
+  downstream: BranchRelation[]
+  upstreamChains: BranchChainNode[][]
+  downstreamChains: BranchChainNode[][]
+}
+
 function parseImpactResults(results: unknown): ImpactDepthGroup[] {
   const groups: ImpactDepthGroup[] = []
 
@@ -384,6 +397,44 @@ function parseDirectRelations(results: TreeApiResult | null | undefined, filters
   }
 
   return Array.from(deduped.values()).sort((a, b) => a.name.localeCompare(b.name) || a.edge.localeCompare(b.edge))
+}
+
+function parseTraceChains(
+  results: TreeApiResult | null | undefined,
+  symbolName: string,
+  filters: EdgeFilter[],
+): BranchChainNode[][] {
+  const rows = results?.data?.results ?? []
+  const chains = new Map<string, BranchChainNode[]>()
+
+  for (const row of rows) {
+    const segments = row.path?.[0]?.segments ?? []
+    if (segments.length === 0) continue
+
+    const chain: BranchChainNode[] = [{ name: symbolName, type: 'Symbol' }]
+    let valid = true
+
+    for (const segment of segments) {
+      const edge = segment.relationship?.type ?? 'DEPENDS_ON'
+      if (!matchesEdgeFilter(edge, filters)) {
+        valid = false
+        break
+      }
+
+      const rawName = segment.end?.properties?.name
+      const name = typeof rawName === 'string' && rawName.trim() ? rawName : 'unknown'
+      const type = segment.end?.labels?.[0] ?? 'Symbol'
+      chain.push({ name, type, edge })
+    }
+
+    if (!valid || chain.length < 2) continue
+    const key = chain.map((node) => `${node.edge ?? 'ROOT'}:${node.name}:${node.type}`).join('>')
+    if (!chains.has(key)) chains.set(key, chain)
+  }
+
+  return Array.from(chains.values())
+    .sort((a, b) => b.length - a.length || a.map((node) => node.name).join(' ').localeCompare(b.map((node) => node.name).join(' ')))
+    .slice(0, 4)
 }
 
 function ImpactVisual({ target, direction, results, filters }: { target: string; direction: string; results: unknown; filters: EdgeFilter[] }) {
@@ -564,7 +615,7 @@ function BranchDrilldownPanel({
 }: {
   symbolName: string | null
   loading: boolean
-  drilldown: { upstream: BranchRelation[]; downstream: BranchRelation[] } | null
+  drilldown: BranchTraceData | null
   onClose: () => void
 }) {
   if (!symbolName && !loading) return null
@@ -702,7 +753,7 @@ export default function GraphPage() {
   const [edgeFilters, setEdgeFilters] = useState<EdgeFilter[]>([])
   const [activePreset, setActivePreset] = useState<GraphPreset>('overview')
   const [selectedBranchSymbol, setSelectedBranchSymbol] = useState<string | null>(null)
-  const [branchDrilldown, setBranchDrilldown] = useState<{ upstream: BranchRelation[]; downstream: BranchRelation[] } | null>(null)
+  const [branchDrilldown, setBranchDrilldown] = useState<BranchTraceData | null>(null)
   const [loadingBranchDrilldown, setLoadingBranchDrilldown] = useState(false)
 
   const { data: clusterMembersData } = useSWR(
@@ -828,16 +879,18 @@ export default function GraphPage() {
     setLoadingBranchDrilldown(true)
     try {
       const [upstreamData, downstreamData] = await Promise.all([
-        getIntelProjectSymbolTree(projectId, symbolName, { depth: 1, direction: 'upstream', edgeTypes: edgeFilters }),
-        getIntelProjectSymbolTree(projectId, symbolName, { depth: 1, direction: 'downstream', edgeTypes: edgeFilters }),
+        getIntelProjectSymbolTree(projectId, symbolName, { depth: 3, direction: 'upstream', edgeTypes: edgeFilters }),
+        getIntelProjectSymbolTree(projectId, symbolName, { depth: 3, direction: 'downstream', edgeTypes: edgeFilters }),
       ])
       setBranchDrilldown({
         upstream: parseDirectRelations(upstreamData as TreeApiResult, edgeFilters),
         downstream: parseDirectRelations(downstreamData as TreeApiResult, edgeFilters),
+        upstreamChains: parseTraceChains(upstreamData as TreeApiResult, symbolName, edgeFilters),
+        downstreamChains: parseTraceChains(downstreamData as TreeApiResult, symbolName, edgeFilters),
       })
     } catch (err) {
       console.error('Failed to load branch drill-down:', err)
-      setBranchDrilldown({ upstream: [], downstream: [] })
+      setBranchDrilldown({ upstream: [], downstream: [], upstreamChains: [], downstreamChains: [] })
     } finally {
       setLoadingBranchDrilldown(false)
     }
@@ -1036,6 +1089,9 @@ export default function GraphPage() {
                 selectedProcessName={selectedProcess}
                 selectedBranchSymbol={selectedBranchSymbol}
                 branchTrace={branchDrilldown}
+                onTraceSymbolClick={(name) => {
+                  void handleInspectBranch(name)
+                }}
                 focusMode={focusMode}
                 clusterMembers={clusterMembersData?.data?.members}
                 processSteps={processDetail?.steps.map((s, i) => ({ name: s.name, type: s.type ?? 'step', filePath: s.filePath ?? undefined, index: i + 1 }))}

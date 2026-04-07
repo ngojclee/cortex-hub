@@ -92,6 +92,7 @@
   align-items: baseline;
   gap: 0.75rem;
   margin-bottom: 0.85rem;
+  flex-wrap: wrap;
 }
 
 .traceKicker {
@@ -107,11 +108,98 @@
   color: #f8fafc;
 }
 
+.traceHint {
+  margin-left: auto;
+  font-size: 0.72rem;
+  color: rgba(125, 211, 252, 0.84);
+}
+
 .traceGrid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 180px minmax(0, 1fr);
   gap: 0.9rem;
   align-items: center;
+}
+
+.traceCanvas {
+  display: block;
+  width: 100%;
+  min-height: 220px;
+}
+
+.traceCanvasCore {
+  fill: rgba(15, 23, 42, 0.96);
+  stroke: rgba(251, 191, 36, 0.48);
+  stroke-width: 1.5;
+  filter: drop-shadow(0 0 18px rgba(251, 191, 36, 0.14));
+}
+
+.traceCanvasNode {
+  fill: rgba(15, 23, 42, 0.82);
+  stroke: rgba(125, 211, 252, 0.34);
+  stroke-width: 1.25;
+  transition: transform 0.18s ease, stroke 0.18s ease, fill 0.18s ease, filter 0.18s ease;
+}
+
+.traceCanvasLineUp {
+  fill: none;
+  stroke: url(#traceLineUp);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  opacity: 0.95;
+}
+
+.traceCanvasLineDown {
+  fill: none;
+  stroke: url(#traceLineDown);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  opacity: 0.95;
+}
+
+.traceCanvasNodeGroup {
+  cursor: pointer;
+}
+
+.traceCanvasNodeGroup:hover .traceCanvasNode {
+  fill: rgba(30, 41, 59, 0.94);
+  stroke: rgba(251, 191, 36, 0.66);
+  filter: url(#traceNodeGlow);
+}
+
+.traceCanvasNodeGroup:hover .traceCanvasLineUp,
+.traceCanvasNodeGroup:hover .traceCanvasLineDown {
+  stroke-width: 3.4;
+}
+
+.traceCanvasName {
+  fill: #f8fafc;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  pointer-events: none;
+}
+
+.traceCanvasMeta {
+  fill: rgba(191, 219, 254, 0.8);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+.traceCanvasBadge {
+  fill: rgba(251, 191, 36, 0.92);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+.traceCanvasEmpty {
+  fill: rgba(148, 163, 184, 0.86);
+  font-size: 11px;
 }
 
 .traceColumn {
@@ -131,6 +219,32 @@
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
+}
+
+.traceLaneStack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.traceLane {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.traceLaneNode {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.traceLaneConnector {
+  width: 18px;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(to right, rgba(125, 211, 252, 0.85), rgba(125, 211, 252, 0.18));
 }
 
 .traceCore {
@@ -205,6 +319,96 @@
   stroke-dasharray: 6 4;
 }
 
+.viewportLayer {
+  transform-origin: center;
+}
+
+.traceGraphLayer {
+  pointer-events: none;
+}
+
+.traceGraphLinks,
+.traceGraphNodes {
+  pointer-events: none;
+}
+
+.traceGraphLinkUp,
+.traceGraphLinkDown {
+  fill: none;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  opacity: 0.88;
+  filter: drop-shadow(0 0 10px rgba(15, 23, 42, 0.45));
+}
+
+.traceGraphLinkUp {
+  stroke: rgba(251, 191, 36, 0.9);
+  stroke-dasharray: 7 5;
+}
+
+.traceGraphLinkDown {
+  stroke: rgba(125, 211, 252, 0.85);
+}
+
+.traceGraphNodeGroup {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.traceGraphAnchorGroup {
+  cursor: default;
+}
+
+.traceGraphAnchor,
+.traceGraphNodeUp,
+.traceGraphNodeDown {
+  stroke-width: 2;
+  filter: drop-shadow(0 0 14px rgba(15, 23, 42, 0.65));
+}
+
+.traceGraphAnchor {
+  fill: rgba(15, 23, 42, 0.96);
+  stroke: rgba(251, 191, 36, 0.92);
+}
+
+.traceGraphNodeUp {
+  fill: rgba(120, 53, 15, 0.94);
+  stroke: rgba(251, 191, 36, 0.84);
+}
+
+.traceGraphNodeDown {
+  fill: rgba(8, 47, 73, 0.94);
+  stroke: rgba(125, 211, 252, 0.84);
+}
+
+.traceGraphNodeGroup:hover .traceGraphNodeUp,
+.traceGraphNodeGroup:hover .traceGraphNodeDown {
+  stroke-width: 2.8;
+  filter: drop-shadow(0 0 18px rgba(250, 204, 21, 0.4));
+}
+
+.traceGraphNodeGroup:hover .traceGraphLinkUp,
+.traceGraphNodeGroup:hover .traceGraphLinkDown {
+  stroke-width: 3;
+}
+
+.traceGraphLabel {
+  fill: #f8fafc;
+  font-size: 10px;
+  font-weight: 700;
+  text-shadow: 0 1px 6px rgba(2, 6, 23, 0.95);
+  pointer-events: none;
+}
+
+.traceGraphMeta {
+  fill: rgba(226, 232, 240, 0.82);
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 6px rgba(2, 6, 23, 0.95);
+  pointer-events: none;
+}
+
 /* Nodes */
 .node {
   cursor: default;
@@ -241,12 +445,8 @@
     max-width: calc(100% - 170px);
   }
 
-  .traceGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .traceCore {
-    order: -1;
+  .traceCanvas {
+    min-height: 280px;
   }
 }
 
@@ -267,6 +467,15 @@
     top: 12px;
     max-width: calc(100% - 24px);
   }
+  .traceCanvas {
+    min-height: 320px;
+  }
+
+  .traceHint {
+    width: 100%;
+    margin-left: 0;
+  }
+
   .miniMapSvg {
     height: 96px;
   }

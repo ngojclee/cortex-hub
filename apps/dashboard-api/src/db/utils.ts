@@ -1,12 +1,11 @@
 import { randomUUID } from 'crypto'
 import { db } from './client.js'
 
-export function ensureProjectExists(projectId: string): string {
+export function normalizeProjectReference(projectId: string | null | undefined): string | null {
   if (!projectId || typeof projectId !== 'string' || projectId.trim() === '') {
-    return ''
+    return null
   }
 
-  // 1. Resolve slug if project id is proj-*
   let cleanId = projectId.trim()
   if (cleanId.startsWith('proj-')) {
     const proj = db.prepare('SELECT slug FROM projects WHERE id = ?').get(cleanId) as { slug: string } | undefined
@@ -14,7 +13,24 @@ export function ensureProjectExists(projectId: string): string {
       cleanId = proj.slug
     }
   }
+
   cleanId = cleanId.toLowerCase()
+
+  const existingProj = db.prepare('SELECT slug FROM projects WHERE slug = ? OR id = ?').get(cleanId, cleanId) as { slug: string } | undefined
+  if (existingProj?.slug) {
+    return existingProj.slug
+  }
+
+  return cleanId
+}
+
+export function ensureProjectExists(projectId: string): string {
+  const normalized = normalizeProjectReference(projectId)
+  if (!normalized) {
+    return ''
+  }
+
+  const cleanId = normalized
 
   // 2. See if this slug already exists
   const existingProj = db.prepare('SELECT id, slug FROM projects WHERE slug = ? OR id = ?').get(cleanId, cleanId) as { id: string; slug: string } | undefined

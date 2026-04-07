@@ -70,6 +70,16 @@ function getRequestOrigin(req: Request): string {
     return `${proto}://${forwardedHost}`
   }
 
+  // Fallback: use PUBLIC_URL env var when deployed behind a reverse proxy
+  // (e.g., Cloudflare Tunnel → dashboard-api → cortex-mcp) where
+  // x-forwarded-* headers may not reach this container.
+  const publicUrl = process.env['PUBLIC_URL']
+  if (publicUrl) {
+    try {
+      return new URL(publicUrl).origin
+    } catch { /* invalid URL, ignore */ }
+  }
+
   return new URL(req.url).origin
 }
 

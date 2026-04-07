@@ -32,8 +32,16 @@
 - [x] Deepen branch drill-down so selected slices expose before/after relationships more directly
 - [x] Add symbol-level canvas emphasis so traced members/steps are highlighted directly on the graph
 - [x] Add mini before/after chain overlay directly on the graph canvas for traced symbols
+- [x] Upgrade the trace overlay into richer SVG branch chains rendered directly on canvas
+- [x] Allow clicking trace-chain nodes to recurse into deeper symbol tracing without leaving the canvas
+- [x] Mirror active trace chains into a native main-graph constellation layer so zoom/pan keeps branch context visible
 - [x] Typecheck: pnpm --filter @cortex/dashboard-api typecheck ✅
 - [x] Typecheck: pnpm --filter @cortex/dashboard-web typecheck ✅
+- [x] Validation: pnpm --filter @cortex/dashboard-web typecheck ✅ (after native trace layer polish)
+- [x] Validation: pnpm --filter @cortex/dashboard-web lint ✅
+- [x] Validation: pnpm --filter @cortex/dashboard-web build ✅
+- [x] Validation: pnpm --filter @cortex/dashboard-api build ✅
+- [x] Validation: pnpm --filter @cortex/hub-mcp typecheck ✅
 
 ## Auth Boundary Fix
 - [x] Allow machine-facing dashboard API routes to accept Bearer API keys in `dashboardAuth()`

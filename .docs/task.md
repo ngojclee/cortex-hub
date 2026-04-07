@@ -36,7 +36,7 @@
 - [ ] **Phase A: Registration & Knowledge Cleanup** — See [.docs/multi-project-agent-intel/task.md](multi-project-agent-intel/task.md)
 - [x] 2026-04-07: Fixed Knowledge/Graph project normalization mismatch (`projectId` vs `project_id`, slug-backed filtering, discovery matching, project resource sorting)
 - [x] 2026-04-07: Fixed auth boundary so machine-facing dashboard APIs can accept Bearer API keys instead of forcing dashboard session auth
-- [~] **Phase B: Graph Explorer Enhancement** — orbit hub, symbol tree, focus mode, edge filters, breadcrumb, minimap, analysis presets, branch drill-down, symbol-level canvas tracing, and mini before/after chain overlay delivered; next target is richer branch-chain highlighting beyond the current local slice
+- [~] **Phase B: Graph Explorer Enhancement** — orbit hub, symbol tree, focus mode, edge filters, breadcrumb, minimap, analysis presets, branch drill-down, symbol-level canvas tracing, richer SVG branch-chain overlay, click-to-trace recursion, and a native trace constellation layer in the main graph are delivered; next target is final UI debug polish after deploy/review
 - [ ] **Phase C: GitNexus Tool Expansion** (future)
 
 ### Database Project Normalization (Pending Live Run)

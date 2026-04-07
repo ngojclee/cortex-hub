@@ -56,8 +56,8 @@ See [multi-project-agent-intel/plan.md](multi-project-agent-intel/plan.md)
 - Phase A: Register projects, clean knowledge (current)
 - Phase B: AI-first graph explorer workspace
   - Destination: turn `/graph` into an analysis surface where humans and AI can isolate one branch, filter relationship semantics, keep navigation context, and read architecture slices without dropping into raw Cypher by default.
-  - Current progress: hub-centered orbit layout, symbol tree, focus mode, edge filters, breadcrumb, minimap
-  - Next step: add analysis presets and stronger branch-level dependency drill-down
+  - Current progress: hub-centered orbit layout, symbol tree, focus mode, edge filters, breadcrumb, minimap, analysis presets, branch drill-down, symbol-level canvas tracing, and richer SVG trace chains with click-to-trace recursion on canvas
+  - Nearest destination: pin richer symbol branch tracing directly onto the main canvas so branch chains feel native to the graph, then tighten trace navigation polish before deploy/review
 - Phase C: GitNexus rename + wiki tools (future)
 
 ### Database Project Normalization

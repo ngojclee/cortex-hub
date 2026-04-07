@@ -12,6 +12,7 @@
 - [x] Dashboard redesign: hero bar, project overview cards, intelligence panels (`d8efdef`)
 - [x] New `/api/metrics/overview-v2` endpoint: per-project GitNexus/Mem9 status (`d8efdef`)
 - [x] LLM Telemetry: Track `compute_tokens` / `compute_model` from mem9-proxy back to `query_logs` via MCP `apiCall`, and expose via stats endpoints.
+- [x] Knowledge + Graph normalization: accept `projectId`/`project_id`, normalize knowledge project refs to slug, improve discovery candidate matching, and sort project resources by indexing/branch readiness.
 - [x] Build ✅ | Typecheck ✅ | Lint ✅ | Quality: A (100/100)
 
 ## Architecture — 2-Service Model
@@ -78,6 +79,7 @@
 - **GitNexus auto-discovery:** Updated `gitnexus-entrypoint.sh` to scan `/app/data/repos/` for cloned repos and run `gitnexus analyze` on any not already registered in `~/.gitnexus/registry.json`.
 - **Identity resolution:** `mcp-remote` drops Authorization header → workaround: apiCall() injects `X-API-Key-Owner` header from `env.API_KEY_OWNER`. Dashboard-api uses this as authoritative identity in quality reports + sessions.
 - **Dashboard v2:** Single `/overview-v2` endpoint replaces multiple calls. Returns per-project GitNexus/Mem9 status, quality summary, knowledge stats.
+- **Knowledge project refs:** `knowledge_documents.project_id` is normalized to project slug. API filters now accept either project ID or slug, and Knowledge UI uses slug-backed filtering for stable grouping.
 - **Service separation:** dashboard-api and hub-mcp run as separate Docker services. hub-mcp calls dashboard-api via real HTTP.
 - MCP handler uses `WebStandardStreamableHTTPServerTransport` (stateless, enableJsonResponse)
 - Mobile responsive: hamburger toggle + backdrop overlay at ≤768px, CSS-only breakpoints at 3 tiers

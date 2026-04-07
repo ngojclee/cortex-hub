@@ -57,7 +57,7 @@ function CreateDocumentDialog({
           >
             <option value="">Global (no project)</option>
             {projects.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
+              <option key={p.id} value={p.slug}>{p.name}</option>
             ))}
           </select>
         </div>
@@ -230,11 +230,18 @@ export default function KnowledgePage() {
   const { data: projectsData } = useSWR('all-projects', getAllProjects)
 
   const projects = projectsData?.projects ?? []
+  const sortedProjects = useMemo(
+    () => [...projects].sort((a, b) => a.name.localeCompare(b.name)),
+    [projects],
+  )
   const projectMap = useMemo(() => {
     const map = new Map<string, string>()
-    for (const p of projects) map.set(p.id, p.name)
+    for (const p of sortedProjects) {
+      map.set(p.id, p.name)
+      map.set(p.slug, p.name)
+    }
     return map
-  }, [projects])
+  }, [sortedProjects])
 
   // Group documents by project
   const grouped = useMemo(() => {
@@ -335,8 +342,8 @@ export default function KnowledgePage() {
           >
             <option value="all">All projects</option>
             <option value="global">Global only</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
+            {sortedProjects.map((p) => (
+              <option key={p.id} value={p.slug}>{p.name}</option>
             ))}
           </select>
 
@@ -446,7 +453,7 @@ export default function KnowledgePage() {
       {/* Create Dialog */}
       {showCreate && (
         <CreateDocumentDialog
-          projects={projects}
+          projects={sortedProjects}
           onSubmit={handleCreate}
           onCancel={() => setShowCreate(false)}
         />

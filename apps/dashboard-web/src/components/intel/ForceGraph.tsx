@@ -24,6 +24,24 @@ interface GraphLink extends d3.SimulationLinkDatum<GraphNode> {
   weight?: number
 }
 
+interface TracePinnedNode {
+  id: string
+  name: string
+  type: string
+  edge?: string
+  direction: 'upstream' | 'downstream'
+  offsetX: number
+  offsetY: number
+  isAnchor?: boolean
+}
+
+interface TracePinnedLink {
+  id: string
+  sourceId: string
+  targetId: string
+  direction: 'upstream' | 'downstream'
+}
+
 interface ForceGraphProps {
   projectName: string
   clusters: Array<{ id: string | null; name: string; symbols: number }>
@@ -32,12 +50,15 @@ interface ForceGraphProps {
   knowledgeChunks: number
   crossLinks: Array<{ source: string; target: string; weight: number }>
   onNodeClick: (nodeId: string, variant: string) => void
+  onTraceSymbolClick?: (symbolName: string) => void
   selectedClusterId: string | null
   selectedProcessName: string | null
   selectedBranchSymbol?: string | null
   branchTrace?: {
     upstream: Array<{ name: string; type: string; edge: string }>
     downstream: Array<{ name: string; type: string; edge: string }>
+    upstreamChains: Array<Array<{ name: string; type: string; edge?: string }>>
+    downstreamChains: Array<Array<{ name: string; type: string; edge?: string }>>
   } | null
   focusMode?: boolean
   clusterMembers?: Array<{ name: string; type: string; filePath?: string }>
@@ -341,6 +362,219 @@ function MiniMap({
   )
 }
 
+function buildPinnedTraceGraph(
+  symbolName: string,
+  branchTrace: NonNullable<ForceGraphProps['branchTrace']>,
+): { nodes: TracePinnedNode[]; links: TracePinnedLink[] } {
+  const laneHeight = 72
+  const horizontalStep = 132
+  const nodes: TracePinnedNode[] = [
+    {
+      id: 'anchor',
+      name: symbolName,
+      type: 'Symbol',
+      direction: 'downstream',
+      offsetX: 0,
+      offsetY: 0,
+      isAnchor: true,
+    },
+  ]
+  const links: TracePinnedLink[] = []
+
+  const upstreamChains = branchTrace.upstreamChains.slice(0, 3)
+  const downstreamChains = branchTrace.downstreamChains.slice(0, 3)
+
+  const laneOffsetY = (index: number, total: number) => {
+    const stackHeight = Math.max(total - 1, 0) * laneHeight
+    return index * laneHeight - stackHeight / 2
+  }
+
+  upstreamChains.forEach((chain, chainIndex) => {
+    const laneY = laneOffsetY(chainIndex, upstreamChains.length)
+    let previousId = 'anchor'
+    chain.slice(1).forEach((node, nodeIndex) => {
+      const currentId = `upstream-${chainIndex}-${nodeIndex}`
+      nodes.push({
+        id: currentId,
+        name: node.name,
+        type: node.type,
+        edge: node.edge,
+        direction: 'upstream',
+        offsetX: -(nodeIndex + 1) * horizontalStep,
+        offsetY: laneY,
+      })
+      links.push({
+        id: `${previousId}->${currentId}`,
+        sourceId: previousId,
+        targetId: currentId,
+        direction: 'upstream',
+      })
+      previousId = currentId
+    })
+  })
+
+  downstreamChains.forEach((chain, chainIndex) => {
+    const laneY = laneOffsetY(chainIndex, downstreamChains.length)
+    let previousId = 'anchor'
+    chain.slice(1).forEach((node, nodeIndex) => {
+      const currentId = `downstream-${chainIndex}-${nodeIndex}`
+      nodes.push({
+        id: currentId,
+        name: node.name,
+        type: node.type,
+        edge: node.edge,
+        direction: 'downstream',
+        offsetX: (nodeIndex + 1) * horizontalStep,
+        offsetY: laneY,
+      })
+      links.push({
+        id: `${previousId}->${currentId}`,
+        sourceId: previousId,
+        targetId: currentId,
+        direction: 'downstream',
+      })
+      previousId = currentId
+    })
+  })
+
+  return { nodes, links }
+}
+
+function TraceCanvas({
+  symbolName,
+  branchTrace,
+  onTraceSymbolClick,
+}: {
+  symbolName: string
+  branchTrace: NonNullable<ForceGraphProps['branchTrace']>
+  onTraceSymbolClick?: (symbolName: string) => void
+}) {
+  const laneHeight = 74
+  const centerWidth = 172
+  const nodeWidth = 128
+  const nodeHeight = 44
+  const gap = 22
+  const chainGap = 10
+  const laneCount = Math.max(branchTrace.upstreamChains.length, branchTrace.downstreamChains.length, 1)
+  const width = 920
+  const height = 72 + laneCount * laneHeight
+  const centerX = width / 2
+  const centerY = height / 2
+
+  const upstreamChains = branchTrace.upstreamChains.slice(0, 4)
+  const downstreamChains = branchTrace.downstreamChains.slice(0, 4)
+  const hasTraceChains = upstreamChains.length > 0 || downstreamChains.length > 0
+
+  const laneY = (index: number, total: number) => {
+    const stackHeight = Math.max(total, 1) * laneHeight
+    return centerY - stackHeight / 2 + laneHeight / 2 + index * laneHeight
+  }
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className={styles.traceCanvas}>
+      <defs>
+        <linearGradient id="traceLineUp" x1="1" y1="0" x2="0" y2="0">
+          <stop offset="0%" stopColor="rgba(251,191,36,0.9)" />
+          <stop offset="100%" stopColor="rgba(125,211,252,0.35)" />
+        </linearGradient>
+        <linearGradient id="traceLineDown" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor="rgba(251,191,36,0.9)" />
+          <stop offset="100%" stopColor="rgba(125,211,252,0.35)" />
+        </linearGradient>
+        <filter id="traceNodeGlow">
+          <feGaussianBlur stdDeviation="6" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+        <marker id="traceArrowUp" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+          <path d="M 0 1 L 8 5 L 0 9 z" fill="rgba(251,191,36,0.85)" />
+        </marker>
+        <marker id="traceArrowDown" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+          <path d="M 0 1 L 8 5 L 0 9 z" fill="rgba(125,211,252,0.85)" />
+        </marker>
+      </defs>
+
+      <rect x={centerX - centerWidth / 2} y={centerY - nodeHeight / 2} width={centerWidth} height={nodeHeight} rx="18" className={styles.traceCanvasCore} />
+      <text x={centerX} y={centerY - 3} textAnchor="middle" className={styles.traceCanvasName}>{symbolName}</text>
+      <text x={centerX} y={centerY + 14} textAnchor="middle" className={styles.traceCanvasMeta}>Current symbol</text>
+
+      {upstreamChains.map((chain, chainIndex) => {
+        const y = laneY(chainIndex, upstreamChains.length)
+        const nodes = chain.slice(1)
+        return nodes.map((node, nodeIndex) => {
+          const x = centerX - centerWidth / 2 - gap - nodeWidth - nodeIndex * (nodeWidth + chainGap)
+          const targetX = nodeIndex === 0 ? centerX - centerWidth / 2 : x + nodeWidth + chainGap
+          const targetY = nodeIndex === 0 ? centerY : y
+          const lineStartX = x + nodeWidth
+          const lineEndX = targetX
+          return (
+            <g
+              key={`upstream-${chainIndex}-${node.name}-${nodeIndex}`}
+              className={styles.traceCanvasNodeGroup}
+              onClick={() => onTraceSymbolClick?.(node.name)}
+            >
+              <path
+                d={`M ${lineStartX} ${y} C ${lineStartX + 10} ${y}, ${lineEndX - 12} ${targetY}, ${lineEndX} ${targetY}`}
+                className={styles.traceCanvasLineUp}
+                markerEnd="url(#traceArrowUp)"
+              />
+              <rect x={x} y={y - nodeHeight / 2} width={nodeWidth} height={nodeHeight} rx="16" className={styles.traceCanvasNode} />
+              <text x={x + 12} y={y - 8} textAnchor="start" className={styles.traceCanvasBadge}>L{nodeIndex + 1}</text>
+              <text x={x + nodeWidth / 2} y={y - 3} textAnchor="middle" className={styles.traceCanvasName}>
+                {node.name.length > 18 ? `${node.name.slice(0, 17)}…` : node.name}
+              </text>
+              <text x={x + nodeWidth / 2} y={y + 12} textAnchor="middle" className={styles.traceCanvasMeta}>
+                {node.edge ?? node.type}
+              </text>
+            </g>
+          )
+        })
+      })}
+
+      {downstreamChains.map((chain, chainIndex) => {
+        const y = laneY(chainIndex, downstreamChains.length)
+        const nodes = chain.slice(1)
+        return nodes.map((node, nodeIndex) => {
+          const x = centerX + centerWidth / 2 + gap + nodeIndex * (nodeWidth + chainGap)
+          const sourceX = nodeIndex === 0 ? centerX + centerWidth / 2 : x - chainGap
+          const sourceY = nodeIndex === 0 ? centerY : y
+          const lineStartX = sourceX
+          const lineEndX = x
+          return (
+            <g
+              key={`downstream-${chainIndex}-${node.name}-${nodeIndex}`}
+              className={styles.traceCanvasNodeGroup}
+              onClick={() => onTraceSymbolClick?.(node.name)}
+            >
+              <path
+                d={`M ${lineStartX} ${sourceY} C ${lineStartX + 12} ${sourceY}, ${lineEndX - 8} ${y}, ${lineEndX} ${y}`}
+                className={styles.traceCanvasLineDown}
+                markerEnd="url(#traceArrowDown)"
+              />
+              <rect x={x} y={y - nodeHeight / 2} width={nodeWidth} height={nodeHeight} rx="16" className={styles.traceCanvasNode} />
+              <text x={x + 12} y={y - 8} textAnchor="start" className={styles.traceCanvasBadge}>L{nodeIndex + 1}</text>
+              <text x={x + nodeWidth / 2} y={y - 3} textAnchor="middle" className={styles.traceCanvasName}>
+                {node.name.length > 18 ? `${node.name.slice(0, 17)}…` : node.name}
+              </text>
+              <text x={x + nodeWidth / 2} y={y + 12} textAnchor="middle" className={styles.traceCanvasMeta}>
+                {node.edge ?? node.type}
+              </text>
+            </g>
+          )
+        })
+      })}
+
+      {!hasTraceChains && (
+        <text x={centerX} y={height - 18} textAnchor="middle" className={styles.traceCanvasEmpty}>
+          No upstream or downstream chain matched the active edge filters.
+        </text>
+      )}
+    </svg>
+  )
+}
+
 /* ── Component ── */
 
 export default function ForceGraph({
@@ -351,6 +585,7 @@ export default function ForceGraph({
   knowledgeChunks,
   crossLinks,
   onNodeClick,
+  onTraceSymbolClick,
   selectedClusterId,
   selectedProcessName,
   selectedBranchSymbol,
@@ -394,6 +629,11 @@ export default function ForceGraph({
     }
   }, [])
 
+  const pinnedTraceGraph = useMemo(
+    () => (selectedBranchSymbol && branchTrace ? buildPinnedTraceGraph(selectedBranchSymbol, branchTrace) : null),
+    [branchTrace, selectedBranchSymbol],
+  )
+
   const renderGraph = useCallback(() => {
     const svg = svgRef.current
     const container = containerRef.current
@@ -410,6 +650,8 @@ export default function ForceGraph({
       .attr('height', height)
       .attr('viewBox', `${-width / 2} ${-height / 2} ${width} ${height}`)
 
+    const contentLayer = svgSel.append('g').attr('class', styles.viewportLayer ?? '')
+
     /* Defs: gradients, filters */
     const defs = svgSel.append('defs')
 
@@ -422,6 +664,18 @@ export default function ForceGraph({
       .join('feMergeNode')
       .attr('in', (d) => d)
 
+    defs
+      .append('marker')
+      .attr('id', 'trace-flow-arrow')
+      .attr('markerWidth', 10)
+      .attr('markerHeight', 10)
+      .attr('refX', 8)
+      .attr('refY', 5)
+      .attr('orient', 'auto')
+      .append('path')
+      .attr('d', 'M 0 1 L 8 5 L 0 9 z')
+      .attr('fill', 'rgba(251, 191, 36, 0.9)')
+
     /* Background gradient */
     const bgGrad = defs.append('radialGradient').attr('id', 'graph-bg').attr('cx', '50%').attr('cy', '40%').attr('r', '60%')
     bgGrad.append('stop').attr('offset', '0%').attr('stop-color', 'rgba(124, 58, 237, 0.06)')
@@ -433,7 +687,7 @@ export default function ForceGraph({
       .attr('fill', 'url(#graph-bg)')
       .attr('rx', 24)
 
-    const guideGroup = svgSel.append('g').attr('class', 'guides')
+    const guideGroup = contentLayer.append('g').attr('class', 'guides')
     ;[HUB_RING_RADIUS, CLUSTER_RING_RADIUS, PROCESS_RING_RADIUS].forEach((radius, index) => {
       guideGroup
         .append('circle')
@@ -475,7 +729,7 @@ export default function ForceGraph({
       .force('y', d3.forceY<GraphNode>((d) => d.anchorY ?? 0).strength((d) => d.variant === 'root' ? 1 : 0.28))
 
     /* Links */
-    const link = svgSel
+    const link = contentLayer
       .append('g')
       .attr('class', 'links')
       .selectAll('line')
@@ -494,7 +748,62 @@ export default function ForceGraph({
       })
 
     /* Node groups */
-    const nodeGroup = svgSel
+    const traceData = pinnedTraceGraph
+    let traceLink: d3.Selection<SVGPathElement, TracePinnedLink, SVGGElement, unknown> | null = null
+    let traceNodeGroup: d3.Selection<SVGGElement, TracePinnedNode, SVGGElement, unknown> | null = null
+
+    if (traceData) {
+      const traceLayer = contentLayer.append('g').attr('class', styles.traceGraphLayer ?? '')
+
+      traceLink = traceLayer
+        .append('g')
+        .attr('class', styles.traceGraphLinks ?? '')
+        .selectAll<SVGPathElement, TracePinnedLink>('path')
+        .data(traceData.links)
+        .join('path')
+        .attr('class', (d) => (d.direction === 'upstream' ? styles.traceGraphLinkUp : styles.traceGraphLinkDown) ?? '')
+        .attr('markerEnd', 'url(#trace-flow-arrow)')
+
+      traceNodeGroup = traceLayer
+        .append('g')
+        .attr('class', styles.traceGraphNodes ?? '')
+        .selectAll<SVGGElement, TracePinnedNode>('g')
+        .data(traceData.nodes)
+        .join('g')
+        .attr('class', (d) => `${styles.traceGraphNodeGroup ?? ''} ${d.isAnchor ? styles.traceGraphAnchorGroup ?? '' : ''}`.trim())
+
+      traceNodeGroup
+        .append('circle')
+        .attr('r', (d) => (d.isAnchor ? 16 : 10))
+        .attr('class', (d) => {
+          if (d.isAnchor) return styles.traceGraphAnchor ?? ''
+          return (d.direction === 'upstream' ? styles.traceGraphNodeUp : styles.traceGraphNodeDown) ?? ''
+        })
+
+      traceNodeGroup
+        .append('text')
+        .attr('class', styles.traceGraphLabel ?? '')
+        .attr('text-anchor', 'middle')
+        .attr('dy', (d) => (d.isAnchor ? '-1.55em' : '-1.35em'))
+        .text((d) => (d.name.length > 16 ? `${d.name.slice(0, 15)}…` : d.name))
+
+      traceNodeGroup
+        .append('text')
+        .attr('class', styles.traceGraphMeta ?? '')
+        .attr('text-anchor', 'middle')
+        .attr('dy', (d) => (d.isAnchor ? '2.45em' : '2.2em'))
+        .text((d) => d.isAnchor ? 'focused' : (d.edge ?? d.type))
+
+      traceNodeGroup
+        .filter((d) => !d.isAnchor)
+        .on('click', (_event, d) => {
+          onTraceSymbolClick?.(d.name)
+        })
+
+      traceNodeGroup.append('title').text((d) => d.isAnchor ? d.name : `${d.name}\n${d.edge ?? d.type}`)
+    }
+
+    const nodeGroup = contentLayer
       .append('g')
       .attr('class', 'nodes')
       .selectAll<SVGGElement, GraphNode>('g')
@@ -630,7 +939,7 @@ export default function ForceGraph({
         d3.select(this).select('circle')
           .transition().duration(200)
           .attr('stroke-opacity', 0.7)
-          .attr('stroke-width', isSelected ? 3 : 1.5)
+          .attr('stroke-width', selectedBranchSymbol && d.label === selectedBranchSymbol ? 3.5 : isSelected ? 3 : 1.5)
       })
 
     /* Tooltip */
@@ -644,6 +953,40 @@ export default function ForceGraph({
         .attr('x2', (d) => (d.target as GraphNode).x ?? 0)
         .attr('y2', (d) => (d.target as GraphNode).y ?? 0)
 
+      if (traceLink && traceNodeGroup && traceData) {
+        const anchorNode = graphNodes.find((node) => node.label === selectedBranchSymbol)
+        if (anchorNode && anchorNode.x != null && anchorNode.y != null) {
+          const tracePositions = new Map<string, { x: number; y: number }>()
+          traceData.nodes.forEach((node) => {
+            tracePositions.set(node.id, {
+              x: (anchorNode.x ?? 0) + node.offsetX,
+              y: (anchorNode.y ?? 0) + node.offsetY,
+            })
+          })
+
+          traceLink
+            .attr('opacity', 1)
+            .attr('d', (d) => {
+              const source = tracePositions.get(d.sourceId)
+              const target = tracePositions.get(d.targetId)
+              if (!source || !target) return ''
+              const bend = d.direction === 'upstream' ? -22 : 22
+              const midX = (source.x + target.x) / 2
+              return `M ${source.x} ${source.y} C ${midX + bend} ${source.y}, ${midX - bend} ${target.y}, ${target.x} ${target.y}`
+            })
+
+          traceNodeGroup
+            .attr('opacity', 1)
+            .attr('transform', (d) => {
+              const position = tracePositions.get(d.id)
+              return `translate(${position?.x ?? 0}, ${position?.y ?? 0})`
+            })
+        } else {
+          traceLink.attr('opacity', 0)
+          traceNodeGroup.attr('opacity', 0)
+        }
+      }
+
       nodeGroup.attr('transform', (d) => `translate(${d.x ?? 0}, ${d.y ?? 0})`)
     })
 
@@ -652,8 +995,7 @@ export default function ForceGraph({
       .zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.3, 3])
       .on('zoom', (event) => {
-        svgSel.select('g.nodes').attr('transform', event.transform)
-        svgSel.select('g.links').attr('transform', event.transform)
+        contentLayer.attr('transform', event.transform.toString())
       })
 
     svgSel.call(zoom)
@@ -661,7 +1003,7 @@ export default function ForceGraph({
     return () => {
       simulation.stop()
     }
-  }, [focusMode, focusSets.linkKeys, focusSets.nodeIds, graphNodes, graphLinks, selectedBranchSymbol, selectedClusterId, selectedProcessName, onNodeClick, nodeRadius])
+  }, [focusMode, focusSets.linkKeys, focusSets.nodeIds, graphNodes, graphLinks, onNodeClick, onTraceSymbolClick, nodeRadius, pinnedTraceGraph, selectedBranchSymbol, selectedClusterId, selectedProcessName])
 
   useEffect(() => {
     const cleanup = renderGraph()
@@ -697,41 +1039,13 @@ export default function ForceGraph({
             <div className={styles.traceHeader}>
               <span className={styles.traceKicker}>Canvas Trace</span>
               <span className={styles.traceSymbol}>{selectedBranchSymbol}</span>
+              <span className={styles.traceHint}>Click a node to trace deeper</span>
             </div>
-            <div className={styles.traceGrid}>
-              <div className={styles.traceColumn}>
-                <div className={styles.traceColumnTitle}>Before</div>
-                <div className={styles.traceStack}>
-                  {branchTrace.upstream.length > 0 ? branchTrace.upstream.slice(0, 4).map((item) => (
-                    <div key={`trace-up-${item.name}-${item.edge}`} className={styles.traceNode}>
-                      <span className={styles.traceNodeName}>{item.name}</span>
-                      <span className={styles.traceEdge}>{item.edge}</span>
-                      <span className={styles.traceType}>{item.type}</span>
-                    </div>
-                  )) : <div className={styles.traceEmpty}>No upstream matches</div>}
-                </div>
-              </div>
-              <div className={styles.traceCore}>
-                <div className={styles.traceConnector} />
-                <div className={`${styles.traceNode} ${styles.traceNodeActive}`}>
-                  <span className={styles.traceNodeName}>{selectedBranchSymbol}</span>
-                  <span className={styles.traceType}>Current symbol</span>
-                </div>
-                <div className={styles.traceConnector} />
-              </div>
-              <div className={styles.traceColumn}>
-                <div className={styles.traceColumnTitle}>After</div>
-                <div className={styles.traceStack}>
-                  {branchTrace.downstream.length > 0 ? branchTrace.downstream.slice(0, 4).map((item) => (
-                    <div key={`trace-down-${item.name}-${item.edge}`} className={styles.traceNode}>
-                      <span className={styles.traceNodeName}>{item.name}</span>
-                      <span className={styles.traceEdge}>{item.edge}</span>
-                      <span className={styles.traceType}>{item.type}</span>
-                    </div>
-                  )) : <div className={styles.traceEmpty}>No downstream matches</div>}
-                </div>
-              </div>
-            </div>
+            <TraceCanvas
+              symbolName={selectedBranchSymbol}
+              branchTrace={branchTrace}
+              onTraceSymbolClick={onTraceSymbolClick}
+            />
           </div>
         )}
         <MiniMap

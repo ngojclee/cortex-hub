@@ -12,7 +12,7 @@ import type { VectorStoreConfig } from '@cortex/shared-mem9'
 import { db } from '../db/client.js'
 import { createLogger } from '@cortex/shared-utils'
 import { resolveEmbeddingConfig } from '../services/embedding-config.js'
-import { ensureProjectExists } from '../db/utils.js'
+import { ensureProjectExists, normalizeProjectReference } from '../db/utils.js'
 
 const logger = createLogger('knowledge')
 
@@ -60,10 +60,35 @@ function getVectorStore(): VectorStore {
   return new VectorStore(config)
 }
 
+async function syncChunkProjectPayload(documentId: string, projectId: string | null): Promise<void> {
+  const chunkIds = db.prepare(
+    'SELECT id FROM knowledge_chunks WHERE document_id = ?'
+  ).all(documentId) as Array<{ id: string }>
+
+  if (chunkIds.length === 0) return
+
+  const res = await fetch(`${QDRANT_URL}/collections/${COLLECTION}/points/payload`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      payload: {
+        project_id: projectId ?? '',
+      },
+      points: chunkIds.map((chunk) => chunk.id),
+    }),
+    signal: AbortSignal.timeout(10000),
+  })
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '')
+    throw new Error(`Qdrant payload update failed: ${errText || res.status}`)
+  }
+}
+
 // ── GET / — List documents ──
 knowledgeRouter.get('/', (c) => {
   const tag = c.req.query('tag')
-  const projectId = c.req.query('projectId')
+  const projectId = normalizeProjectReference(c.req.query('projectId') ?? c.req.query('project_id'))
   const status = c.req.query('status') ?? 'active'
   const limit = Number(c.req.query('limit') ?? 500)
   const offset = Number(c.req.query('offset') ?? 0)
@@ -105,11 +130,12 @@ knowledgeRouter.get('/', (c) => {
 knowledgeRouter.post('/', async (c) => {
   try {
     const body = await c.req.json()
-    const { title, content, tags, projectId, sourceAgentId, source } = body as {
+    const { title, content, tags, sourceAgentId, source } = body as {
       title: string
       content: string
       tags?: string[]
       projectId?: string
+      project_id?: string
       sourceAgentId?: string
       source?: string
     }
@@ -123,7 +149,7 @@ knowledgeRouter.post('/', async (c) => {
     const contentPreview = content.slice(0, 500)
 
     // Normalize project_id: resolve proj-* to slug, and lowercase, and auto-register project
-    let normalizedProjectId = projectId ?? null
+    let normalizedProjectId = (body.projectId ?? body.project_id) ?? null
     if (normalizedProjectId) {
       normalizedProjectId = ensureProjectExists(normalizedProjectId)
     }
@@ -201,28 +227,46 @@ knowledgeRouter.get('/:id', (c) => {
 
 // ── PUT /:id — Update metadata ──
 knowledgeRouter.put('/:id', async (c) => {
-  const id = c.req.param('id')
-  const body = await c.req.json()
-  const { title, tags, status, project_id } = body as { title?: string; tags?: string[]; status?: string; project_id?: string }
+  try {
+    const id = c.req.param('id')
+    const body = await c.req.json()
+    const { title, tags, status } = body as {
+      title?: string
+      tags?: string[]
+      status?: string
+      project_id?: string | null
+      projectId?: string | null
+    }
 
-  const existing = db.prepare('SELECT id FROM knowledge_documents WHERE id = ?').get(id)
-  if (!existing) return c.json({ error: 'Document not found' }, 404)
+    const existing = db.prepare('SELECT id FROM knowledge_documents WHERE id = ?').get(id)
+    if (!existing) return c.json({ error: 'Document not found' }, 404)
 
-  if (title) {
-    db.prepare("UPDATE knowledge_documents SET title = ?, updated_at = datetime('now') WHERE id = ?").run(title, id)
-  }
-  if (tags) {
-    db.prepare("UPDATE knowledge_documents SET tags = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(tags), id)
-  }
-  if (status) {
-    db.prepare("UPDATE knowledge_documents SET status = ?, updated_at = datetime('now') WHERE id = ?").run(status, id)
-  }
-  if (project_id !== undefined) {
-    db.prepare("UPDATE knowledge_documents SET project_id = ?, updated_at = datetime('now') WHERE id = ?").run(project_id, id)
-  }
+    if (title) {
+      db.prepare("UPDATE knowledge_documents SET title = ?, updated_at = datetime('now') WHERE id = ?").run(title, id)
+    }
+    if (tags) {
+      db.prepare("UPDATE knowledge_documents SET tags = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(tags), id)
+    }
+    if (status) {
+      db.prepare("UPDATE knowledge_documents SET status = ?, updated_at = datetime('now') WHERE id = ?").run(status, id)
+    }
 
-  const doc = db.prepare('SELECT * FROM knowledge_documents WHERE id = ?').get(id)
-  return c.json(doc)
+    const requestedProject = body.projectId ?? body.project_id
+    if (requestedProject !== undefined) {
+      const normalizedProjectId = requestedProject
+        ? ensureProjectExists(requestedProject)
+        : null
+
+      db.prepare("UPDATE knowledge_documents SET project_id = ?, updated_at = datetime('now') WHERE id = ?").run(normalizedProjectId, id)
+      await syncChunkProjectPayload(id, normalizedProjectId)
+    }
+
+    const doc = db.prepare('SELECT * FROM knowledge_documents WHERE id = ?').get(id)
+    return c.json(doc)
+  } catch (error) {
+    logger.error(`Update knowledge failed: ${String(error)}`)
+    return c.json({ error: String(error) }, 500)
+  }
 })
 
 // ── DELETE /:id — Delete document + chunks + Qdrant points ──
@@ -257,10 +301,11 @@ knowledgeRouter.delete('/:id', async (c) => {
 knowledgeRouter.post('/search', async (c) => {
   try {
     const body = await c.req.json()
-    const { query, tags, projectId, limit } = body as {
+    const { query, tags, limit } = body as {
       query: string
       tags?: string[]
       projectId?: string
+      project_id?: string
       limit?: number
     }
 
@@ -271,8 +316,9 @@ knowledgeRouter.post('/search', async (c) => {
 
     // Build Qdrant filter
     const must: Array<Record<string, unknown>> = []
-    if (projectId) {
-      must.push({ key: 'project_id', match: { value: projectId } })
+    const normalizedProjectId = normalizeProjectReference(body.projectId ?? body.project_id)
+    if (normalizedProjectId) {
+      must.push({ key: 'project_id', match: { value: normalizedProjectId } })
     }
     if (tags && tags.length > 0) {
       for (const tag of tags) {

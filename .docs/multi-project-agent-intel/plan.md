@@ -69,6 +69,16 @@ No code changes required — all actions use existing API endpoints.
 - Add edge-semantic filters shared by UI and backend traversal (`CALLS`, `IMPORTS`, `EXTENDS`, `IMPLEMENTS`, `ACCESSES`)
 - Preserve navigation state with breadcrumb + minimap
 - Add analysis presets so operators and AI can switch between overview, dependency lens, and type-system lens quickly
+- Extend symbol tracing beyond the sidebar by rendering SVG before/after chains directly on canvas
+- Let operators click nodes inside the trace overlay to recurse deeper without leaving the graph
+
+### Current Progress Snapshot
+- Orbit hub layout, branch focus mode, edge filters, breadcrumb, minimap, analysis presets, branch drill-down, and symbol-level canvas emphasis are already in place
+- The canvas trace layer now renders richer SVG relation chains, supports click-through tracing on trace nodes, and mirrors the active branch chain directly into the main graph layer
+
+### Nearest Destination
+- Polish trace navigation with clearer active-state transitions and deeper symbol handoff on repeated clicks
+- Validate the upgraded graph UX against live project data after deployment
 
 ### Destination
 Transform `/graph` from a pretty architecture overview into a working analysis surface that helps AI and humans answer:

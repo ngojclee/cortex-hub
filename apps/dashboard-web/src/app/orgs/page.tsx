@@ -173,7 +173,7 @@ function ProjectCard({
         <div className={styles.indexStatusGrid}>
           <div className={styles.indexStatusRow}>
             <span className={styles.indexStatusLabel}>🔍 GitNexus</span>
-            <span className={`badge badge-${gnStatus!.className}`}>{gnStatus!.label}</span>
+            <span className={`badge badge-${gnStatus?.className ?? 'muted'}`}>{gnStatus?.label ?? '— Unknown'}</span>
             {enriched.gitnexus.status === 'done' && (
               <span className={styles.indexStatusDetail}>
                 {formatNumber(enriched.gitnexus.symbols)} symbols · {formatNumber(enriched.gitnexus.files)} files
@@ -182,7 +182,7 @@ function ProjectCard({
           </div>
           <div className={styles.indexStatusRow}>
             <span className={styles.indexStatusLabel}>🧠 Mem9</span>
-            <span className={`badge badge-${m9Status!.className}`}>{m9Status!.label}</span>
+            <span className={`badge badge-${m9Status?.className ?? 'muted'}`}>{m9Status?.label ?? '— Unknown'}</span>
             {(enriched.mem9.status === 'done' || enriched.mem9.chunks > 0) && (
               <span className={styles.indexStatusDetail}>
                 {formatNumber(enriched.mem9.chunks)} chunks

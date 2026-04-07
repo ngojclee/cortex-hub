@@ -1035,6 +1035,7 @@ export default function GraphPage() {
                 selectedClusterId={selectedCluster}
                 selectedProcessName={selectedProcess}
                 selectedBranchSymbol={selectedBranchSymbol}
+                branchTrace={branchDrilldown}
                 focusMode={focusMode}
                 clusterMembers={clusterMembersData?.data?.members}
                 processSteps={processDetail?.steps.map((s, i) => ({ name: s.name, type: s.type ?? 'step', filePath: s.filePath ?? undefined, index: i + 1 }))}

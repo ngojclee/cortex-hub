@@ -31,6 +31,7 @@
 - [x] Add analysis presets for overview / dependency / type-system lenses
 - [x] Deepen branch drill-down so selected slices expose before/after relationships more directly
 - [x] Add symbol-level canvas emphasis so traced members/steps are highlighted directly on the graph
+- [x] Add mini before/after chain overlay directly on the graph canvas for traced symbols
 - [x] Typecheck: pnpm --filter @cortex/dashboard-api typecheck ✅
 - [x] Typecheck: pnpm --filter @cortex/dashboard-web typecheck ✅
 

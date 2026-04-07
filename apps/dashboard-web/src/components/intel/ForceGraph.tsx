@@ -35,6 +35,10 @@ interface ForceGraphProps {
   selectedClusterId: string | null
   selectedProcessName: string | null
   selectedBranchSymbol?: string | null
+  branchTrace?: {
+    upstream: Array<{ name: string; type: string; edge: string }>
+    downstream: Array<{ name: string; type: string; edge: string }>
+  } | null
   focusMode?: boolean
   clusterMembers?: Array<{ name: string; type: string; filePath?: string }>
   processSteps?: Array<{ name: string; type: string; filePath?: string; index?: number }>
@@ -350,6 +354,7 @@ export default function ForceGraph({
   selectedClusterId,
   selectedProcessName,
   selectedBranchSymbol,
+  branchTrace,
   focusMode = false,
   clusterMembers,
   processSteps,
@@ -687,6 +692,48 @@ export default function ForceGraph({
       </div>
       <div ref={containerRef} className={styles.graphViewport}>
         <svg ref={svgRef} className={styles.graphSvg} role="img" aria-label="Project dependency graph" />
+        {selectedBranchSymbol && branchTrace && (
+          <div className={styles.traceOverlay}>
+            <div className={styles.traceHeader}>
+              <span className={styles.traceKicker}>Canvas Trace</span>
+              <span className={styles.traceSymbol}>{selectedBranchSymbol}</span>
+            </div>
+            <div className={styles.traceGrid}>
+              <div className={styles.traceColumn}>
+                <div className={styles.traceColumnTitle}>Before</div>
+                <div className={styles.traceStack}>
+                  {branchTrace.upstream.length > 0 ? branchTrace.upstream.slice(0, 4).map((item) => (
+                    <div key={`trace-up-${item.name}-${item.edge}`} className={styles.traceNode}>
+                      <span className={styles.traceNodeName}>{item.name}</span>
+                      <span className={styles.traceEdge}>{item.edge}</span>
+                      <span className={styles.traceType}>{item.type}</span>
+                    </div>
+                  )) : <div className={styles.traceEmpty}>No upstream matches</div>}
+                </div>
+              </div>
+              <div className={styles.traceCore}>
+                <div className={styles.traceConnector} />
+                <div className={`${styles.traceNode} ${styles.traceNodeActive}`}>
+                  <span className={styles.traceNodeName}>{selectedBranchSymbol}</span>
+                  <span className={styles.traceType}>Current symbol</span>
+                </div>
+                <div className={styles.traceConnector} />
+              </div>
+              <div className={styles.traceColumn}>
+                <div className={styles.traceColumnTitle}>After</div>
+                <div className={styles.traceStack}>
+                  {branchTrace.downstream.length > 0 ? branchTrace.downstream.slice(0, 4).map((item) => (
+                    <div key={`trace-down-${item.name}-${item.edge}`} className={styles.traceNode}>
+                      <span className={styles.traceNodeName}>{item.name}</span>
+                      <span className={styles.traceEdge}>{item.edge}</span>
+                      <span className={styles.traceType}>{item.type}</span>
+                    </div>
+                  )) : <div className={styles.traceEmpty}>No downstream matches</div>}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         <MiniMap
           nodes={graphNodes}
           selectedClusterId={selectedClusterId}

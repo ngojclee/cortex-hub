@@ -31,6 +31,7 @@ interface ForceGraphProps {
   crossLinks: Array<{ source: string; target: string; weight: number }>
   onNodeClick: (nodeId: string, variant: string) => void
   selectedClusterId: string | null
+  selectedProcessName: string | null
   clusterMembers?: Array<{ name: string; type: string; filePath?: string }>
   processSteps?: Array<{ name: string; type: string; filePath?: string; index?: number }>
 }
@@ -69,6 +70,7 @@ function buildGraphData(
   knowledgeChunks: number,
   crossLinks: ForceGraphProps['crossLinks'],
   selectedClusterId: string | null,
+  selectedProcessName: string | null,
   clusterMembers?: ForceGraphProps['clusterMembers'],
   processSteps?: ForceGraphProps['processSteps'],
 ): { nodes: GraphNode[]; links: GraphLink[] } {
@@ -154,11 +156,13 @@ function buildGraphData(
   }
 
   /* Expanded process steps */
-  if (selectedClusterId && processSteps?.length) {
-    const processNode = nodes.find(n => n.variant === 'process')
+  if (selectedProcessName && processSteps?.length) {
+    const processNode = nodes.find(
+      n => n.variant === 'process' && (n.id === selectedProcessName || n.label === selectedProcessName),
+    )
     if (processNode) {
       processSteps.slice(0, 12).forEach((s, i) => {
-        const sid = `step-${i}`
+        const sid = `step-${processNode.id}-${i}`
         nodes.push({
           id: sid,
           label: truncateLabel(s.name, 16),
@@ -184,6 +188,7 @@ export default function ForceGraph({
   crossLinks,
   onNodeClick,
   selectedClusterId,
+  selectedProcessName,
   clusterMembers,
   processSteps,
 }: ForceGraphProps) {
@@ -200,10 +205,11 @@ export default function ForceGraph({
         knowledgeChunks,
         crossLinks,
         selectedClusterId,
+        selectedProcessName,
         clusterMembers,
         processSteps,
       ),
-    [projectName, clusters, processes, knowledgeDocs, knowledgeChunks, crossLinks, selectedClusterId, clusterMembers, processSteps],
+    [projectName, clusters, processes, knowledgeDocs, knowledgeChunks, crossLinks, selectedClusterId, selectedProcessName, clusterMembers, processSteps],
   )
 
   const nodeRadius = useCallback((d: GraphNode) => {
@@ -336,16 +342,31 @@ export default function ForceGraph({
       .attr('r', (d) => nodeRadius(d))
       .attr('fill', (d) => VARIANT_COLORS[d.variant] ?? '#64748b')
       .attr('stroke', (d) => {
-        if (d.id === selectedClusterId || d.label === selectedClusterId) return '#facc15'
+        if (
+          d.id === selectedClusterId ||
+          d.label === selectedClusterId ||
+          d.id === selectedProcessName ||
+          d.label === selectedProcessName
+        ) return '#facc15'
         return VARIANT_STROKE[d.variant] ?? '#94a3b8'
       })
       .attr('stroke-width', (d) => {
-        if (d.id === selectedClusterId || d.label === selectedClusterId) return 3
+        if (
+          d.id === selectedClusterId ||
+          d.label === selectedClusterId ||
+          d.id === selectedProcessName ||
+          d.label === selectedProcessName
+        ) return 3
         return 1.5
       })
       .attr('stroke-opacity', 0.7)
       .attr('filter', (d) => {
-        if (d.id === selectedClusterId || d.label === selectedClusterId) return 'url(#node-glow)'
+        if (
+          d.id === selectedClusterId ||
+          d.label === selectedClusterId ||
+          d.id === selectedProcessName ||
+          d.label === selectedProcessName
+        ) return 'url(#node-glow)'
         return 'none'
       })
 
@@ -390,7 +411,11 @@ export default function ForceGraph({
           .attr('stroke-width', 3)
       })
       .on('mouseleave', function (_event, d) {
-        const isSelected = d.id === selectedClusterId || d.label === selectedClusterId
+        const isSelected =
+          d.id === selectedClusterId ||
+          d.label === selectedClusterId ||
+          d.id === selectedProcessName ||
+          d.label === selectedProcessName
         d3.select(this).select('circle')
           .transition().duration(200)
           .attr('stroke-opacity', 0.7)
@@ -425,7 +450,7 @@ export default function ForceGraph({
     return () => {
       simulation.stop()
     }
-  }, [graphNodes, graphLinks, selectedClusterId, onNodeClick, nodeRadius])
+  }, [graphNodes, graphLinks, selectedClusterId, selectedProcessName, onNodeClick, nodeRadius])
 
   useEffect(() => {
     const cleanup = renderGraph()

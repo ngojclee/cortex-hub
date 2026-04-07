@@ -579,27 +579,60 @@ function findGitNexusRepo(
   return null
 }
 
+function stripGitSuffix(value: string): string {
+  return value.replace(/\.git$/i, '').replace(/\/$/, '')
+}
+
+function getRepoSlugFromGitUrl(value: string | null | undefined): string | null {
+  const normalized = normalizeGitUrlForMatch(value)
+  if (!normalized) return null
+
+  const pathSegments = normalized.split('/').filter(Boolean)
+  const repoName = pathSegments[pathSegments.length - 1]
+  return repoName ? slugifyName(repoName) : null
+}
+
+function normalizeGitUrlForMatch(value: string | null | undefined): string | null {
+  const raw = normalizeStringValue(value)
+  if (!raw) return null
+
+  const sanitized = sanitizeGitUrl(raw).trim()
+  const sshMatch = sanitized.match(/^git@([^:]+):(.+)$/i)
+  if (sshMatch) {
+    return `${sshMatch[1]!.toLowerCase()}/${stripGitSuffix(sshMatch[2]!.toLowerCase())}`
+  }
+
+  try {
+    const parsed = new URL(sanitized)
+    const host = parsed.hostname.toLowerCase()
+    const path = stripGitSuffix(parsed.pathname.toLowerCase())
+    return `${host}${path}`
+  } catch {
+    return stripGitSuffix(sanitized.toLowerCase())
+  }
+}
+
 function findProjectByDiscoveryCandidate(
   projects: Array<Pick<ProjectResourceRecord, 'id' | 'slug' | 'git_repo_url'>>,
   candidate: { slug?: string | null; gitRepoUrl?: string | null; repoName?: string | null },
 ): Pick<ProjectResourceRecord, 'id' | 'slug' | 'git_repo_url'> | null {
-  const cleanCandidateUrl = candidate.gitRepoUrl
-    ? candidate.gitRepoUrl.replace(/\.git$/, '').replace(/\/$/, '')
-    : null
+  const candidateSlug = candidate.slug ? slugifyName(candidate.slug) : null
+  const cleanCandidateUrl = normalizeGitUrlForMatch(candidate.gitRepoUrl)
   const cleanRepoName = candidate.repoName ? slugifyName(candidate.repoName) : null
+  const candidateRepoSlug = getRepoSlugFromGitUrl(candidate.gitRepoUrl)
 
   for (const project of projects) {
+    const projectId = slugifyName(project.id)
     const projectSlug = project.slug ? slugifyName(project.slug) : null
-    const cleanProjectUrl = project.git_repo_url
-      ? project.git_repo_url.replace(/\.git$/, '').replace(/\/$/, '')
-      : null
-    const projectRepoName = project.git_repo_url
-      ? slugifyName(project.git_repo_url.split('/').pop() ?? '')
-      : null
+    const cleanProjectUrl = normalizeGitUrlForMatch(project.git_repo_url)
+    const projectRepoName = getRepoSlugFromGitUrl(project.git_repo_url)
 
-    if (candidate.slug && projectSlug === slugifyName(candidate.slug)) return project
+    if (candidateSlug && (projectSlug === candidateSlug || projectId === candidateSlug)) return project
     if (cleanCandidateUrl && cleanProjectUrl === cleanCandidateUrl) return project
-    if (cleanRepoName && (projectSlug === cleanRepoName || projectRepoName === cleanRepoName)) return project
+    if (candidateRepoSlug && (projectSlug === candidateRepoSlug || projectRepoName === candidateRepoSlug || projectId === candidateRepoSlug)) {
+      return project
+    }
+    if (cleanRepoName && (projectSlug === cleanRepoName || projectRepoName === cleanRepoName || projectId === cleanRepoName)) return project
   }
 
   return null
@@ -1065,6 +1098,28 @@ function buildProjectResourceSummary(context: ResourceContext) {
         }
       : null,
   }
+}
+
+function getProjectStatusSortValue(item: ReturnType<typeof buildProjectResourceSummary>): number {
+  if (item.gitnexus.registered && item.branch) return 0
+  if (item.gitnexus.registered) return 1
+  if (item.staleness.status === 'indexing') return 2
+  if (item.staleness.status === 'aging') return 3
+  if (item.staleness.status === 'stale') return 4
+  if (item.staleness.status === 'not_indexed') return 5
+  return 6
+}
+
+function sortProjectResourceSummaries<T extends ReturnType<typeof buildProjectResourceSummary>>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    const statusDiff = getProjectStatusSortValue(a) - getProjectStatusSortValue(b)
+    if (statusDiff !== 0) return statusDiff
+
+    const branchDiff = Number(Boolean(b.branch)) - Number(Boolean(a.branch))
+    if (branchDiff !== 0) return branchDiff
+
+    return a.name.localeCompare(b.name)
+  })
 }
 
 async function queryProjectCypherRows(
@@ -1548,7 +1603,7 @@ intelRouter.get('/resources/projects', async (c) => {
        ORDER BY p.updated_at DESC, p.created_at DESC`
     ).all() as ProjectResourceRecord[]
 
-    const items = projects.map((project) => {
+    const items = sortProjectResourceSummaries(projects.map((project) => {
       const repoCandidates = resolveRepoNames(project.id)
       const gitnexusRepo = findGitNexusRepo(repoCandidates, gitnexusRepos)
       const latestJob = getLatestIndexJob(project.id)
@@ -1565,7 +1620,7 @@ intelRouter.get('/resources/projects', async (c) => {
         ...buildProjectResourceSummary(summaryContext),
         resourcesAvailable: buildResourceUris(project.id),
       }
-    })
+    }))
 
     return c.json({
       success: true,
@@ -1943,18 +1998,24 @@ intelRouter.get('/resources/project/:projectId/symbol/:name/tree', async (c) => 
     if (!context) return c.json({ success: false, error: 'Project not found' }, 404)
     if (!context.gitnexusRepo) return c.json({ success: false, error: 'Project is not yet indexed in GitNexus' }, 409)
 
-    const maxDepth = Number.parseInt(c.req.query('depth') ?? '2', 10)
+    const requestedDepth = Number.parseInt(c.req.query('depth') ?? '3', 10)
+    const maxDepth = Number.isFinite(requestedDepth)
+      ? Math.min(Math.max(requestedDepth, 1), 4)
+      : 3
     const direction = c.req.query('direction') === 'upstream' ? 'upstream' : 'downstream'
 
-    // Recursive Cypher query for dependency tree
-    const directionPattern = direction === 'upstream' ? '<-[:requires]-' : '-[:requires]->'
+    // Traverse symbol-to-symbol CodeRelation edges so the tree mirrors GitNexus better
+    // while excluding structural relations that make the output noisy.
+    const directionPattern = direction === 'upstream'
+      ? `<-[rels:CodeRelation*1..${maxDepth}]-`
+      : `-[rels:CodeRelation*1..${maxDepth}]->`
     const query = `
       MATCH (start:Symbol {name: $name})
-      MATCH path = (start)${directionPattern.repeat(maxDepth)}(dep:Symbol)
+      MATCH path = (start)${directionPattern}(dep:Symbol)
+      WHERE ALL(rel IN rels WHERE COALESCE(rel.type, '') <> 'MEMBER_OF' AND COALESCE(rel.type, '') <> 'STEP_IN_PROCESS')
       RETURN path
+      LIMIT 60
     `
-    // Note: GitNexus might not support deep path repeats in raw cypher if implementation is simple
-    // Fallback to calling context recursively if needed, but let's try direct graph first
     const results = await queryProjectCypherRows(context.project.id, query, { name })
 
     return c.json({

@@ -591,7 +591,7 @@ export default function GraphPage() {
     setSelectedSymbol(symbolName)
     setLoadingTree(true)
     try {
-      const data = await getIntelProjectSymbolTree(projectId, symbolName, { depth: 2, direction: treeDirection })
+      const data = await getIntelProjectSymbolTree(projectId, symbolName, { depth: 3, direction: treeDirection })
       setSymbolTree(data)
     } catch (err) {
       console.error('Failed to load symbol tree:', err)
@@ -751,6 +751,7 @@ export default function GraphPage() {
                   }
                 }}
                 selectedClusterId={selectedCluster}
+                selectedProcessName={selectedProcess}
                 clusterMembers={clusterMembersData?.data?.members}
                 processSteps={processDetail?.steps.map((s, i) => ({ name: s.name, type: s.type ?? 'step', filePath: s.filePath ?? undefined, index: i + 1 }))}
               />

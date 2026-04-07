@@ -57,38 +57,89 @@
   color: var(--text-primary);
 }
 
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.summary span {
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid rgba(96, 165, 250, 0.16);
+  background: rgba(15, 23, 42, 0.7);
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
 .content {
   flex: 1;
   padding: var(--space-8);
   overflow-y: auto;
 }
 
-.treeGrid {
+.treePanel {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: var(--space-5);
+  min-width: min(960px, 100%);
 }
 
-.pathRow {
+.rootRow {
+  display: flex;
+  justify-content: center;
+}
+
+.branchList {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 1.25rem;
+}
+
+.branchItem {
+  position: relative;
+  padding-left: 1.5rem;
+}
+
+.branchItem::before {
+  content: '';
+  position: absolute;
+  left: 0.5rem;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(to bottom, rgba(96, 165, 250, 0.3), rgba(96, 165, 250, 0.05));
+}
+
+.branchItem:last-child::before {
+  bottom: calc(100% - 2.5rem);
+}
+
+.branchItem::after {
+  content: '';
+  position: absolute;
+  left: 0.5rem;
+  top: 1.4rem;
+  width: 1rem;
+  height: 1px;
+  background: rgba(96, 165, 250, 0.3);
+}
+
+.branchRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.branchConnector {
   display: flex;
   flex-direction: column;
-  padding: var(--space-4);
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255,255,255,0.05);
-  border-radius: var(--radius-lg);
-}
-
-.pathDots {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-}
-
-.segment {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
+  align-items: flex-start;
+  gap: 0.35rem;
+  min-width: 110px;
 }
 
 .node {
@@ -99,6 +150,15 @@
   padding: 10px 16px;
   border-radius: var(--radius-md);
   min-width: 140px;
+}
+
+.rootNode {
+  min-width: 220px;
+  border-color: rgba(250, 204, 21, 0.25);
+  background:
+    radial-gradient(circle at top, rgba(250, 204, 21, 0.12), transparent 55%),
+    var(--bg-primary);
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.35);
 }
 
 .nodeName {
@@ -114,25 +174,18 @@
   margin-top: 2px;
 }
 
-.edge {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  min-width: 80px;
-}
-
 .edgeType {
-  font-size: 0.65rem;
-  color: var(--text-tertiary);
+  font-size: 0.68rem;
+  color: #93c5fd;
   text-transform: uppercase;
   font-weight: 600;
+  letter-spacing: 0.06em;
 }
 
 .edgeLine {
   width: 100%;
   height: 2px;
-  background: linear-gradient(to right, var(--accent-primary), transparent);
+  background: linear-gradient(to right, rgba(96, 165, 250, 0.75), transparent);
   border-radius: 99px;
 }
 
@@ -150,4 +203,36 @@
 @keyframes fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+@media (max-width: 760px) {
+  .overlay {
+    padding: var(--space-4);
+  }
+
+  .header {
+    padding: var(--space-5);
+    gap: var(--space-4);
+    flex-direction: column;
+  }
+
+  .content {
+    padding: var(--space-5);
+  }
+
+  .branchRow {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .branchConnector {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .node,
+  .rootNode {
+    min-width: 0;
+    width: 100%;
+  }
 }

@@ -248,6 +248,41 @@ interface ImpactDepthGroup {
   symbols: ImpactSymbol[]
 }
 
+interface TreeSegmentNode {
+  id: string
+  labels: string[]
+  properties: Record<string, unknown>
+}
+
+interface TreeSegmentRelation {
+  type: string
+  id: string
+  properties: Record<string, unknown>
+}
+
+interface TreeSegment {
+  start: TreeSegmentNode
+  end: TreeSegmentNode
+  relationship: TreeSegmentRelation
+}
+
+interface TreeApiResult {
+  success?: boolean
+  data?: {
+    results?: Array<{
+      path?: Array<{
+        segments: TreeSegment[]
+      }>
+    }>
+  }
+}
+
+interface BranchRelation {
+  name: string
+  type: string
+  edge: string
+}
+
 function parseImpactResults(results: unknown): ImpactDepthGroup[] {
   const groups: ImpactDepthGroup[] = []
 
@@ -329,6 +364,26 @@ function parseImpactResults(results: unknown): ImpactDepthGroup[] {
   }
 
   return groups
+}
+
+function parseDirectRelations(results: TreeApiResult | null | undefined, filters: EdgeFilter[]): BranchRelation[] {
+  const rows = results?.data?.results ?? []
+  const deduped = new Map<string, BranchRelation>()
+
+  for (const row of rows) {
+    const segment = row.path?.[0]?.segments?.[0]
+    if (!segment) continue
+    const edge = segment.relationship?.type ?? 'DEPENDS_ON'
+    if (!matchesEdgeFilter(edge, filters)) continue
+
+    const rawName = segment.end?.properties?.name
+    const name = typeof rawName === 'string' && rawName.trim() ? rawName : 'unknown'
+    const type = segment.end?.labels?.[0] ?? 'Symbol'
+    const key = `${name}:${type}:${edge}`
+    if (!deduped.has(key)) deduped.set(key, { name, type, edge })
+  }
+
+  return Array.from(deduped.values()).sort((a, b) => a.name.localeCompare(b.name) || a.edge.localeCompare(b.edge))
 }
 
 function ImpactVisual({ target, direction, results, filters }: { target: string; direction: string; results: unknown; filters: EdgeFilter[] }) {
@@ -501,6 +556,53 @@ function DiscoveryCard({
   )
 }
 
+function BranchDrilldownPanel({
+  symbolName,
+  loading,
+  drilldown,
+  onClose,
+}: {
+  symbolName: string | null
+  loading: boolean
+  drilldown: { upstream: BranchRelation[]; downstream: BranchRelation[] } | null
+  onClose: () => void
+}) {
+  if (!symbolName && !loading) return null
+
+  const renderColumn = (title: string, items: BranchRelation[] | undefined, keyPrefix: string) => (
+    <div className={styles.drillColumn}>
+      <div className={styles.drillColumnTitle}>{title}</div>
+      {items && items.length > 0 ? items.map((item) => (
+        <div key={`${keyPrefix}-${item.name}-${item.edge}`} className={styles.drillItem}>
+          <span className={styles.drillItemName}>{item.name}</span>
+          <span className={`${styles.contextEntryEdge} ${styles.edgeDEFAULT}`}>{item.edge}</span>
+          <span className={styles.memberType}>{item.type}</span>
+        </div>
+      )) : <div className={styles.sidebarEmpty}>No matches.</div>}
+    </div>
+  )
+
+  return (
+    <div className={styles.drilldownPanel}>
+      <div className={styles.drilldownHeader}>
+        <div>
+          <div className={styles.drilldownKicker}>Branch Drill-Down</div>
+          <div className={styles.drilldownTitle}>{symbolName ?? 'Loading symbol...'}</div>
+        </div>
+        <button className="btn btn-ghost btn-sm" onClick={onClose}>×</button>
+      </div>
+      {loading ? (
+        <div className={styles.sidebarEmpty}>Tracing upstream/downstream...</div>
+      ) : (
+        <div className={styles.drilldownGrid}>
+          {renderColumn('Before / Upstream', drilldown?.upstream, 'up')}
+          {renderColumn('After / Downstream', drilldown?.downstream, 'down')}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function GraphPage() {
   const [projectId, setProjectId] = useState('')
   const [linkingKey, setLinkingKey] = useState<string | null>(null)
@@ -552,6 +654,8 @@ export default function GraphPage() {
     setSymbolContext(null)
     setSymbolImpact(null)
     setSelectedSymbol(null)
+    setSelectedBranchSymbol(null)
+    setBranchDrilldown(null)
     setCypherResult(null)
     setCypherError(null)
   }, [projectId])
@@ -597,6 +701,9 @@ export default function GraphPage() {
   const [focusMode, setFocusMode] = useState(true)
   const [edgeFilters, setEdgeFilters] = useState<EdgeFilter[]>([])
   const [activePreset, setActivePreset] = useState<GraphPreset>('overview')
+  const [selectedBranchSymbol, setSelectedBranchSymbol] = useState<string | null>(null)
+  const [branchDrilldown, setBranchDrilldown] = useState<{ upstream: BranchRelation[]; downstream: BranchRelation[] } | null>(null)
+  const [loadingBranchDrilldown, setLoadingBranchDrilldown] = useState(false)
 
   const { data: clusterMembersData } = useSWR(
     projectId && selectedCluster ? ['intel-project-cluster-members', projectId, selectedCluster] : null,
@@ -712,6 +819,27 @@ export default function GraphPage() {
       setCypherError(err instanceof Error ? err.message : 'Cypher query failed')
     } finally {
       setRunningCypher(false)
+    }
+  }
+
+  const handleInspectBranch = async (symbolName: string) => {
+    if (!projectId) return
+    setSelectedBranchSymbol(symbolName)
+    setLoadingBranchDrilldown(true)
+    try {
+      const [upstreamData, downstreamData] = await Promise.all([
+        getIntelProjectSymbolTree(projectId, symbolName, { depth: 1, direction: 'upstream', edgeTypes: edgeFilters }),
+        getIntelProjectSymbolTree(projectId, symbolName, { depth: 1, direction: 'downstream', edgeTypes: edgeFilters }),
+      ])
+      setBranchDrilldown({
+        upstream: parseDirectRelations(upstreamData as TreeApiResult, edgeFilters),
+        downstream: parseDirectRelations(downstreamData as TreeApiResult, edgeFilters),
+      })
+    } catch (err) {
+      console.error('Failed to load branch drill-down:', err)
+      setBranchDrilldown({ upstream: [], downstream: [] })
+    } finally {
+      setLoadingBranchDrilldown(false)
     }
   }
 
@@ -894,9 +1022,13 @@ export default function GraphPage() {
                   if (variant === 'cluster') {
                     setSelectedProcess(null)
                     setProcessDetail(null)
+                    setSelectedBranchSymbol(null)
+                    setBranchDrilldown(null)
                     setSelectedCluster(id === selectedCluster ? null : id)
                   }
                   if (variant === 'process') {
+                    setSelectedBranchSymbol(null)
+                    setBranchDrilldown(null)
                     void handleViewProcess(id)
                   }
                 }}
@@ -946,6 +1078,13 @@ export default function GraphPage() {
                             <button
                               className="btn btn-sm btn-secondary"
                               style={{ padding: '2px 6px', fontSize: '10px' }}
+                              onClick={() => void handleInspectBranch(member.name)}
+                            >
+                              Trace
+                            </button>
+                            <button
+                              className="btn btn-sm btn-secondary"
+                              style={{ padding: '2px 6px', fontSize: '10px' }}
                               onClick={() => handleViewTree(member.name)}
                             >
                               Tree
@@ -971,6 +1110,15 @@ export default function GraphPage() {
                       ))}
                     </div>
                   )}
+                  <BranchDrilldownPanel
+                    symbolName={selectedBranchSymbol}
+                    loading={loadingBranchDrilldown}
+                    drilldown={branchDrilldown}
+                    onClose={() => {
+                      setSelectedBranchSymbol(null)
+                      setBranchDrilldown(null)
+                    }}
+                  />
                 </div>
               </div>
             )}
@@ -1021,10 +1169,35 @@ export default function GraphPage() {
                               {step.type && <span className={styles.processStepType}>{step.type}</span>}
                             </div>
                             <span className={styles.processStepName}>{step.name}</span>
+                            <div className={styles.memberActions}>
+                              <button
+                                className="btn btn-sm btn-secondary"
+                                style={{ padding: '2px 6px', fontSize: '10px' }}
+                                onClick={() => void handleInspectBranch(step.name)}
+                              >
+                                Trace
+                              </button>
+                              <button
+                                className="btn btn-sm btn-secondary"
+                                style={{ padding: '2px 6px', fontSize: '10px' }}
+                                onClick={() => handleViewTree(step.name)}
+                              >
+                                Tree
+                              </button>
+                            </div>
                             {step.filePath && <span className={styles.processStepFile}>{step.filePath}</span>}
                           </div>
                         ))}
                       </div>
+                      <BranchDrilldownPanel
+                        symbolName={selectedBranchSymbol}
+                        loading={loadingBranchDrilldown}
+                        drilldown={branchDrilldown}
+                        onClose={() => {
+                          setSelectedBranchSymbol(null)
+                          setBranchDrilldown(null)
+                        }}
+                      />
                     </>
                   )}
                 </div>

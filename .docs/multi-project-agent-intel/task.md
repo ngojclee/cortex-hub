@@ -28,8 +28,8 @@
 - [x] Add branch focus mode to dim unrelated graph regions
 - [x] Add edge-semantic filters wired into symbol tree traversal
 - [x] Add breadcrumb and minimap to preserve graph context
-- [ ] Add analysis presets for overview / dependency / type-system lenses
-- [ ] Deepen branch drill-down so selected slices expose before/after relationships more directly
+- [x] Add analysis presets for overview / dependency / type-system lenses
+- [x] Deepen branch drill-down so selected slices expose before/after relationships more directly
 - [x] Typecheck: pnpm --filter @cortex/dashboard-api typecheck ✅
 - [x] Typecheck: pnpm --filter @cortex/dashboard-web typecheck ✅
 

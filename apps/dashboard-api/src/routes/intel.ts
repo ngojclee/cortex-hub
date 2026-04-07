@@ -605,6 +605,21 @@ function findProjectByDiscoveryCandidate(
   return null
 }
 
+/** Strip embedded credentials (user:pass@) from a git URL to prevent token leaks. */
+function sanitizeGitUrl(url: string): string {
+  try {
+    const parsed = new URL(url)
+    if (parsed.username || parsed.password) {
+      parsed.username = ''
+      parsed.password = ''
+      return parsed.toString()
+    }
+    return url
+  } catch {
+    return url
+  }
+}
+
 function readGitRemoteUrl(repoPath: string | null): string | null {
   if (!repoPath) return null
 
@@ -614,7 +629,8 @@ function readGitRemoteUrl(repoPath: string | null): string | null {
   try {
     const raw = readFileSync(configPath, 'utf8')
     const match = raw.match(/\[remote\s+"origin"\][\s\S]*?url\s*=\s*(.+)/)
-    return match?.[1]?.trim() ?? null
+    const url = match?.[1]?.trim() ?? null
+    return url ? sanitizeGitUrl(url) : null
   } catch {
     return null
   }

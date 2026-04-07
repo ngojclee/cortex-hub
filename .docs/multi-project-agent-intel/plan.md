@@ -48,7 +48,7 @@ No code changes required — all actions use existing API endpoints.
 - cortex_session_start with LN-OMS repo URL
 - cortex_list_repos shows 2+ projects
 
-## Phase B: Graph Explorer Enhancement (FUTURE RELEASE)
+## Phase B: Graph Explorer Enhancement (ACTIVE)
 
 ### B1: Backend — cluster members + cross-links APIs
 - GET /api/intel/resources/project/:id/cluster/:name/members
@@ -62,6 +62,20 @@ No code changes required — all actions use existing API endpoints.
 ### B3: Frontend — inter-cluster edges
 - SVG curved paths between cluster nodes based on cross_community processes
 - Edge weight = number of shared processes
+
+### B4: AI-first analysis workspace
+- Keep the app as the visual hub and let architecture branches radiate on stable orbits
+- Add branch focus mode so one selected slice can be read without graph noise
+- Add edge-semantic filters shared by UI and backend traversal (`CALLS`, `IMPORTS`, `EXTENDS`, `IMPLEMENTS`, `ACCESSES`)
+- Preserve navigation state with breadcrumb + minimap
+- Add analysis presets so operators and AI can switch between overview, dependency lens, and type-system lens quickly
+
+### Destination
+Transform `/graph` from a pretty architecture overview into a working analysis surface that helps AI and humans answer:
+1. Which branch matters right now?
+2. Which relationships define that branch?
+3. What sits before and after this symbol or process?
+4. When do we still need raw Cypher, and when is the graph already enough?
 
 ## Phase C: GitNexus Tool Expansion (FUTURE RELEASE)
 

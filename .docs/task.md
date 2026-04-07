@@ -34,7 +34,8 @@
 
 ### Multi-Project Organization & Agent Intelligence (Active)
 - [ ] **Phase A: Registration & Knowledge Cleanup** — See [.docs/multi-project-agent-intel/task.md](multi-project-agent-intel/task.md)
-- [ ] **Phase B: Graph Explorer Enhancement** (future)
+- [x] 2026-04-07: Fixed Knowledge/Graph project normalization mismatch (`projectId` vs `project_id`, slug-backed filtering, discovery matching, project resource sorting)
+- [~] **Phase B: Graph Explorer Enhancement** — orbit hub, symbol tree, focus mode, edge filters, breadcrumb, and minimap delivered; next target is analysis presets + deeper branch drill-down
 - [ ] **Phase C: GitNexus Tool Expansion** (future)
 
 ### Database Project Normalization (Pending Live Run)

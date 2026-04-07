@@ -24,6 +24,12 @@
 - [x] Add GET /api/intel/resources/project/:id/cross-links endpoint
 - [x] Add detail sidebar panel to graph page (click cluster → member list)
 - [x] Add inter-cluster edge rendering (SVG paths from cross-links data)
+- [x] Convert graph layout to app-centered hub with orbiting branches
+- [x] Add branch focus mode to dim unrelated graph regions
+- [x] Add edge-semantic filters wired into symbol tree traversal
+- [x] Add breadcrumb and minimap to preserve graph context
+- [ ] Add analysis presets for overview / dependency / type-system lenses
+- [ ] Deepen branch drill-down so selected slices expose before/after relationships more directly
 - [x] Typecheck: pnpm --filter @cortex/dashboard-api typecheck ✅
 - [x] Typecheck: pnpm --filter @cortex/dashboard-web typecheck ✅
 

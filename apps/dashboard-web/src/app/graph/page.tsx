@@ -26,6 +26,37 @@ import ForceGraph from '@/components/intel/ForceGraph'
 
 const EDGE_FILTER_OPTIONS = ['CALLS', 'IMPORTS', 'EXTENDS', 'IMPLEMENTS', 'ACCESSES'] as const
 type EdgeFilter = typeof EDGE_FILTER_OPTIONS[number]
+type GraphPreset = 'overview' | 'dependencies' | 'types'
+
+const GRAPH_PRESETS: Array<{
+  key: GraphPreset
+  label: string
+  description: string
+  focusMode: boolean
+  filters: EdgeFilter[]
+}> = [
+  {
+    key: 'overview',
+    label: 'Overview',
+    description: 'See the broad architecture map without semantic filtering.',
+    focusMode: false,
+    filters: [],
+  },
+  {
+    key: 'dependencies',
+    label: 'Dependency Lens',
+    description: 'Bias toward runtime and module dependency relationships.',
+    focusMode: true,
+    filters: ['CALLS', 'IMPORTS', 'ACCESSES'],
+  },
+  {
+    key: 'types',
+    label: 'Type System',
+    description: 'Isolate inheritance and implementation relationships.',
+    focusMode: true,
+    filters: ['EXTENDS', 'IMPLEMENTS'],
+  },
+]
 
 function formatIndexedAt(value: string | null | undefined): string {
   if (!value) return 'Not indexed'
@@ -565,6 +596,7 @@ export default function GraphPage() {
   const [treeDirection, setTreeDirection] = useState<'upstream' | 'downstream'>('downstream')
   const [focusMode, setFocusMode] = useState(true)
   const [edgeFilters, setEdgeFilters] = useState<EdgeFilter[]>([])
+  const [activePreset, setActivePreset] = useState<GraphPreset>('overview')
 
   const { data: clusterMembersData } = useSWR(
     projectId && selectedCluster ? ['intel-project-cluster-members', projectId, selectedCluster] : null,
@@ -689,6 +721,15 @@ export default function GraphPage() {
         ? current.filter((value) => value !== filter)
         : [...current, filter]
     ))
+    setActivePreset('overview')
+  }
+
+  const applyPreset = (presetKey: GraphPreset) => {
+    const preset = GRAPH_PRESETS.find((entry) => entry.key === presetKey)
+    if (!preset) return
+    setActivePreset(preset.key)
+    setFocusMode(preset.focusMode)
+    setEdgeFilters(preset.filters)
   }
 
   const breadcrumbTrail = [
@@ -791,17 +832,38 @@ export default function GraphPage() {
             <div className={styles.controlRow}>
               <button
                 className={`btn btn-sm ${focusMode ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => setFocusMode((current) => !current)}
+                onClick={() => {
+                  setActivePreset('overview')
+                  setFocusMode((current) => !current)
+                }}
               >
                 {focusMode ? 'Focus Mode On' : 'Focus Mode Off'}
               </button>
               <button
                 className="btn btn-sm btn-secondary"
-                onClick={() => setEdgeFilters([])}
+                onClick={() => {
+                  setActivePreset('overview')
+                  setEdgeFilters([])
+                }}
                 disabled={edgeFilters.length === 0}
               >
                 Clear Filters
               </button>
+            </div>
+            <div className={styles.presetGrid}>
+              {GRAPH_PRESETS.map((preset) => {
+                const active = activePreset === preset.key
+                return (
+                  <button
+                    key={preset.key}
+                    className={`${styles.presetCard} ${active ? styles.presetCardActive : ''}`}
+                    onClick={() => applyPreset(preset.key)}
+                  >
+                    <span className={styles.presetLabel}>{preset.label}</span>
+                    <span className={styles.presetDescription}>{preset.description}</span>
+                  </button>
+                )
+              })}
             </div>
             <div className={styles.filterChips}>
               {EDGE_FILTER_OPTIONS.map((filter) => {

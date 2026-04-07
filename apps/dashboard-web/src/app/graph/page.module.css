@@ -90,6 +90,17 @@
   color: var(--text-secondary);
 }
 
+.selectorHint {
+  margin: 10px 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.selectorWarning {
+  color: #fbbf24;
+}
+
 .errorBanner {
   margin-bottom: var(--space-5);
   padding: var(--space-4);
@@ -107,6 +118,30 @@
 
 .discoverySection {
   margin-bottom: var(--space-6);
+}
+
+.projectHealthCard {
+  margin-bottom: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  background:
+    radial-gradient(circle at top right, rgba(251, 191, 36, 0.12), transparent 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 100%),
+    var(--bg-secondary);
+}
+
+.projectHealthTitle {
+  font-size: 0.9rem;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.projectHealthBody {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
 }
 
 .sectionHeader {

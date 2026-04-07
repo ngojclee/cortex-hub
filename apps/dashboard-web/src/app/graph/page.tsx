@@ -18,6 +18,7 @@ import {
   runIntelCypherQuery,
   linkDiscoveredProject,
   type IntelDiscoveryCandidate,
+  type IntelProjectResourceSummary,
   type IntelProcessStep,
 } from '@/lib/api'
 import styles from './page.module.css'
@@ -72,6 +73,31 @@ function statusTone(status: string | undefined): 'healthy' | 'warning' | 'error'
 function statusLabel(status: string | undefined): string {
   if (!status) return 'unknown'
   return status.replaceAll('_', ' ')
+}
+
+function projectKindLabel(kind: string | undefined): string {
+  if (!kind) return 'unknown'
+  return kind.replaceAll('_', ' ')
+}
+
+function projectStatusNote(project: IntelProjectResourceSummary | null | undefined): string | null {
+  if (!project) return null
+  if (project.classification.kind === 'umbrella') {
+    return 'Umbrella project. Keep it visible for navigation, but index and inspect its sub-projects instead.'
+  }
+  if (project.classification.kind === 'knowledge_only') {
+    return 'Knowledge-linked project with no repo registration yet.'
+  }
+  if (project.classification.kind === 'placeholder') {
+    return 'Placeholder project. No repo or project-scoped knowledge detected yet.'
+  }
+  if (project.classification.hasAliasDrift) {
+    return `GitNexus alias drift detected (${project.classification.aliasCount} repo aliases).`
+  }
+  if (!project.classification.isIndexable) {
+    return 'This project currently has no direct repo signal for indexing.'
+  }
+  return null
 }
 
 function matchesEdgeFilter(edge: string | undefined, filters: EdgeFilter[]): boolean {
@@ -715,6 +741,10 @@ export default function GraphPage() {
     () => projects.find((project) => project.projectId === projectId) ?? null,
     [projectId, projects],
   )
+  const selectedProjectNote = useMemo(
+    () => projectStatusNote(selectedProject),
+    [selectedProject],
+  )
 
   const { data: contextData, error: contextError } = useSWR(
     projectId ? ['intel-project-context', projectId] : null,
@@ -940,20 +970,27 @@ export default function GraphPage() {
           >
             {projects.map((project) => (
               <option key={project.projectId} value={project.projectId}>
-                {project.name} ({project.slug})
+                {project.name} ({project.slug}) - {projectKindLabel(project.classification.kind)}
               </option>
             ))}
           </select>
           <div className={styles.selectorMeta}>
             {selectedProject ? (
               <>
+                <span>kind: {projectKindLabel(selectedProject.classification.kind)}</span>
                 <span>branch: {selectedProject.branch ?? 'unknown'}</span>
                 <span className={`badge badge-${freshnessTone}`}>{statusLabel(context?.project.staleness.status)}</span>
+                {selectedProject.classification.hasAliasDrift && (
+                  <span className={styles.selectorWarning}>repo aliases: {selectedProject.classification.aliasCount}</span>
+                )}
               </>
             ) : (
               <span>No linked projects yet.</span>
             )}
           </div>
+          {selectedProjectNote && (
+            <p className={styles.selectorHint}>{selectedProjectNote}</p>
+          )}
         </div>
       </div>
 
@@ -1000,6 +1037,19 @@ export default function GraphPage() {
             <StatCard label="Relationships" value={context.stats.relationships ?? 0} hint="graph edges" />
             <StatCard label="Knowledge" value={context.project.knowledge.docs} hint={`${context.project.knowledge.chunks} chunks`} />
           </div>
+
+          {(selectedProject.classification.kind !== 'repository' || selectedProject.classification.hasAliasDrift) && (
+            <div className={`card ${styles.projectHealthCard}`}>
+              <div className={styles.projectHealthTitle}>Project Health</div>
+              <div className={styles.projectHealthBody}>
+                <span>kind: {projectKindLabel(selectedProject.classification.kind)}</span>
+                <span>indexable: {selectedProject.classification.isIndexable ? 'yes' : 'no'}</span>
+                {selectedProject.classification.hasAliasDrift && (
+                  <span>aliases: {selectedProject.classification.aliases.join(', ')}</span>
+                )}
+              </div>
+            </div>
+          )}
 
           <div className={`card ${styles.graphControls}`}>
             <div className={styles.breadcrumbs}>

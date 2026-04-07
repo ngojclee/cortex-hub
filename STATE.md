@@ -13,6 +13,7 @@
 - [x] New `/api/metrics/overview-v2` endpoint: per-project GitNexus/Mem9 status (`d8efdef`)
 - [x] LLM Telemetry: Track `compute_tokens` / `compute_model` from mem9-proxy back to `query_logs` via MCP `apiCall`, and expose via stats endpoints.
 - [x] Knowledge + Graph normalization: accept `projectId`/`project_id`, normalize knowledge project refs to slug, improve discovery candidate matching, and sort project resources by indexing/branch readiness.
+- [x] Graph data-quality hardening: classify umbrella/knowledge-only/placeholder projects, suppress false "fresh" repo status for non-indexable projects, and surface GitNexus alias drift in Graph UI.
 - [x] Build ✅ | Typecheck ✅ | Lint ✅ | Quality: A (100/100)
 
 ## Architecture — 2-Service Model

@@ -172,6 +172,7 @@ type ResourceContext = {
   project: ProjectResourceRecord
   repoCandidates: string[]
   gitnexusRepo: GitNexusRepoSummary | null
+  gitnexusAliases: GitNexusRepoSummary[]
   latestJob: ProjectIndexJobRecord | null
   branch: string | null
   staleness: {
@@ -184,6 +185,7 @@ type ResourceContext = {
 }
 
 type IndexedSource = 'gitnexus.indexedAt' | 'cortex.indexed_at' | 'cortex.index_jobs'
+type ProjectClassificationKind = 'repository' | 'umbrella' | 'knowledge_only' | 'placeholder'
 
 const GITNEXUS_RESOURCE_TOOLS = [
   'cortex_code_search',
@@ -638,6 +640,14 @@ function findProjectByDiscoveryCandidate(
   return null
 }
 
+function findGitNexusRepoAliases(
+  candidates: string[],
+  repos: GitNexusRepoSummary[],
+): GitNexusRepoSummary[] {
+  const uniqueCandidates = Array.from(new Set(candidates.map((candidate) => candidate.toLowerCase())))
+  return repos.filter((repo) => uniqueCandidates.includes(repo.name.toLowerCase()))
+}
+
 /** Strip embedded credentials (user:pass@) from a git URL to prevent token leaks. */
 function sanitizeGitUrl(url: string): string {
   try {
@@ -966,6 +976,26 @@ function getPreferredIndexedSnapshot(
   return { indexedAt: freshest.indexedAt, basedOn: freshest.basedOn }
 }
 
+function hasRepoSignal(
+  project: ProjectResourceRecord,
+  gitnexusRepo: GitNexusRepoSummary | null,
+): boolean {
+  return Boolean(gitnexusRepo || normalizeStringValue(project.git_repo_url))
+}
+
+function isUmbrellaProject(project: ProjectResourceRecord): boolean {
+  const description = `${project.name} ${project.description ?? ''}`.toLowerCase()
+  if (normalizeStringValue(project.git_repo_url)) return false
+
+  return (
+    description.includes('umbrella project') ||
+    description.includes('brand hub') ||
+    description.includes('no direct repo') ||
+    description.includes('use sub-projects') ||
+    description.includes('use sub projects')
+  )
+}
+
 function buildStaleness(
   project: ProjectResourceRecord,
   latestJob: ProjectIndexJobRecord | null,
@@ -973,6 +1003,18 @@ function buildStaleness(
 ): ResourceContext['staleness'] {
   const activeStatuses = new Set(['pending', 'cloning', 'analyzing', 'ingesting'])
   const freshest = getPreferredIndexedSnapshot(project, latestJob, gitnexusRepo)
+  const canIndexDirectly = hasRepoSignal(project, gitnexusRepo)
+
+  if (!canIndexDirectly) {
+    return {
+      status: 'not_indexed',
+      basedOn: freshest.basedOn ?? 'cortex.indexed_at',
+      indexedAt: null,
+      ageHours: null,
+      latestJobStatus: latestJob?.status ?? null,
+    }
+  }
+
   if (latestJob?.status && activeStatuses.has(latestJob.status)) {
     return {
       status: 'indexing',
@@ -1019,6 +1061,35 @@ function buildStaleness(
   }
 }
 
+function classifyProjectResource(
+  project: ProjectResourceRecord,
+  gitnexusRepo: GitNexusRepoSummary | null,
+  latestJob: ProjectIndexJobRecord | null,
+  knowledge: ProjectKnowledgeStats,
+  gitnexusAliases: GitNexusRepoSummary[],
+) {
+  const umbrella = isUmbrellaProject(project)
+  const repoBacked = hasRepoSignal(project, gitnexusRepo)
+  const hasKnowledge = knowledge.docs > 0
+
+  let kind: ProjectClassificationKind = 'placeholder'
+  if (umbrella) {
+    kind = 'umbrella'
+  } else if (repoBacked || Boolean(latestJob?.branch)) {
+    kind = 'repository'
+  } else if (hasKnowledge) {
+    kind = 'knowledge_only'
+  }
+
+  return {
+    kind,
+    isIndexable: repoBacked,
+    hasAliasDrift: gitnexusAliases.length > 1,
+    aliasCount: gitnexusAliases.length,
+    aliases: gitnexusAliases.map((alias) => alias.name),
+  }
+}
+
 async function resolveResourceContext(projectId: string): Promise<ResourceContext | null> {
   const project = getProjectResourceRecord(projectId)
   if (!project) return null
@@ -1026,14 +1097,17 @@ async function resolveResourceContext(projectId: string): Promise<ResourceContex
   const repoCandidates = resolveRepoNames(project.id)
   const gitnexusRepos = await listGitNexusRepos()
   const gitnexusRepo = findGitNexusRepo(repoCandidates, gitnexusRepos)
+  const gitnexusAliases = findGitNexusRepoAliases(repoCandidates, gitnexusRepos)
   const latestJob = getLatestIndexJob(project.id)
+  const directRepoSignal = hasRepoSignal(project, gitnexusRepo)
 
   return {
     project,
     repoCandidates,
     gitnexusRepo,
+    gitnexusAliases,
     latestJob,
-    branch: latestJob?.branch ?? null,
+    branch: directRepoSignal ? latestJob?.branch ?? null : null,
     staleness: buildStaleness(project, latestJob, gitnexusRepo),
   }
 }
@@ -1045,6 +1119,13 @@ function buildProjectResourceSummary(context: ResourceContext) {
     context.gitnexusRepo,
   )
   const knowledge = getKnowledgeStatsForProject(context.project)
+  const classification = classifyProjectResource(
+    context.project,
+    context.gitnexusRepo,
+    context.latestJob,
+    knowledge,
+    context.gitnexusAliases,
+  )
 
   return {
     projectId: context.project.id,
@@ -1060,6 +1141,7 @@ function buildProjectResourceSummary(context: ResourceContext) {
     repoPath: join(REPOS_DIR, context.project.id).replace(/\\/g, '/'),
     repoCandidates: context.repoCandidates,
     branch: context.branch,
+    classification,
     indexedAt: preferredIndexed.indexedAt,
     symbols: context.project.indexed_symbols ?? context.gitnexusRepo?.stats.symbols ?? null,
     knowledge,
@@ -1101,13 +1183,16 @@ function buildProjectResourceSummary(context: ResourceContext) {
 }
 
 function getProjectStatusSortValue(item: ReturnType<typeof buildProjectResourceSummary>): number {
-  if (item.gitnexus.registered && item.branch) return 0
-  if (item.gitnexus.registered) return 1
-  if (item.staleness.status === 'indexing') return 2
-  if (item.staleness.status === 'aging') return 3
-  if (item.staleness.status === 'stale') return 4
-  if (item.staleness.status === 'not_indexed') return 5
-  return 6
+  if (item.classification.kind === 'repository' && item.gitnexus.registered && item.branch) return 0
+  if (item.classification.kind === 'repository' && item.gitnexus.registered) return 1
+  if (item.classification.kind === 'repository' && item.staleness.status === 'indexing') return 2
+  if (item.classification.kind === 'repository' && item.staleness.status === 'aging') return 3
+  if (item.classification.kind === 'repository' && item.staleness.status === 'stale') return 4
+  if (item.classification.kind === 'repository') return 5
+  if (item.classification.kind === 'umbrella') return 6
+  if (item.classification.kind === 'knowledge_only') return 7
+  if (item.staleness.status === 'not_indexed') return 8
+  return 9
 }
 
 function sortProjectResourceSummaries<T extends ReturnType<typeof buildProjectResourceSummary>>(items: T[]): T[] {
@@ -1611,8 +1696,9 @@ intelRouter.get('/resources/projects', async (c) => {
         project,
         repoCandidates,
         gitnexusRepo,
+        gitnexusAliases: findGitNexusRepoAliases(repoCandidates, gitnexusRepos),
         latestJob,
-        branch: latestJob?.branch ?? null,
+        branch: hasRepoSignal(project, gitnexusRepo) ? latestJob?.branch ?? null : null,
         staleness: buildStaleness(project, latestJob, gitnexusRepo),
       }
 

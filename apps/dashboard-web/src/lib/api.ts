@@ -411,6 +411,13 @@ export interface IntelProjectResourceSummary {
   name: string
   description: string | null
   branch: string | null
+  classification: {
+    kind: 'repository' | 'umbrella' | 'knowledge_only' | 'placeholder'
+    isIndexable: boolean
+    hasAliasDrift: boolean
+    aliasCount: number
+    aliases: string[]
+  }
   indexedAt: string | null
   symbols: number | null
   knowledge: {

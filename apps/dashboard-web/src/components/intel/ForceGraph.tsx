@@ -11,6 +11,8 @@ interface GraphNode extends d3.SimulationNodeDatum {
   label: string
   meta: string
   variant: 'root' | 'cluster' | 'process' | 'member' | 'step' | 'knowledge'
+  anchorX?: number
+  anchorY?: number
   fx?: number | null
   fy?: number | null
 }
@@ -56,10 +58,24 @@ const VARIANT_STROKE: Record<string, string> = {
   knowledge: '#fbbf24',
 }
 
+const HUB_RING_RADIUS = 120
+const CLUSTER_RING_RADIUS = 260
+const PROCESS_RING_RADIUS = 320
+const DETAIL_RING_RADIUS = 150
+
 /* ── Helpers ── */
 
 function truncateLabel(value: string, max = 22): string {
   return value.length > max ? `${value.slice(0, max - 1)}\u2026` : value
+}
+
+function polarPosition(index: number, total: number, radius: number, startAngle = -Math.PI / 2) {
+  const count = Math.max(total, 1)
+  const angle = startAngle + (index / count) * Math.PI * 2
+  return {
+    x: Math.cos(angle) * radius,
+    y: Math.sin(angle) * radius,
+  }
 }
 
 function buildGraphData(
@@ -83,18 +99,23 @@ function buildGraphData(
     label: truncateLabel(projectName, 18),
     meta: `${clusters.length} clusters \u00B7 ${processes.length} processes`,
     variant: 'root',
+    anchorX: 0,
+    anchorY: 0,
     fx: 0,
-    fy: -220,
+    fy: 0,
   })
 
   /* Clusters */
   clusters.forEach((c, i) => {
     const nid = c.id ?? `cluster-${i}`
+    const position = polarPosition(i, clusters.length, CLUSTER_RING_RADIUS, -Math.PI * 0.88)
     nodes.push({
       id: nid,
       label: truncateLabel(c.name, 18),
       meta: `${c.symbols} sym`,
       variant: 'cluster',
+      anchorX: position.x,
+      anchorY: position.y,
     })
     links.push({ source: 'root', target: nid, linkType: 'hierarchy' })
   })
@@ -102,11 +123,14 @@ function buildGraphData(
   /* Processes */
   processes.forEach((p, i) => {
     const nid = p.id ?? `process-${i}`
+    const position = polarPosition(i, processes.length, PROCESS_RING_RADIUS, -Math.PI * 0.1)
     nodes.push({
       id: nid,
       label: truncateLabel(p.name, 18),
       meta: `${p.steps} steps`,
       variant: 'process',
+      anchorX: position.x,
+      anchorY: position.y,
     })
     links.push({ source: 'root', target: nid, linkType: 'hierarchy' })
   })
@@ -118,6 +142,8 @@ function buildGraphData(
       label: 'Knowledge',
       meta: `${knowledgeDocs} docs`,
       variant: 'knowledge',
+      anchorX: 0,
+      anchorY: HUB_RING_RADIUS + 60,
     })
     links.push({ source: 'root', target: 'knowledge-node', linkType: 'knowledge' })
   }
@@ -144,11 +170,14 @@ function buildGraphData(
     if (clusterNode) {
       clusterMembers.slice(0, 12).forEach((m, i) => {
         const mid = `member-${selectedClusterId}-${i}`
+        const orbit = polarPosition(i, Math.min(clusterMembers.length, 12), DETAIL_RING_RADIUS, -Math.PI / 1.8)
         nodes.push({
           id: mid,
           label: truncateLabel(m.name, 16),
           meta: m.type,
           variant: 'member',
+          anchorX: (clusterNode.anchorX ?? 0) + orbit.x,
+          anchorY: (clusterNode.anchorY ?? 0) + orbit.y,
         })
         links.push({ source: clusterNode.id, target: mid, linkType: 'hierarchy' })
       })
@@ -163,11 +192,14 @@ function buildGraphData(
     if (processNode) {
       processSteps.slice(0, 12).forEach((s, i) => {
         const sid = `step-${processNode.id}-${i}`
+        const orbit = polarPosition(i, Math.min(processSteps.length, 12), DETAIL_RING_RADIUS, Math.PI / 5)
         nodes.push({
           id: sid,
           label: truncateLabel(s.name, 16),
           meta: `Step ${s.index ?? i + 1}`,
           variant: 'step',
+          anchorX: (processNode.anchorX ?? 0) + orbit.x,
+          anchorY: (processNode.anchorY ?? 0) + orbit.y,
         })
         links.push({ source: processNode.id, target: sid, linkType: 'hierarchy' })
       })
@@ -261,6 +293,19 @@ export default function ForceGraph({
       .attr('fill', 'url(#graph-bg)')
       .attr('rx', 24)
 
+    const guideGroup = svgSel.append('g').attr('class', 'guides')
+    ;[HUB_RING_RADIUS, CLUSTER_RING_RADIUS, PROCESS_RING_RADIUS].forEach((radius, index) => {
+      guideGroup
+        .append('circle')
+        .attr('cx', 0)
+        .attr('cy', 0)
+        .attr('r', radius)
+        .attr('fill', 'none')
+        .attr('stroke', index === 0 ? 'rgba(250, 204, 21, 0.08)' : 'rgba(96, 165, 250, 0.08)')
+        .attr('stroke-width', 1)
+        .attr('stroke-dasharray', index === 0 ? '2 8' : '4 10')
+    })
+
     /* Simulation */
     const simulation = d3
       .forceSimulation<GraphNode>(graphNodes)
@@ -284,9 +329,10 @@ export default function ForceGraph({
         if (n.variant === 'cluster' || n.variant === 'process') return -400
         return -200
       }))
-      .force('center', d3.forceCenter(0, 20))
+      .force('center', d3.forceCenter(0, 0))
       .force('collision', d3.forceCollide<GraphNode>().radius((d) => nodeRadius(d) + 8))
-      .force('y', d3.forceY(-60).strength(0.15))
+      .force('x', d3.forceX<GraphNode>((d) => d.anchorX ?? 0).strength((d) => d.variant === 'root' ? 1 : 0.28))
+      .force('y', d3.forceY<GraphNode>((d) => d.anchorY ?? 0).strength((d) => d.variant === 'root' ? 1 : 0.28))
 
     /* Links */
     const link = svgSel
@@ -328,7 +374,7 @@ export default function ForceGraph({
             if (!event.active) simulation.alphaTarget(0)
             if (d.variant === 'root') {
               d.fx = 0
-              d.fy = -220
+              d.fy = 0
             } else {
               d.fx = null
               d.fy = null
@@ -473,9 +519,9 @@ export default function ForceGraph({
     <div className={`card ${styles.graphCard}`}>
       <div className={styles.cardHeader}>
         <div>
-          <h3 className={styles.cardTitle}>Force-Directed Graph</h3>
+          <h3 className={styles.cardTitle}>Architecture Constellation</h3>
           <p className={styles.cardSub}>
-            Interactive force layout. Drag nodes to rearrange. Scroll to zoom. Click clusters or processes to expand.
+            The app stays at the hub while clusters, processes, and knowledge radiate outward. Drag to inspect, scroll to zoom, and click a branch to open its deeper structure.
           </p>
         </div>
       </div>

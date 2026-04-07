@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo.png">
-    <img src="docs/assets/logo.png" alt="Cortex Hub" width="120" />
+    <source media="(prefers-color-scheme: dark)" srcset=".docs/assets/logo.png">
+    <img src=".docs/assets/logo.png" alt="Cortex Hub" width="120" />
   </picture>
 </p>
 
@@ -9,7 +9,7 @@
 
 <p align="center">
   <strong>Self-hosted AI Agent Intelligence Platform</strong><br/>
-  <em>Unified MCP gateway · Persistent memory · Code intelligence · Quality enforcement</em>
+  <em>Unified MCP gateway · Persistent memory · code intelligence · graph explorer · quality enforcement</em>
 </p>
 
 <p align="center">
@@ -80,7 +80,7 @@ graph TB
 
     subgraph Gateway["Hub MCP Server"]
         AUTH["🔐 API Key Auth"]
-        ROUTER["🔀 Tool Router (17 tools)"]
+        ROUTER["🔀 Tool Router (22 tools)"]
         TEL["📊 Telemetry + Hints Engine"]
     end
 
@@ -121,7 +121,7 @@ Internet
                           ┌─────────┼─────────┐
                           │  Docker Compose    │
                           │  ├─ cortex-api     │  ← API + mem9 in-process
-                          │  ├─ cortex-mcp     │  ← 17 MCP tools
+                          │  ├─ cortex-mcp     │  ← 22 MCP tools
                           │  ├─ qdrant         │  ← vectors + knowledge
                           │  ├─ gitnexus       │  ← AST code graph
                           │  ├─ llm-proxy      │  ← CLIProxy (internal)
@@ -134,6 +134,12 @@ Internet
 ---
 
 ## Features
+
+### New in v0.5
+
+- **Graph Explorer upgrade** with hub-centered layout, focus mode, semantic edge filters, breadcrumb, minimap, symbol tree, branch drill-down, and trace chains rendered directly on canvas.
+- **Machine-auth boundary cleanup** so MCP and machine-facing REST flows can rely on Bearer API keys instead of dashboard session auth.
+- **Runtime health stabilization** for mem9, MCP, and internal readiness checks in the live stack.
 
 ### 🧠 Code Intelligence — GitNexus
 
@@ -212,6 +218,7 @@ One agent picks up where another left off:
 Real-time monitoring and management (13 pages):
 
 - **Overview** — hero stats bar + per-project cards with GitNexus/mem9 status
+- **Graph Explorer** — AI-first architecture surface with branch focus, semantic edge filters, minimap, breadcrumb, symbol tree, and canvas-native trace chains
 - **Sessions** — agent session list with API key tracking + detail panel
 - **Quality** — quality reports with grade trending (A→F) + trends chart
 - **Projects** — repo management, branch-aware indexing, embedding status
@@ -237,7 +244,7 @@ Automatic tool usage tracking and guidance:
 
 ## MCP Tools
 
-Cortex exposes **17 tools** via a single MCP endpoint. Any MCP-compatible client can use them:
+Cortex exposes **22 tools** via a single MCP endpoint. Any MCP-compatible client can use them:
 
 | # | Tool | Purpose |
 |---|------|---------|
@@ -251,15 +258,27 @@ Cortex exposes **17 tools** via a single MCP endpoint. Any MCP-compatible client
 | 8 | `cortex_list_repos` | List indexed repos with project ID mapping |
 | 9 | `cortex_cypher` | Direct Cypher queries against code knowledge graph |
 | 10 | `cortex_detect_changes` | Pre-commit risk analysis on uncommitted changes |
-| 11 | `cortex_memory_search` | Recall agent memories by semantic similarity |
-| 12 | `cortex_memory_store` | Store findings for future recall |
-| 13 | `cortex_knowledge_search` | Search shared knowledge base |
-| 14 | `cortex_knowledge_store` | Contribute bug fixes, patterns, decisions |
-| 15 | `cortex_quality_report` | Report build/typecheck/lint results (4D scoring) |
-| 16 | `cortex_plan_quality` | Assess implementation plan quality before execution |
-| 17 | `cortex_health` | Check all backend service health |
+| 11 | `cortex_code_read` | Read raw source from indexed repositories |
+| 12 | `cortex_code_rename` | Preview-first symbol rename workflow |
+| 13 | `cortex_code_tree` | Recursive symbol dependency tree traversal |
+| 14 | `cortex_memory_search` | Recall agent memories by semantic similarity |
+| 15 | `cortex_memory_store` | Store findings for future recall |
+| 16 | `cortex_knowledge_search` | Search shared knowledge base |
+| 17 | `cortex_knowledge_store` | Contribute bug fixes, patterns, decisions |
+| 18 | `cortex_wiki_generate` | Generate GitNexus wiki/context artifacts |
+| 19 | `cortex_quality_report` | Report build/typecheck/lint results (4D scoring) |
+| 20 | `cortex_plan_quality` | Assess implementation plan quality before execution |
+| 21 | `cortex_tool_stats` | View tool usage analytics |
+| 22 | `cortex_health` | Check all backend service health |
 
-> **Full API reference:** [`docs/api/hub-mcp-reference.md`](docs/api/hub-mcp-reference.md)
+> **Full API reference:** [`.docs/api/hub-mcp-reference.md`](.docs/api/hub-mcp-reference.md)
+
+### MCP Endpoint
+
+- Primary endpoint: `POST https://cortexhub.lengoc.me/mcp`
+- Auth: `Authorization: Bearer <API_KEY>`
+- Transport: Streamable HTTP / JSON-RPC
+- Works for Claude-compatible MCP clients, Gemini MCP setups, Cursor, Windsurf, VS Code agents, ChatGPT Apps-style connectors, and headless bots.
 
 ---
 
@@ -276,12 +295,12 @@ Cortex exposes **17 tools** via a single MCP endpoint. Any MCP-compatible client
 
 **macOS / Linux:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lktiep/cortex-hub/master/scripts/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ngojclee/cortex-hub/master/scripts/bootstrap.sh | bash
 ```
 
 **Windows (PowerShell):**
 ```powershell
-iwr -useb https://raw.githubusercontent.com/lktiep/cortex-hub/master/scripts/onboard.ps1 -OutFile onboard.ps1; .\onboard.ps1
+iwr -useb https://raw.githubusercontent.com/ngojclee/cortex-hub/master/scripts/onboard.ps1 -OutFile onboard.ps1; .\onboard.ps1
 ```
 
 The bootstrap script offers two modes:
@@ -295,7 +314,7 @@ The bootstrap script offers two modes:
 
 ```bash
 # 1. Clone
-git clone https://github.com/lktiep/cortex-hub.git
+git clone https://github.com/ngojclee/cortex-hub.git
 cd cortex-hub
 
 # 2. Install
@@ -318,12 +337,12 @@ Connect your IDE agent to an existing Cortex Hub — **no need to clone the repo
 
 **macOS / Linux:**
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/lktiep/cortex-hub/master/scripts/onboard.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/ngojclee/cortex-hub/master/scripts/onboard.sh)
 ```
 
 **Windows (PowerShell):**
 ```powershell
-iwr -useb https://raw.githubusercontent.com/lktiep/cortex-hub/master/scripts/onboard.ps1 -OutFile onboard.ps1
+iwr -useb https://raw.githubusercontent.com/ngojclee/cortex-hub/master/scripts/onboard.ps1 -OutFile onboard.ps1
 .\onboard.ps1
 ```
 
@@ -331,7 +350,7 @@ Or with API key pre-configured:
 
 ```bash
 # macOS/Linux
-HUB_API_KEY=your-key bash <(curl -fsSL https://raw.githubusercontent.com/lktiep/cortex-hub/master/scripts/onboard.sh) --tool antigravity
+HUB_API_KEY=your-key bash <(curl -fsSL https://raw.githubusercontent.com/ngojclee/cortex-hub/master/scripts/onboard.sh) --tool antigravity
 ```
 ```powershell
 # Windows
@@ -358,7 +377,7 @@ curl https://cortexhub.lengoc.me/mcp          # MCP route (expects Bearer auth)
 
 | Layer | Technology | Role |
 |---|---|---|
-| **MCP Server** | Hono (Node.js, Docker) | Streamable HTTP + JSON-RPC gateway (17 tools) |
+| **MCP Server** | Hono (Node.js, Docker) | Streamable HTTP + JSON-RPC gateway (22 tools) |
 | **Code Intel** | GitNexus | AST parsing, execution flow, impact analysis, Cypher graph |
 | **Embeddings** | mem9 + Qdrant | In-process embedding pipeline → vector search |
 | **LLM Proxy** | CLIProxy | Multi-provider gateway with fallback chains |
@@ -378,7 +397,7 @@ curl https://cortexhub.lengoc.me/mcp          # MCP route (expects Bearer auth)
 cortex-hub/
 ├── apps/
 │   ├── hub-mcp/                 # MCP Server (Hono, Streamable HTTP)
-│   │   └── src/tools/           #   17 MCP tools (code, memory, knowledge, quality, session, analytics)
+│   │   └── src/tools/           #   22 MCP tools (code, memory, knowledge, quality, session, analytics)
 │   ├── dashboard-api/           # Dashboard Backend (Hono + SQLite + mem9)
 │   │   ├── routes/llm.ts        #   LLM Gateway (multi-provider proxy + complexity routing)
 │   │   ├── routes/quality.ts    #   Quality gates + session handoffs
@@ -406,7 +425,7 @@ cortex-hub/
 │   └── bump-version.sh          # Version management (patch/minor/major)
 ├── templates/
 │   └── workflows/               # Portable workflow templates for any project
-├── docs/                        # Architecture, API reference, guides, use-cases
+├── .docs/                       # Architecture, API reference, guides, use-cases
 ├── .cortex/                     # Project profile + code conventions
 └── .agents/workflows/           # Active workflow definitions (/code, /continue, /phase)
 ```
@@ -417,16 +436,16 @@ cortex-hub/
 
 | Document | Description |
 |---|---|
-| [`docs/architecture/overview.md`](docs/architecture/overview.md) | System architecture with Mermaid diagrams |
-| [`docs/architecture/llm-gateway.md`](docs/architecture/llm-gateway.md) | LLM Gateway: fallback chains, budget, usage |
-| [`docs/architecture/monorepo-structure.md`](docs/architecture/monorepo-structure.md) | Package graph and dependency flow |
-| [`docs/architecture/agent-quality-strategy.md`](docs/architecture/agent-quality-strategy.md) | Quality gates, scoring, and enforcement |
-| [`docs/api/hub-mcp-reference.md`](docs/api/hub-mcp-reference.md) | Full MCP tool API reference |
-| [`docs/api/database-schema.md`](docs/api/database-schema.md) | Database schema reference |
-| [`docs/database/erd.md`](docs/database/erd.md) | Entity-relationship diagram |
-| [`docs/guides/installation.md`](docs/guides/installation.md) | Full installation guide |
-| [`docs/guides/onboarding.md`](docs/guides/onboarding.md) | Agent onboarding walkthrough |
-| [`docs/guides/use-cases.md`](docs/guides/use-cases.md) | Use cases, comparison, system requirements |
+| [`.docs/architecture/overview.md`](.docs/architecture/overview.md) | System architecture with Mermaid diagrams |
+| [`.docs/architecture/llm-gateway.md`](.docs/architecture/llm-gateway.md) | LLM Gateway: fallback chains, budget, usage |
+| [`.docs/architecture/monorepo-structure.md`](.docs/architecture/monorepo-structure.md) | Package graph and dependency flow |
+| [`.docs/architecture/agent-quality-strategy.md`](.docs/architecture/agent-quality-strategy.md) | Quality gates, scoring, and enforcement |
+| [`.docs/api/hub-mcp-reference.md`](.docs/api/hub-mcp-reference.md) | Full MCP tool API reference |
+| [`.docs/api/database-schema.md`](.docs/api/database-schema.md) | Database schema reference |
+| [`.docs/database/erd.md`](.docs/database/erd.md) | Entity-relationship diagram |
+| [`.docs/guides/installation.md`](.docs/guides/installation.md) | Full installation guide |
+| [`.docs/guides/onboarding.md`](.docs/guides/onboarding.md) | Agent onboarding walkthrough |
+| [`.docs/guides/use-cases.md`](.docs/guides/use-cases.md) | Use cases, comparison, system requirements |
 | [`.cortex/code-conventions.md`](.cortex/code-conventions.md) | Code conventions and standards |
 
 ---
@@ -438,32 +457,33 @@ cortex-hub/
 | **Phase 1** | Ubuntu server provisioning, Docker 24+, Cloudflare Tunnel (`cloudflared`) | ✅ |
 | **Phase 2** | pnpm + Turborepo monorepo, `shared-types`, `shared-utils`, `shared-mem9` packages | ✅ |
 | **Phase 3** | Docker Compose stack: Qdrant, GitNexus eval-server, LLM Proxy, Watchtower | ✅ |
-| **Phase 4** | Hub MCP Server: 17 tools, Streamable HTTP, API key auth, telemetry, compliance | ✅ |
+| **Phase 4** | Hub MCP Server: 22 tools, Streamable HTTP, API key auth, telemetry, compliance | ✅ |
 | **Phase 5** | Dashboard: 12 pages, LLM Gateway, quality reports, sessions, usage analytics | ✅ |
-| **Phase 6** | Polish, documentation, testing, GA release | 🔄 |
+| **Phase 6** | Polish, documentation, testing, GA release | ✅ |
 
 ### What's Built (Highlights)
 
 **Infrastructure**
 - ✅ 2-service Docker architecture: `cortex-api` (:4000) + `cortex-mcp` (:8317)
-- ✅ Pre-built Docker images on GHCR (`ghcr.io/lktiep/cortex-*:latest`)
-- ✅ Cloudflare Tunnel: 4 subdomains, zero open ports
+- ✅ Pre-built Docker images on GHCR (`ghcr.io/ngojclee/cortex-*:latest`)
+- ✅ Cloudflare Tunnel / reverse proxy with primary public surface on `cortexhub.lengoc.me`
 - ✅ Watchtower auto-updates for Docker images
 - ✅ Docker build optimization: cache mounts, shared base, `.dockerignore`
 
-**MCP Server (17 tools)**
+**MCP Server (22 tools)**
 - ✅ Streamable HTTP transport (JSON-RPC over POST, SSE for streaming)
 - ✅ API key auth with `X-API-Key-Owner` identity resolution
 - ✅ Global telemetry: every tool call logged with agent, latency, project
-- ✅ Code intelligence: `code_search`, `code_context`, `code_impact`, `code_reindex`, `list_repos`, `cypher`, `detect_changes` (GitNexus)
+- ✅ Code intelligence: `code_search`, `code_context`, `code_impact`, `code_reindex`, `list_repos`, `cypher`, `detect_changes`, `code_read`, `code_rename`, `code_tree` (GitNexus)
 - ✅ Agent memory: `memory_search`, `memory_store` (mem9 → Qdrant)
-- ✅ Knowledge base: `knowledge_search`, `knowledge_store` (Qdrant)
+- ✅ Knowledge base: `knowledge_search`, `knowledge_store`, `wiki_generate` (Qdrant + GitNexus)
 - ✅ Sessions: `session_start`, `session_end`, `changes`, `health`
-- ✅ Quality: `quality_report` with 4D scoring + `plan_quality` assessment
+- ✅ Quality and analytics: `quality_report`, `plan_quality`, `tool_stats`
 - ✅ Compliance enforcement: session compliance grading (A/B/C/D) + context-aware hints
 
 **Dashboard (13 pages)**
 - ✅ Hero stats bar + per-project overview cards with GitNexus/mem9 status
+- ✅ Graph Explorer with orbit hub layout, focus mode, edge filters, breadcrumb, minimap, symbol tree, branch drill-down, and trace chains on canvas
 - ✅ LLM provider management: add/test/configure, smart model discovery
 - ✅ Usage analytics: token consumption by model, agent, time period
 - ✅ Budget controls: daily/monthly limits with alert thresholds
@@ -516,7 +536,7 @@ cortex-hub/
 
 **Best value hosting:** Hetzner CX22 (~$4.50/mo) handles 3-5 agents comfortably.
 
-> 📖 Full requirements, cloud cost comparison, and capacity planning: [`docs/guides/use-cases.md`](docs/guides/use-cases.md#system-requirements)
+> 📖 Full requirements, cloud cost comparison, and capacity planning: [`.docs/guides/use-cases.md`](.docs/guides/use-cases.md#system-requirements)
 
 ---
 
@@ -547,7 +567,7 @@ Cortex runs on **near-zero** infrastructure cost — everything is self-hosted:
 | **Multi-agent conflicts** | Manual merge resolution | Change detection prevents conflicts | 20+ min/incident |
 | **Quality assurance** | Hope agent ran linter | 4D scoring + compliance grading | Catches issues pre-commit |
 
-> 📖 Detailed use cases with examples: [`docs/guides/use-cases.md`](docs/guides/use-cases.md)
+> 📖 Detailed use cases with examples: [`.docs/guides/use-cases.md`](.docs/guides/use-cases.md)
 
 ### Cortex Hub vs Standalone Tools (GitNexus + mem0)
 
@@ -561,13 +581,13 @@ Cortex runs on **near-zero** infrastructure cost — everything is self-hosted:
 | **Quality tracking** | None | 4D scoring + compliance grades |
 | **Team scaling** | Re-setup per member | One-command onboard |
 
-> 📖 Full comparison with tradeoffs: [`docs/guides/use-cases.md#cortex-hub-vs-standalone-tools`](docs/guides/use-cases.md#cortex-hub-vs-standalone-tools)
+> 📖 Full comparison with tradeoffs: [`.docs/guides/use-cases.md#cortex-hub-vs-standalone-tools`](.docs/guides/use-cases.md#cortex-hub-vs-standalone-tools)
 
 ---
 
 ## Contributing
 
-See the [Contributing Guide](docs/CONTRIBUTING.md) for development setup, commit conventions, and code standards.
+See the [Contributing Guide](.docs/CONTRIBUTING.md) for development setup, commit conventions, and code standards.
 
 ## License
 

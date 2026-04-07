@@ -34,6 +34,7 @@ interface ForceGraphProps {
   onNodeClick: (nodeId: string, variant: string) => void
   selectedClusterId: string | null
   selectedProcessName: string | null
+  selectedBranchSymbol?: string | null
   focusMode?: boolean
   clusterMembers?: Array<{ name: string; type: string; filePath?: string }>
   processSteps?: Array<{ name: string; type: string; filePath?: string; index?: number }>
@@ -215,6 +216,7 @@ function buildFocusSets(
   graphLinks: GraphLink[],
   selectedClusterId: string | null,
   selectedProcessName: string | null,
+  selectedBranchSymbol: string | null | undefined,
 ) {
   const nodeIds = new Set<string>()
   const linkKeys = new Set<string>()
@@ -260,6 +262,22 @@ function buildFocusSets(
     }
   })
 
+  if (selectedBranchSymbol) {
+    const branchNode = graphNodes.find((node) => node.label === selectedBranchSymbol)
+    if (branchNode) {
+      nodeIds.add(branchNode.id)
+      graphLinks.forEach((link) => {
+        const src = typeof link.source === 'string' ? link.source : link.source.id
+        const tgt = typeof link.target === 'string' ? link.target : link.target.id
+        if (src === branchNode.id || tgt === branchNode.id) {
+          linkKeys.add(`${src}->${tgt}`)
+          nodeIds.add(src)
+          nodeIds.add(tgt)
+        }
+      })
+    }
+  }
+
   return { nodeIds, linkKeys }
 }
 
@@ -267,10 +285,12 @@ function MiniMap({
   nodes,
   selectedClusterId,
   selectedProcessName,
+  selectedBranchSymbol,
 }: {
   nodes: GraphNode[]
   selectedClusterId: string | null
   selectedProcessName: string | null
+  selectedBranchSymbol?: string | null
 }) {
   const width = 180
   const height = 140
@@ -299,7 +319,8 @@ function MiniMap({
             point.id === selectedClusterId ||
             point.label === selectedClusterId ||
             point.id === selectedProcessName ||
-            point.label === selectedProcessName
+            point.label === selectedProcessName ||
+            point.label === selectedBranchSymbol
           return (
             <circle
               key={`minimap-${point.id}`}
@@ -328,6 +349,7 @@ export default function ForceGraph({
   onNodeClick,
   selectedClusterId,
   selectedProcessName,
+  selectedBranchSymbol,
   focusMode = false,
   clusterMembers,
   processSteps,
@@ -353,8 +375,8 @@ export default function ForceGraph({
   )
 
   const focusSets = useMemo(
-    () => buildFocusSets(graphNodes, graphLinks, selectedClusterId, selectedProcessName),
-    [graphNodes, graphLinks, selectedClusterId, selectedProcessName],
+    () => buildFocusSets(graphNodes, graphLinks, selectedClusterId, selectedProcessName, selectedBranchSymbol),
+    [graphNodes, graphLinks, selectedClusterId, selectedProcessName, selectedBranchSymbol],
   )
 
   const nodeRadius = useCallback((d: GraphNode) => {
@@ -517,6 +539,7 @@ export default function ForceGraph({
           d.id === selectedProcessName ||
           d.label === selectedProcessName
         ) return '#facc15'
+        if (selectedBranchSymbol && d.label === selectedBranchSymbol) return '#fb7185'
         return VARIANT_STROKE[d.variant] ?? '#94a3b8'
       })
       .attr('stroke-width', (d) => {
@@ -526,6 +549,7 @@ export default function ForceGraph({
           d.id === selectedProcessName ||
           d.label === selectedProcessName
         ) return 3
+        if (selectedBranchSymbol && d.label === selectedBranchSymbol) return 3.5
         return 1.5
       })
       .attr('stroke-opacity', (d) => {
@@ -539,6 +563,7 @@ export default function ForceGraph({
           d.id === selectedProcessName ||
           d.label === selectedProcessName
         ) return 'url(#node-glow)'
+        if (selectedBranchSymbol && d.label === selectedBranchSymbol) return 'url(#node-glow)'
         return 'none'
       })
 
@@ -595,7 +620,8 @@ export default function ForceGraph({
           d.id === selectedClusterId ||
           d.label === selectedClusterId ||
           d.id === selectedProcessName ||
-          d.label === selectedProcessName
+          d.label === selectedProcessName ||
+          d.label === selectedBranchSymbol
         d3.select(this).select('circle')
           .transition().duration(200)
           .attr('stroke-opacity', 0.7)
@@ -630,7 +656,7 @@ export default function ForceGraph({
     return () => {
       simulation.stop()
     }
-  }, [focusMode, focusSets.linkKeys, focusSets.nodeIds, graphNodes, graphLinks, selectedClusterId, selectedProcessName, onNodeClick, nodeRadius])
+  }, [focusMode, focusSets.linkKeys, focusSets.nodeIds, graphNodes, graphLinks, selectedBranchSymbol, selectedClusterId, selectedProcessName, onNodeClick, nodeRadius])
 
   useEffect(() => {
     const cleanup = renderGraph()
@@ -665,6 +691,7 @@ export default function ForceGraph({
           nodes={graphNodes}
           selectedClusterId={selectedClusterId}
           selectedProcessName={selectedProcessName}
+          selectedBranchSymbol={selectedBranchSymbol}
         />
       </div>
     </div>

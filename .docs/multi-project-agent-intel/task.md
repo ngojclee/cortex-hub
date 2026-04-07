@@ -30,8 +30,14 @@
 - [x] Add breadcrumb and minimap to preserve graph context
 - [x] Add analysis presets for overview / dependency / type-system lenses
 - [x] Deepen branch drill-down so selected slices expose before/after relationships more directly
+- [x] Add symbol-level canvas emphasis so traced members/steps are highlighted directly on the graph
 - [x] Typecheck: pnpm --filter @cortex/dashboard-api typecheck ✅
 - [x] Typecheck: pnpm --filter @cortex/dashboard-web typecheck ✅
+
+## Auth Boundary Fix
+- [x] Allow machine-facing dashboard API routes to accept Bearer API keys in `dashboardAuth()`
+- [x] Keep dashboard/browser session auth as the default for UI-facing routes
+- [x] Return explicit `Invalid or expired API key` for machine clients instead of misclassifying API keys as expired sessions
 
 ## Phase C: GitNexus Tool Expansion
 - [x] Implement cortex_code_rename MCP tool (preview mode)

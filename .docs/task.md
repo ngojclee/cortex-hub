@@ -35,7 +35,8 @@
 ### Multi-Project Organization & Agent Intelligence (Active)
 - [ ] **Phase A: Registration & Knowledge Cleanup** — See [.docs/multi-project-agent-intel/task.md](multi-project-agent-intel/task.md)
 - [x] 2026-04-07: Fixed Knowledge/Graph project normalization mismatch (`projectId` vs `project_id`, slug-backed filtering, discovery matching, project resource sorting)
-- [~] **Phase B: Graph Explorer Enhancement** — orbit hub, symbol tree, focus mode, edge filters, breadcrumb, minimap, analysis presets, and branch drill-down delivered; next target is richer symbol-level branch tracing on the canvas
+- [x] 2026-04-07: Fixed auth boundary so machine-facing dashboard APIs can accept Bearer API keys instead of forcing dashboard session auth
+- [~] **Phase B: Graph Explorer Enhancement** — orbit hub, symbol tree, focus mode, edge filters, breadcrumb, minimap, analysis presets, branch drill-down, and symbol-level canvas tracing delivered; next target is richer branch-chain highlighting beyond the current local slice
 - [ ] **Phase C: GitNexus Tool Expansion** (future)
 
 ### Database Project Normalization (Pending Live Run)

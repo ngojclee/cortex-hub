@@ -92,7 +92,9 @@ export function dashboardAuth() {
       path.match(/\.(js|css|png|jpg|svg|ico|woff2?|ttf|map)$/) ||
       // Internal service-to-service calls (embedding, LLM gateway)
       // The embedder calls /api/llm/v1/embeddings without auth headers
-      (path.startsWith('/api/llm/') && isInternalRequest(c))
+      (path.startsWith('/api/llm/') && isInternalRequest(c)) ||
+      // Internal health/readiness probes must not require dashboard session auth.
+      ((path === '/api/mem9/health' || path === '/api/mem9-proxy/health') && isInternalRequest(c))
     ) {
       return next()
     }

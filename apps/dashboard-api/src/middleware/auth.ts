@@ -9,9 +9,21 @@ function parseCookie(cookieHeader: string, name: string): string | undefined {
 }
 
 /**
+ * Detect internal Docker network requests (service-to-service).
+ * These come from localhost, 127.0.0.1, or Docker internal IPs (172.*, 10.*, 192.168.*).
+ */
+function isInternalRequest(c: Context): boolean {
+  const ip = c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
+    c.req.header('x-real-ip') ||
+    ''
+  return ip === '127.0.0.1' || ip === '::1' || ip === '' ||
+    ip.startsWith('172.') || ip.startsWith('10.') || ip.startsWith('192.168.')
+}
+
+/**
  * Dashboard auth middleware.
  * When AUTH_ENABLED=true, requires a valid session token via cookie or Authorization header.
- * Skips auth for: /api/auth/*, /api/setup/*, /health, /mcp, static files.
+ * Skips auth for: /api/auth/*, /api/setup/*, /health, /mcp, static files, internal LLM calls.
  */
 export function dashboardAuth() {
   return async (c: Context, next: Next) => {
@@ -30,7 +42,10 @@ export function dashboardAuth() {
       path.startsWith('/.well-known/') ||
       path.startsWith('/_next/') ||
       // Static assets
-      path.match(/\.(js|css|png|jpg|svg|ico|woff2?|ttf|map)$/)
+      path.match(/\.(js|css|png|jpg|svg|ico|woff2?|ttf|map)$/) ||
+      // Internal service-to-service calls (embedding, LLM gateway)
+      // The embedder calls /api/llm/v1/embeddings without auth headers
+      (path.startsWith('/api/llm/') && isInternalRequest(c))
     ) {
       return next()
     }

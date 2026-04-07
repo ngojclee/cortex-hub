@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Env } from '../types.js'
+import { apiCall } from '../api-call.js'
 
 /**
  * Register code intelligence tools.
@@ -12,15 +13,13 @@ import type { Env } from '../types.js'
  * Proxied via Dashboard API — GitNexus runs as a CLI tool server-side.
  */
 export function registerCodeTools(server: McpServer, env: Env) {
-  const apiUrl = () => env.DASHBOARD_API_URL || 'http://localhost:4000'
-
   // ── Helper: call Dashboard API intel endpoints ──
   async function callIntel(
     endpoint: string,
     params: Record<string, unknown>,
     timeoutMs = 15000,
   ): Promise<unknown> {
-    const response = await fetch(`${apiUrl()}/api/intel/${endpoint}`, {
+    const response = await apiCall(env, `/api/intel/${endpoint}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
@@ -77,7 +76,7 @@ export function registerCodeTools(server: McpServer, env: Env) {
         // ── Qdrant semantic code search: supplement GitNexus with actual source code ──
         if (projectId) {
           try {
-            const codeRes = await fetch(`${apiUrl()}/api/intel/code-search`, {
+            const codeRes = await apiCall(env, '/api/intel/code-search', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ query, projectId, branch, limit: limit ?? 5 }),
@@ -365,7 +364,7 @@ export function registerCodeTools(server: McpServer, env: Env) {
     {},
     async () => {
       try {
-        const response = await fetch(`${apiUrl()}/api/intel/repos`, {
+        const response = await apiCall(env, '/api/intel/repos', {
           signal: AbortSignal.timeout(10000),
         })
 
@@ -423,7 +422,7 @@ export function registerCodeTools(server: McpServer, env: Env) {
     },
     async ({ file, projectId, startLine, endLine }) => {
       try {
-        const res = await fetch(`${apiUrl()}/api/intel/file-content`, {
+        const res = await apiCall(env, '/api/intel/file-content', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ projectId, file, startLine, endLine }),
@@ -508,7 +507,7 @@ export function registerCodeTools(server: McpServer, env: Env) {
     },
     async ({ symbol, newName, projectId, dryRun }) => {
       try {
-        const response = await fetch(`${apiUrl()}/api/intel/rename`, {
+        const response = await apiCall(env, '/api/intel/rename', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ symbol, newName, projectId, dryRun: dryRun ?? true }),
@@ -548,7 +547,8 @@ export function registerCodeTools(server: McpServer, env: Env) {
         if (depth) params.set('depth', depth.toString())
         if (direction) params.set('direction', direction)
 
-        const response = await fetch(`${apiUrl()}/api/intel/resources/project/${projectId}/symbol/${name}/tree?${params.toString()}`, {
+        const path = `/api/intel/resources/project/${encodeURIComponent(projectId)}/symbol/${encodeURIComponent(name)}/tree${params.size > 0 ? `?${params.toString()}` : ''}`
+        const response = await apiCall(env, path, {
           signal: AbortSignal.timeout(15000),
         })
 

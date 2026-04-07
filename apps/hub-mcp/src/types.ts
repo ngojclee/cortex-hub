@@ -14,6 +14,7 @@ export interface Env {
   // Resolved at runtime from API key during auth
   // This is the authoritative identity of the caller (api_keys.name)
   API_KEY_OWNER?: string
+  API_KEY_TOKEN?: string
 
   // Request-scoped client/source metadata propagated to dashboard-api
   CLIENT_TRANSPORT?: string

@@ -9,9 +9,10 @@ export const telemetryStorage = new AsyncLocalStorage<{ computeTokens: number; c
  * hub-mcp runs as a separate service, so this always uses
  * HTTP fetch to reach dashboard-api via DASHBOARD_API_URL.
  *
- * When env.API_KEY_OWNER is set (resolved during auth), it's
- * forwarded as X-API-Key-Owner header so dashboard-api can
- * use the authoritative identity from the API key.
+ * When env.API_KEY_TOKEN is set (captured during MCP auth), it is
+ * forwarded as Authorization so downstream machine routes can
+ * authenticate consistently. X-API-Key-Owner remains as a
+ * convenience identity header for internal attribution.
  */
 export async function apiCall(
   env: Env,
@@ -22,6 +23,9 @@ export async function apiCall(
 
   // Merge X-API-Key-Owner header when identity is resolved
   const headers = new Headers(init?.headers)
+  if (env.API_KEY_TOKEN && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${env.API_KEY_TOKEN}`)
+  }
   if (env.API_KEY_OWNER && !headers.has('X-API-Key-Owner')) {
     headers.set('X-API-Key-Owner', env.API_KEY_OWNER)
   }

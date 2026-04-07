@@ -228,9 +228,9 @@ function createMcpServer(env: Env) {
 // enableJsonResponse: true allows simple request/response without SSE.
 app.all('/mcp', async (c) => {
   // ─── Auth: resolve API key owner (strict by default) ───────────
-  const envWithOwner = { ...c.env } as Env & { API_KEY_OWNER?: string }
+  const envWithOwner = { ...c.env } as Env & { API_KEY_OWNER?: string; API_KEY_TOKEN?: string }
 
-  let authResult: { valid: boolean; error?: string; agentId?: string; scope?: string } = { valid: false, error: 'Unauthorized' }
+  let authResult: { valid: boolean; error?: string; agentId?: string; scope?: string; token?: string } = { valid: false, error: 'Unauthorized' }
   try {
     authResult = await validateApiKey(c.req.raw, c.env)
   } catch (error) {
@@ -251,6 +251,9 @@ app.all('/mcp', async (c) => {
 
   if (authResult.valid && authResult.agentId) {
     envWithOwner.API_KEY_OWNER = authResult.agentId
+  }
+  if (authResult.valid && authResult.token) {
+    envWithOwner.API_KEY_TOKEN = authResult.token
   }
   envWithOwner.CLIENT_TRANSPORT = 'mcp'
   envWithOwner.CLIENT_APP =

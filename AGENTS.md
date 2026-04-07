@@ -110,9 +110,9 @@ Cortex Hub is a self-hosted, MCP-compliant platform that unifies code intelligen
 ### Endpoints
 | Service | URL |
 |---------|-----|
-| Dashboard | hub.jackle.dev |
-| API | cortex-api.jackle.dev |
-| MCP | cortex-mcp.jackle.dev |
+| Dashboard | cortexhub.lengoc.me |
+| API | cortexhub.lengoc.me |
+| MCP | cortexhub.lengoc.me/mcp |
 
 ---
 

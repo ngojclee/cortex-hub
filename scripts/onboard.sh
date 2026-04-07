@@ -107,10 +107,10 @@ prompt_user_secret() {
 }
 
 # 1. Get MCP URL
-if prompt_user -rp "Enter your Cortex Hub MCP URL [https://cortex-mcp.jackle.dev/mcp]: " INPUT_URL; then
-    MCP_URL=${INPUT_URL:-"https://cortex-mcp.jackle.dev/mcp"}
+if prompt_user -rp "Enter your Cortex Hub MCP URL [https://cortexhub.lengoc.me/mcp]: " INPUT_URL; then
+    MCP_URL=${INPUT_URL:-"https://cortexhub.lengoc.me/mcp"}
 else
-    MCP_URL=${HUB_API_URL:-"https://cortex-mcp.jackle.dev/mcp"}
+    MCP_URL=${HUB_API_URL:-"https://cortexhub.lengoc.me/mcp"}
 fi
 MCP_URL="${MCP_URL%/}"
 

@@ -21,7 +21,7 @@
 - hub-mcp uses `DASHBOARD_API_URL=http://cortex-api:4000` for real HTTP calls
 
 ## MCP Server Status ✅
-- **Endpoint:** `POST https://cortex-mcp.jackle.dev/mcp`
+- **Endpoint:** `POST https://cortexhub.lengoc.me/mcp`
 - **Auth:** Bearer token (`sk_ctx_...`)
 - **12 tools operational:** session_start, session_end, changes, code_search, code_impact, code_reindex, memory_search, memory_store, knowledge_search, knowledge_store, quality_report, health
 - **Transport:** Streamable HTTP (WebStandardStreamableHTTPServerTransport)

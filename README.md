@@ -112,9 +112,9 @@ graph TB
 ```
 Internet
   │
-  ├── cortex-mcp.jackle.dev ──── Hub MCP Server (Hono, Streamable HTTP)
-  ├── cortex-api.jackle.dev ──── Dashboard API  (Hono + SQLite + mem9)
-  └── hub.jackle.dev ─────────── Dashboard UI   (Next.js static export)
+  ├── cortexhub.lengoc.me/mcp ── Hub MCP Server (Hono, Streamable HTTP)
+  ├── cortexhub.lengoc.me ────── Dashboard API + UI (Hono + SQLite + mem9 + Next.js)
+  └── cortexhub.lengoc.me ────── Dashboard UI   (Next.js static export)
                                     │
                               Cloudflare Tunnel
                                     │
@@ -348,8 +348,8 @@ The onboarding script will:
 ### Verify
 
 ```bash
-curl https://cortex-api.jackle.dev/health     # Dashboard API
-curl https://cortex-mcp.jackle.dev/health     # MCP Server
+curl https://cortexhub.lengoc.me/health       # Dashboard API
+curl https://cortexhub.lengoc.me/mcp          # MCP route (expects Bearer auth)
 ```
 
 ---

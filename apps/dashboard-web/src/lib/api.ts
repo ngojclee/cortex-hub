@@ -648,10 +648,15 @@ export async function getIntelProjectCrossLinks(projectId: string) {
   }>(`/api/intel/resources/project/${projectId}/cross-links`)
 }
 
-export async function getIntelProjectSymbolTree(projectId: string, name: string, opts?: { depth?: number; direction?: 'upstream' | 'downstream' }) {
+export async function getIntelProjectSymbolTree(
+  projectId: string,
+  name: string,
+  opts?: { depth?: number; direction?: 'upstream' | 'downstream'; edgeTypes?: string[] },
+) {
   const qs = new URLSearchParams()
   if (opts?.depth) qs.set('depth', String(opts.depth))
   if (opts?.direction) qs.set('direction', opts.direction)
+  if (opts?.edgeTypes?.length) qs.set('edgeTypes', opts.edgeTypes.join(','))
   return apiFetch<{
     success: boolean
     data: {

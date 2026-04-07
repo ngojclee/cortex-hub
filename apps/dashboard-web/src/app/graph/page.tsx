@@ -24,6 +24,9 @@ import styles from './page.module.css'
 import SymbolTreeViewer from '@/components/intel/SymbolTreeViewer'
 import ForceGraph from '@/components/intel/ForceGraph'
 
+const EDGE_FILTER_OPTIONS = ['CALLS', 'IMPORTS', 'EXTENDS', 'IMPLEMENTS', 'ACCESSES'] as const
+type EdgeFilter = typeof EDGE_FILTER_OPTIONS[number]
+
 function formatIndexedAt(value: string | null | undefined): string {
   if (!value) return 'Not indexed'
   return new Date(value).toLocaleString()
@@ -38,6 +41,13 @@ function statusTone(status: string | undefined): 'healthy' | 'warning' | 'error'
 function statusLabel(status: string | undefined): string {
   if (!status) return 'unknown'
   return status.replaceAll('_', ' ')
+}
+
+function matchesEdgeFilter(edge: string | undefined, filters: EdgeFilter[]): boolean {
+  if (filters.length === 0) return true
+  if (!edge) return false
+  const normalized = edge.toUpperCase()
+  return filters.some((filter) => normalized.includes(filter))
 }
 
 /* ── Parse GitNexus raw text into categorized sections ── */
@@ -133,8 +143,15 @@ function parseGitNexusContext(raw: string): ParsedContext {
   return { sections }
 }
 
-function ContextVisual({ raw }: { raw: string }) {
+function ContextVisual({ raw, filters }: { raw: string; filters: EdgeFilter[] }) {
   const parsed = useMemo(() => parseGitNexusContext(raw), [raw])
+  const filteredSections = useMemo(
+    () => parsed.sections.map((section) => ({
+      ...section,
+      entries: section.entries.filter((entry) => matchesEdgeFilter(entry.edge, filters)),
+    })).filter((section) => section.entries.length > 0),
+    [filters, parsed.sections],
+  )
 
   if (parsed.sections.length === 0) {
     return <pre className={styles.contextPre}>{raw}</pre>
@@ -159,7 +176,10 @@ function ContextVisual({ raw }: { raw: string }) {
 
   return (
     <div>
-      {parsed.sections.map(section => (
+      {filteredSections.length === 0 && (
+        <div className={styles.contextEmpty}>No entries match the active edge filters.</div>
+      )}
+      {filteredSections.map(section => (
         <div key={section.key} className={styles.contextSection}>
           <div className={`${styles.contextSectionTitle} ${titleClass(section.key)}`}>
             {section.title} ({section.entries.length})
@@ -280,8 +300,17 @@ function parseImpactResults(results: unknown): ImpactDepthGroup[] {
   return groups
 }
 
-function ImpactVisual({ target, direction, results }: { target: string; direction: string; results: unknown }) {
+function ImpactVisual({ target, direction, results, filters }: { target: string; direction: string; results: unknown; filters: EdgeFilter[] }) {
   const groups = useMemo(() => parseImpactResults(results), [results])
+  const filteredGroups = useMemo(
+    () => groups
+      .map((group) => ({
+        ...group,
+        symbols: group.symbols.filter((symbol) => matchesEdgeFilter(symbol.edge, filters)),
+      }))
+      .filter((group) => group.symbols.length > 0),
+    [filters, groups],
+  )
 
   if (groups.length === 0) {
     return (
@@ -294,7 +323,7 @@ function ImpactVisual({ target, direction, results }: { target: string; directio
     )
   }
 
-  const totalAffected = groups.reduce((sum, g) => sum + g.symbols.length, 0)
+  const totalAffected = filteredGroups.reduce((sum, g) => sum + g.symbols.length, 0)
 
   return (
     <div>
@@ -302,7 +331,10 @@ function ImpactVisual({ target, direction, results }: { target: string; directio
         <strong>{totalAffected}</strong> symbols affected {direction === 'upstream' ? 'upstream' : 'downstream'} from <strong>{target}</strong>
       </div>
 
-      {groups.map(group => (
+      {filteredGroups.length === 0 && (
+        <div className={styles.contextEmpty}>No impacted symbols match the active edge filters.</div>
+      )}
+      {filteredGroups.map(group => (
         <div key={`depth-${group.depth}`} className={styles.impactDepthGroup}>
           <div className={styles.impactDepthHeader}>
             <span className={`${styles.impactDepthBadge} ${
@@ -531,6 +563,8 @@ export default function GraphPage() {
   const [loadingContext, setLoadingContext] = useState(false)
   const [loadingImpact, setLoadingImpact] = useState(false)
   const [treeDirection, setTreeDirection] = useState<'upstream' | 'downstream'>('downstream')
+  const [focusMode, setFocusMode] = useState(true)
+  const [edgeFilters, setEdgeFilters] = useState<EdgeFilter[]>([])
 
   const { data: clusterMembersData } = useSWR(
     projectId && selectedCluster ? ['intel-project-cluster-members', projectId, selectedCluster] : null,
@@ -591,7 +625,7 @@ export default function GraphPage() {
     setSelectedSymbol(symbolName)
     setLoadingTree(true)
     try {
-      const data = await getIntelProjectSymbolTree(projectId, symbolName, { depth: 3, direction: treeDirection })
+      const data = await getIntelProjectSymbolTree(projectId, symbolName, { depth: 3, direction: treeDirection, edgeTypes: edgeFilters })
       setSymbolTree(data)
     } catch (err) {
       console.error('Failed to load symbol tree:', err)
@@ -648,6 +682,20 @@ export default function GraphPage() {
       setRunningCypher(false)
     }
   }
+
+  const toggleEdgeFilter = (filter: EdgeFilter) => {
+    setEdgeFilters((current) => (
+      current.includes(filter)
+        ? current.filter((value) => value !== filter)
+        : [...current, filter]
+    ))
+  }
+
+  const breadcrumbTrail = [
+    selectedProject?.name ?? 'Project',
+    selectedCluster ?? selectedProcess ?? null,
+    selectedSymbol ?? null,
+  ].filter(Boolean) as string[]
 
   return (
     <DashboardLayout title="Graph" subtitle="Project architecture explorer built from Cortex intel resources">
@@ -731,6 +779,46 @@ export default function GraphPage() {
             <StatCard label="Knowledge" value={context.project.knowledge.docs} hint={`${context.project.knowledge.chunks} chunks`} />
           </div>
 
+          <div className={`card ${styles.graphControls}`}>
+            <div className={styles.breadcrumbs}>
+              {breadcrumbTrail.map((crumb, index) => (
+                <span key={`${crumb}-${index}`} className={styles.breadcrumbItem}>
+                  {index > 0 && <span className={styles.breadcrumbSep}>›</span>}
+                  <span>{crumb}</span>
+                </span>
+              ))}
+            </div>
+            <div className={styles.controlRow}>
+              <button
+                className={`btn btn-sm ${focusMode ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setFocusMode((current) => !current)}
+              >
+                {focusMode ? 'Focus Mode On' : 'Focus Mode Off'}
+              </button>
+              <button
+                className="btn btn-sm btn-secondary"
+                onClick={() => setEdgeFilters([])}
+                disabled={edgeFilters.length === 0}
+              >
+                Clear Filters
+              </button>
+            </div>
+            <div className={styles.filterChips}>
+              {EDGE_FILTER_OPTIONS.map((filter) => {
+                const active = edgeFilters.includes(filter)
+                return (
+                  <button
+                    key={filter}
+                    className={`${styles.filterChip} ${active ? styles.filterChipActive : ''}`}
+                    onClick={() => toggleEdgeFilter(filter)}
+                  >
+                    {filter}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
           <div className={styles.graphWrapper}>
             <div className={styles.graphMain}>
               <ForceGraph
@@ -752,6 +840,7 @@ export default function GraphPage() {
                 }}
                 selectedClusterId={selectedCluster}
                 selectedProcessName={selectedProcess}
+                focusMode={focusMode}
                 clusterMembers={clusterMembersData?.data?.members}
                 processSteps={processDetail?.steps.map((s, i) => ({ name: s.name, type: s.type ?? 'step', filePath: s.filePath ?? undefined, index: i + 1 }))}
               />
@@ -984,7 +1073,7 @@ export default function GraphPage() {
             <button className="btn btn-ghost" onClick={() => { setSelectedSymbol(null); setSymbolContext(null) }}>Close</button>
           </div>
           <div className={styles.contextContent}>
-            <ContextVisual raw={symbolContext.raw} />
+            <ContextVisual raw={symbolContext.raw} filters={edgeFilters} />
           </div>
         </div>
       )}
@@ -1005,7 +1094,7 @@ export default function GraphPage() {
             <button className="btn btn-ghost" onClick={() => { setSelectedSymbol(null); setSymbolImpact(null) }}>Close</button>
           </div>
           <div className={styles.impactContent}>
-            <ImpactVisual target={symbolImpact.target} direction={symbolImpact.direction} results={symbolImpact.results} />
+            <ImpactVisual target={symbolImpact.target} direction={symbolImpact.direction} results={symbolImpact.results} filters={edgeFilters} />
           </div>
         </div>
       )}

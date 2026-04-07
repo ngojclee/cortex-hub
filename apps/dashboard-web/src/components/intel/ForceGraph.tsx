@@ -34,6 +34,7 @@ interface ForceGraphProps {
   onNodeClick: (nodeId: string, variant: string) => void
   selectedClusterId: string | null
   selectedProcessName: string | null
+  focusMode?: boolean
   clusterMembers?: Array<{ name: string; type: string; filePath?: string }>
   processSteps?: Array<{ name: string; type: string; filePath?: string; index?: number }>
 }
@@ -209,6 +210,112 @@ function buildGraphData(
   return { nodes, links }
 }
 
+function buildFocusSets(
+  graphNodes: GraphNode[],
+  graphLinks: GraphLink[],
+  selectedClusterId: string | null,
+  selectedProcessName: string | null,
+) {
+  const nodeIds = new Set<string>()
+  const linkKeys = new Set<string>()
+
+  const selectedId = selectedClusterId ?? selectedProcessName
+  const selectedVariant = selectedClusterId ? 'cluster' : selectedProcessName ? 'process' : null
+
+  if (!selectedId || !selectedVariant) {
+    graphNodes.forEach((node) => nodeIds.add(node.id))
+    graphLinks.forEach((link) => {
+      const src = typeof link.source === 'string' ? link.source : link.source.id
+      const tgt = typeof link.target === 'string' ? link.target : link.target.id
+      linkKeys.add(`${src}->${tgt}`)
+    })
+    return { nodeIds, linkKeys }
+  }
+
+  nodeIds.add('root')
+
+  const selectedNode = graphNodes.find((node) => node.id === selectedId || node.label === selectedId)
+  if (!selectedNode) return { nodeIds, linkKeys }
+  nodeIds.add(selectedNode.id)
+
+  graphLinks.forEach((link) => {
+    const src = typeof link.source === 'string' ? link.source : link.source.id
+    const tgt = typeof link.target === 'string' ? link.target : link.target.id
+    const key = `${src}->${tgt}`
+
+    const touchesSelected = src === selectedNode.id || tgt === selectedNode.id
+    const touchesRoot = src === 'root' || tgt === 'root'
+    const touchesChild = src.startsWith(selectedVariant === 'cluster' ? 'member-' : 'step-') || tgt.startsWith(selectedVariant === 'cluster' ? 'member-' : 'step-')
+
+    if (touchesSelected || (touchesRoot && (src === selectedNode.id || tgt === selectedNode.id)) || touchesChild) {
+      linkKeys.add(key)
+      nodeIds.add(src)
+      nodeIds.add(tgt)
+    }
+
+    if (selectedVariant === 'cluster' && link.linkType === 'crosslink' && (src === selectedNode.id || tgt === selectedNode.id)) {
+      linkKeys.add(key)
+      nodeIds.add(src)
+      nodeIds.add(tgt)
+    }
+  })
+
+  return { nodeIds, linkKeys }
+}
+
+function MiniMap({
+  nodes,
+  selectedClusterId,
+  selectedProcessName,
+}: {
+  nodes: GraphNode[]
+  selectedClusterId: string | null
+  selectedProcessName: string | null
+}) {
+  const width = 180
+  const height = 140
+  const points = nodes
+    .filter((node) => node.variant !== 'member' && node.variant !== 'step')
+    .map((node) => ({ ...node, x: node.anchorX ?? 0, y: node.anchorY ?? 0 }))
+
+  const xValues = points.map((point) => point.x)
+  const yValues = points.map((point) => point.y)
+  const minX = Math.min(...xValues, -40)
+  const maxX = Math.max(...xValues, 40)
+  const minY = Math.min(...yValues, -40)
+  const maxY = Math.max(...yValues, 40)
+  const xSpan = Math.max(maxX - minX, 1)
+  const ySpan = Math.max(maxY - minY, 1)
+
+  const mapX = (value: number) => 16 + ((value - minX) / xSpan) * (width - 32)
+  const mapY = (value: number) => 16 + ((value - minY) / ySpan) * (height - 32)
+
+  return (
+    <div className={styles.miniMap}>
+      <div className={styles.miniMapTitle}>Map</div>
+      <svg viewBox={`0 0 ${width} ${height}`} className={styles.miniMapSvg} aria-hidden="true">
+        {points.map((point) => {
+          const isSelected =
+            point.id === selectedClusterId ||
+            point.label === selectedClusterId ||
+            point.id === selectedProcessName ||
+            point.label === selectedProcessName
+          return (
+            <circle
+              key={`minimap-${point.id}`}
+              cx={mapX(point.x)}
+              cy={mapY(point.y)}
+              r={point.variant === 'root' ? 7 : point.variant === 'knowledge' ? 4 : 5}
+              fill={isSelected ? '#facc15' : VARIANT_COLORS[point.variant] ?? '#64748b'}
+              opacity={isSelected ? 1 : 0.78}
+            />
+          )
+        })}
+      </svg>
+    </div>
+  )
+}
+
 /* ── Component ── */
 
 export default function ForceGraph({
@@ -221,6 +328,7 @@ export default function ForceGraph({
   onNodeClick,
   selectedClusterId,
   selectedProcessName,
+  focusMode = false,
   clusterMembers,
   processSteps,
 }: ForceGraphProps) {
@@ -242,6 +350,11 @@ export default function ForceGraph({
         processSteps,
       ),
     [projectName, clusters, processes, knowledgeDocs, knowledgeChunks, crossLinks, selectedClusterId, selectedProcessName, clusterMembers, processSteps],
+  )
+
+  const focusSets = useMemo(
+    () => buildFocusSets(graphNodes, graphLinks, selectedClusterId, selectedProcessName),
+    [graphNodes, graphLinks, selectedClusterId, selectedProcessName],
   )
 
   const nodeRadius = useCallback((d: GraphNode) => {
@@ -342,6 +455,12 @@ export default function ForceGraph({
       .data(graphLinks)
       .join('line')
       .attr('class', (d) => `${styles.link} ${d.linkType === 'crosslink' ? styles.linkCrosslink : ''}`)
+      .attr('stroke-opacity', (d) => {
+        if (!focusMode || (!selectedClusterId && !selectedProcessName)) return 0.8
+        const src = typeof d.source === 'string' ? d.source : d.source.id
+        const tgt = typeof d.target === 'string' ? d.target : d.target.id
+        return focusSets.linkKeys.has(`${src}->${tgt}`) ? 0.95 : 0.08
+      })
       .attr('stroke-width', (d) => {
         if (d.linkType === 'crosslink') return Math.min((d.weight ?? 1) + 0.5, 4)
         return 1.5
@@ -387,6 +506,10 @@ export default function ForceGraph({
       .append('circle')
       .attr('r', (d) => nodeRadius(d))
       .attr('fill', (d) => VARIANT_COLORS[d.variant] ?? '#64748b')
+      .attr('fill-opacity', (d) => {
+        if (!focusMode || (!selectedClusterId && !selectedProcessName)) return 1
+        return focusSets.nodeIds.has(d.id) ? 1 : 0.14
+      })
       .attr('stroke', (d) => {
         if (
           d.id === selectedClusterId ||
@@ -405,7 +528,10 @@ export default function ForceGraph({
         ) return 3
         return 1.5
       })
-      .attr('stroke-opacity', 0.7)
+      .attr('stroke-opacity', (d) => {
+        if (!focusMode || (!selectedClusterId && !selectedProcessName)) return 0.7
+        return focusSets.nodeIds.has(d.id) ? 0.9 : 0.15
+      })
       .attr('filter', (d) => {
         if (
           d.id === selectedClusterId ||
@@ -429,6 +555,10 @@ export default function ForceGraph({
       })
       .attr('font-weight', (d) => (d.variant === 'root' ? 700 : 600))
       .attr('fill', '#f8fafc')
+      .attr('fill-opacity', (d) => {
+        if (!focusMode || (!selectedClusterId && !selectedProcessName)) return 1
+        return focusSets.nodeIds.has(d.id) ? 1 : 0.2
+      })
       .text((d) => d.label)
 
     /* Node meta (below label) */
@@ -439,6 +569,10 @@ export default function ForceGraph({
       .attr('text-anchor', 'middle')
       .attr('font-size', '9px')
       .attr('fill', 'rgba(226, 232, 240, 0.7)')
+      .attr('fill-opacity', (d) => {
+        if (!focusMode || (!selectedClusterId && !selectedProcessName)) return 1
+        return focusSets.nodeIds.has(d.id) ? 1 : 0.18
+      })
       .text((d) => d.meta)
 
     /* Click handler */
@@ -496,7 +630,7 @@ export default function ForceGraph({
     return () => {
       simulation.stop()
     }
-  }, [graphNodes, graphLinks, selectedClusterId, selectedProcessName, onNodeClick, nodeRadius])
+  }, [focusMode, focusSets.linkKeys, focusSets.nodeIds, graphNodes, graphLinks, selectedClusterId, selectedProcessName, onNodeClick, nodeRadius])
 
   useEffect(() => {
     const cleanup = renderGraph()
@@ -527,6 +661,11 @@ export default function ForceGraph({
       </div>
       <div ref={containerRef} className={styles.graphViewport}>
         <svg ref={svgRef} className={styles.graphSvg} role="img" aria-label="Project dependency graph" />
+        <MiniMap
+          nodes={graphNodes}
+          selectedClusterId={selectedClusterId}
+          selectedProcessName={selectedProcessName}
+        />
       </div>
     </div>
   )

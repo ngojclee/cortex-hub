@@ -2003,6 +2003,13 @@ intelRouter.get('/resources/project/:projectId/symbol/:name/tree', async (c) => 
       ? Math.min(Math.max(requestedDepth, 1), 4)
       : 3
     const direction = c.req.query('direction') === 'upstream' ? 'upstream' : 'downstream'
+    const edgeTypes = (c.req.query('edgeTypes') ?? '')
+      .split(',')
+      .map((value) => value.trim().toUpperCase())
+      .filter(Boolean)
+    const edgeTypeClause = edgeTypes.length > 0
+      ? ` AND rel.type IN [${edgeTypes.map((type) => `"${escapeCypherString(type)}"`).join(', ')}]`
+      : ''
 
     // Traverse symbol-to-symbol CodeRelation edges so the tree mirrors GitNexus better
     // while excluding structural relations that make the output noisy.
@@ -2012,7 +2019,7 @@ intelRouter.get('/resources/project/:projectId/symbol/:name/tree', async (c) => 
     const query = `
       MATCH (start:Symbol {name: $name})
       MATCH path = (start)${directionPattern}(dep:Symbol)
-      WHERE ALL(rel IN rels WHERE COALESCE(rel.type, '') <> 'MEMBER_OF' AND COALESCE(rel.type, '') <> 'STEP_IN_PROCESS')
+      WHERE ALL(rel IN rels WHERE COALESCE(rel.type, '') <> 'MEMBER_OF' AND COALESCE(rel.type, '') <> 'STEP_IN_PROCESS'${edgeTypeClause})
       RETURN path
       LIMIT 60
     `

@@ -13,6 +13,7 @@
   "dependencies": {
     "@cortex/shared-types": "workspace:*",
     "@cortex/shared-utils": "workspace:*",
+    "d3": "^7.9.0",
     "next": "^15.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -20,6 +21,7 @@
   },
   "devDependencies": {
     "@cloudflare/next-on-pages": "^1.13.16",
+    "@types/d3": "^7.4.3",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "eslint-plugin-next-on-pages": "^1.13.16",

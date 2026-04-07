@@ -10,6 +10,8 @@
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "db:project-normalize": "tsx src/db/project-normalization.ts",
+    "db:migrate": "tsx src/db/migrator.ts",
+    "db:backup": "tsx src/db/backup.ts",
     "test": "vitest run --passWithNoTests",
     "test:coverage": "vitest run --passWithNoTests --coverage",
     "clean": "rm -rf dist"

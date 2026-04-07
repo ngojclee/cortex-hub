@@ -25,6 +25,7 @@ import {
 } from '@/lib/api'
 import styles from './page.module.css'
 import SymbolTreeViewer from '@/components/intel/SymbolTreeViewer'
+import ForceGraph from '@/components/intel/ForceGraph'
 
 function formatIndexedAt(value: string | null | undefined): string {
   if (!value) return 'Not indexed'
@@ -998,7 +999,7 @@ export default function GraphPage() {
 
           <div className={styles.graphWrapper}>
             <div className={styles.graphMain}>
-              <GraphCanvas
+              <ForceGraph
                 projectName={selectedProject.name}
                 clusters={clusters}
                 processes={processes}

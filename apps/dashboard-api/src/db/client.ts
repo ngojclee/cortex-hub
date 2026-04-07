@@ -3,6 +3,7 @@ import { join } from 'path'
 import { readFileSync, existsSync, mkdirSync } from 'fs'
 import { dirname } from 'path'
 import { fileURLToPath } from 'url'
+import { runMigrations } from './migrator.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -14,8 +15,8 @@ if (!existsSync(dbDir)) {
   mkdirSync(dbDir, { recursive: true })
 }
 
-const db: SqliteDatabase = new Database(dbPath, { 
-  verbose: process.env.NODE_ENV === 'development' ? console.log : undefined 
+const db: SqliteDatabase = new Database(dbPath, {
+  verbose: process.env.NODE_ENV === 'development' ? console.log : undefined
 })
 
 // Enable WAL mode for better concurrency
@@ -23,59 +24,15 @@ db.pragma('journal_mode = WAL')
 
 // Initialize schema — resolve relative to THIS file, not cwd()
 const schemaPath = join(__dirname, 'schema.sql')
-const schemaStr = readFileSync(schemaPath, 'utf-8')
-db.exec(schemaStr)
+if (existsSync(schemaPath)) {
+  const schemaStr = readFileSync(schemaPath, 'utf-8')
+  db.exec(schemaStr)
+}
 
-// Safe migrations for early schema changes without drop
-try {
-  db.exec('ALTER TABLE projects ADD COLUMN git_username TEXT')
-} catch (e) { /* ignore if exists */ }
+// Run formal migrations (tracks applied state in _migrations table)
+runMigrations(db)
 
-try {
-  db.exec('ALTER TABLE projects ADD COLUMN git_token TEXT')
-} catch (e) { /* ignore if exists */ }
-
-// Add missing columns to api_keys (added after initial schema)
-try {
-  db.exec('ALTER TABLE api_keys ADD COLUMN permissions TEXT')
-} catch (e) { /* ignore if exists */ }
-
-try {
-  db.exec('ALTER TABLE api_keys ADD COLUMN project_id TEXT')
-} catch (e) { /* ignore if exists */ }
-
-// Mem9 embedding status on index_jobs
-try {
-  db.exec("ALTER TABLE index_jobs ADD COLUMN mem9_status TEXT DEFAULT 'pending'")
-} catch (e) { /* ignore if exists */ }
-
-try {
-  db.exec('ALTER TABLE index_jobs ADD COLUMN mem9_chunks INTEGER DEFAULT 0')
-} catch (e) { /* ignore if exists */ }
-
-// Docs knowledge builder status on index_jobs
-try {
-  db.exec("ALTER TABLE index_jobs ADD COLUMN docs_knowledge_status TEXT DEFAULT NULL")
-} catch (e) { /* ignore if exists */ }
-
-try {
-  db.exec('ALTER TABLE index_jobs ADD COLUMN docs_knowledge_count INTEGER DEFAULT 0')
-} catch (e) { /* ignore if exists */ }
-
-// Commit tracking on index_jobs
-try {
-  db.exec('ALTER TABLE index_jobs ADD COLUMN commit_hash TEXT DEFAULT NULL')
-} catch (e) { /* ignore if exists */ }
-
-try {
-  db.exec('ALTER TABLE index_jobs ADD COLUMN commit_message TEXT DEFAULT NULL')
-} catch (e) { /* ignore if exists */ }
-
-try {
-  db.exec("ALTER TABLE index_jobs ADD COLUMN triggered_by TEXT DEFAULT 'manual'")
-} catch (e) { /* ignore if exists */ }
-
-// Helper: SQLite-safe date normalization for ISO 8601 strings (2026-03-23T05:26:46.407Z → 2026-03-23 05:26:46)
+// Helper: SQLite-safe date normalization for ISO 8601 strings
 const ISO_TO_SQLITE = `substr(replace(replace(completed_at, 'T', ' '), 'Z', ''), 1, 19)`
 
 // Reset stale mem9 states: 'done' with 0 chunks means embedding never ran
@@ -94,43 +51,6 @@ try {
     console.warn(`[db:startup] Reset ${result.changes} stuck mem9 embedding job(s)`)
   }
 } catch (e) { /* ignore */ }
-
-try {
-  db.exec('ALTER TABLE query_logs ADD COLUMN input_size INTEGER DEFAULT 0')
-} catch (e) { /* ignore if exists */ }
-
-try {
-  db.exec('ALTER TABLE query_logs ADD COLUMN output_size INTEGER DEFAULT 0')
-} catch (e) { /* ignore if exists */ }
-
-try {
-  db.exec('ALTER TABLE query_logs ADD COLUMN compute_tokens INTEGER DEFAULT 0')
-} catch (e) { /* ignore if exists */ }
-
-try {
-  db.exec('ALTER TABLE query_logs ADD COLUMN compute_model TEXT')
-} catch (e) { /* ignore if exists */ }
-
-try {
-  db.exec('ALTER TABLE query_logs ADD COLUMN shared_metadata TEXT')
-} catch (e) { /* ignore if exists */ }
-
-try {
-  db.exec('ALTER TABLE session_handoffs ADD COLUMN shared_metadata TEXT')
-} catch (e) { /* ignore if exists */ }
-
-try {
-  db.exec('ALTER TABLE quality_reports ADD COLUMN shared_metadata TEXT')
-} catch (e) { /* ignore if exists */ }
-
-try {
-  db.exec('ALTER TABLE change_events ADD COLUMN shared_metadata TEXT')
-} catch (e) { /* ignore if exists */ }
-
-if (existsSync(schemaPath)) {
-  const schema = readFileSync(schemaPath, 'utf8')
-  db.exec(schema)
-}
 
 // Auto-cleanup: remove change_events older than 24h (runs every hour)
 setInterval(() => {

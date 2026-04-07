@@ -150,14 +150,43 @@ export class LlmClient {
   async isHealthy(): Promise<boolean> {
     const slot = this.slots[0]
     if (!slot) return false
+
+    const baseUrl = slot.baseUrl.replace(/\/$/, '')
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (slot.apiKey) headers['Authorization'] = `Bearer ${slot.apiKey}`
+
     try {
-      const headers: Record<string, string> = {}
-      if (slot.apiKey) headers['Authorization'] = `Bearer ${slot.apiKey}`
-      const res = await fetch(`${slot.baseUrl.replace(/\/$/, '')}/models`, {
+      const res = await fetch(`${baseUrl}/models`, {
         headers,
         signal: AbortSignal.timeout(3000),
       })
-      return res.ok
+
+      if (res.ok) return true
+
+      // Some OpenAI-compatible gateways don't expose /models cleanly
+      // even though chat completions work. Fall through to a tiny live
+      // completion probe before declaring the slot unhealthy.
+      if (![401, 403, 404, 405].includes(res.status)) {
+        return false
+      }
+    } catch {
+      // Fall through to chat probe.
+    }
+
+    try {
+      const chatRes = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers,
+        signal: AbortSignal.timeout(5000),
+        body: JSON.stringify({
+          model: slot.model,
+          messages: [{ role: 'user', content: 'Reply with OK only.' }],
+          max_tokens: 5,
+          temperature: 0,
+        }),
+      })
+
+      return chatRes.ok
     } catch {
       return false
     }

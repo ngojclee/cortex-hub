@@ -6,6 +6,7 @@ import { createLogger } from '@cortex/shared-utils'
 import { Embedder } from '@cortex/shared-mem9'
 import { db } from '../db/client.js'
 import { resolveEmbeddingConfig } from '../services/embedding-config.js'
+import { requireAdminAccess } from './admin-helpers.js'
 
 const logger = createLogger('intel')
 
@@ -1738,6 +1739,66 @@ intelRouter.get('/resources/discovery', async (c) => {
     })
   } catch (error) {
     logger.error(`Project discovery resource failed: ${String(error)}`)
+    return c.json({ success: false, error: String(error) }, 500)
+  }
+})
+
+// ── Admin: GitNexus registry audit ──
+intelRouter.get('/admin/gitnexus-audit', async (c) => {
+  const denied = requireAdminAccess(c)
+  if (denied) return denied
+
+  try {
+    const repos = await listGitNexusRepos()
+    const projects = db.prepare(
+      'SELECT id, slug, name, git_repo_url FROM projects ORDER BY LOWER(name) ASC'
+    ).all() as Array<Pick<ProjectResourceRecord, 'id' | 'slug' | 'name' | 'git_repo_url'>>
+
+    const byProjectId = new Map<string, GitNexusRepoSummary[]>()
+    const unmapped: Array<{ repoName: string; path: string | null; indexedAt: string | null }> = []
+
+    for (const repo of repos) {
+      const linked = findProjectByDiscoveryCandidate(projects, {
+        slug: repo.name,
+        gitRepoUrl: readGitRemoteUrl(repo.path),
+        repoName: repo.name,
+      })
+
+      if (!linked) {
+        unmapped.push({ repoName: repo.name, path: repo.path, indexedAt: repo.indexedAt })
+        continue
+      }
+
+      const list = byProjectId.get(linked.id) ?? []
+      list.push(repo)
+      byProjectId.set(linked.id, list)
+    }
+
+    const aliasDrift = projects
+      .map((project) => {
+        const aliases = byProjectId.get(project.id) ?? []
+        return {
+          projectId: project.id,
+          slug: project.slug,
+          name: project.name,
+          aliases: aliases.map((alias) => alias.name),
+          aliasCount: aliases.length,
+          canonicalCandidates: resolveRepoNames(project.id),
+        }
+      })
+      .filter((entry) => entry.aliasCount > 1)
+
+    return c.json({
+      success: true,
+      data: {
+        totalRepos: repos.length,
+        mappedProjects: byProjectId.size,
+        aliasDrift,
+        unmapped,
+      },
+    })
+  } catch (error) {
+    logger.error(`GitNexus audit failed: ${String(error)}`)
     return c.json({ success: false, error: String(error) }, 500)
   }
 })

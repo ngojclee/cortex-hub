@@ -13,6 +13,7 @@ import { db } from '../db/client.js'
 import { createLogger } from '@cortex/shared-utils'
 import { resolveEmbeddingConfig } from '../services/embedding-config.js'
 import { ensureProjectExists, normalizeProjectReference } from '../db/utils.js'
+import { requireAdminAccess } from './admin-helpers.js'
 
 const logger = createLogger('knowledge')
 
@@ -208,6 +209,114 @@ knowledgeRouter.post('/', async (c) => {
     return c.json(doc, 201)
   } catch (error) {
     logger.error(`Create knowledge failed: ${String(error)}`)
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+// ── GET /admin/docs — Admin list with raw linkage state ──
+knowledgeRouter.get('/admin/docs', (c) => {
+  const denied = requireAdminAccess(c)
+  if (denied) return denied
+
+  const projectId = normalizeProjectReference(c.req.query('projectId') ?? c.req.query('project_id'))
+  const status = c.req.query('status')
+  const search = c.req.query('search')?.trim().toLowerCase()
+  const linkage = c.req.query('linkage') ?? 'all'
+  const limit = Math.min(Number(c.req.query('limit') ?? 200), 1000)
+  const offset = Math.max(Number(c.req.query('offset') ?? 0), 0)
+
+  let sql = `
+    SELECT kd.*,
+           p.id AS resolved_project_id,
+           p.slug AS resolved_project_slug,
+           p.name AS resolved_project_name
+    FROM knowledge_documents kd
+    LEFT JOIN projects p ON p.slug = kd.project_id
+    WHERE 1 = 1
+  `
+  const params: unknown[] = []
+
+  if (projectId) {
+    sql += ' AND kd.project_id = ?'
+    params.push(projectId)
+  }
+  if (status) {
+    sql += ' AND kd.status = ?'
+    params.push(status)
+  }
+  if (search) {
+    sql += ' AND (LOWER(kd.title) LIKE ? OR LOWER(COALESCE(kd.content_preview, \'\')) LIKE ?)'
+    const needle = `%${search}%`
+    params.push(needle, needle)
+  }
+  if (linkage === 'unassigned') {
+    sql += " AND (kd.project_id IS NULL OR TRIM(kd.project_id) = '')"
+  } else if (linkage === 'orphaned') {
+    sql += " AND kd.project_id IS NOT NULL AND TRIM(kd.project_id) != '' AND p.id IS NULL"
+  } else if (linkage === 'assigned') {
+    sql += " AND kd.project_id IS NOT NULL AND TRIM(kd.project_id) != '' AND p.id IS NOT NULL"
+  }
+
+  const countRow = db.prepare(sql.replace(
+    `SELECT kd.*,
+           p.id AS resolved_project_id,
+           p.slug AS resolved_project_slug,
+           p.name AS resolved_project_name`,
+    'SELECT COUNT(*) as count',
+  )).get(...params) as { count: number }
+
+  sql += ' ORDER BY kd.updated_at DESC, kd.created_at DESC LIMIT ? OFFSET ?'
+  params.push(limit, offset)
+
+  const documents = db.prepare(sql).all(...params) as Array<Record<string, unknown>>
+
+  return c.json({
+    documents,
+    total: countRow.count,
+    filters: { projectId: projectId ?? null, status: status ?? null, search: search ?? null, linkage },
+  })
+})
+
+// ── PATCH /admin/docs/:id — Admin metadata cleanup ──
+knowledgeRouter.patch('/admin/docs/:id', async (c) => {
+  const denied = requireAdminAccess(c)
+  if (denied) return denied
+
+  try {
+    const id = c.req.param('id')
+    const body = await c.req.json() as {
+      title?: string
+      status?: string
+      tags?: string[]
+      projectId?: string | null
+      project_id?: string | null
+    }
+
+    const existing = db.prepare('SELECT id FROM knowledge_documents WHERE id = ?').get(id)
+    if (!existing) return c.json({ error: 'Document not found' }, 404)
+
+    if (body.title !== undefined) {
+      db.prepare("UPDATE knowledge_documents SET title = ?, updated_at = datetime('now') WHERE id = ?").run(body.title, id)
+    }
+    if (body.status !== undefined) {
+      db.prepare("UPDATE knowledge_documents SET status = ?, updated_at = datetime('now') WHERE id = ?").run(body.status, id)
+    }
+    if (body.tags !== undefined) {
+      db.prepare("UPDATE knowledge_documents SET tags = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(body.tags), id)
+    }
+    if (body.projectId !== undefined || body.project_id !== undefined) {
+      const requestedProject = body.projectId ?? body.project_id
+      const normalizedProjectId = requestedProject
+        ? ensureProjectExists(requestedProject)
+        : null
+      db.prepare("UPDATE knowledge_documents SET project_id = ?, updated_at = datetime('now') WHERE id = ?").run(normalizedProjectId, id)
+      await syncChunkProjectPayload(id, normalizedProjectId)
+    }
+
+    const doc = db.prepare('SELECT * FROM knowledge_documents WHERE id = ?').get(id)
+    return c.json(doc)
+  } catch (error) {
+    logger.error(`Admin update knowledge failed: ${String(error)}`)
     return c.json({ error: String(error) }, 500)
   }
 })

@@ -109,6 +109,7 @@ export function dashboardAuth() {
         c.set('authApiKeyId', apiKey.id)
         c.set('authApiKeyName', apiKey.name)
         c.set('authApiKeyScope', apiKey.scope)
+        c.set('authApiKeyPermissions', apiKey.permissions)
         c.set('authApiKeyProjectId', apiKey.project_id)
         return next()
       }

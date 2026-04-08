@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { db } from '../db/client.js'
 import { randomUUID } from 'crypto'
+import { requireAdminAccess } from './admin-helpers.js'
 
 export const orgsRouter = new Hono()
 
@@ -299,6 +300,131 @@ projectsRouter.get('/', (c) => {
       )
       .all()
     return c.json({ projects })
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+// ── Admin: list raw projects with linkage state ──
+projectsRouter.get('/admin/list', (c) => {
+  const denied = requireAdminAccess(c)
+  if (denied) return denied
+
+  try {
+    const kind = c.req.query('kind')
+    const search = c.req.query('search')?.trim().toLowerCase()
+    let sql = `
+      SELECT p.*, o.name as org_name, o.slug as org_slug,
+             (
+               SELECT COUNT(*)
+               FROM knowledge_documents kd
+               WHERE kd.status = 'active' AND (kd.project_id = p.slug OR kd.project_id = p.id)
+             ) as knowledge_docs,
+             (
+               SELECT COUNT(*)
+               FROM index_jobs ij
+               WHERE ij.project_id = p.id
+             ) as index_job_count,
+             (
+               SELECT ij.status
+               FROM index_jobs ij
+               WHERE ij.project_id = p.id
+               ORDER BY ij.created_at DESC
+               LIMIT 1
+             ) as latest_job_status,
+             (
+               SELECT ij.branch
+               FROM index_jobs ij
+               WHERE ij.project_id = p.id
+               ORDER BY ij.created_at DESC
+               LIMIT 1
+             ) as latest_job_branch
+      FROM projects p
+      JOIN organizations o ON o.id = p.org_id
+      WHERE 1 = 1
+    `
+    const params: unknown[] = []
+
+    if (search) {
+      const needle = `%${search}%`
+      sql += ' AND (LOWER(p.name) LIKE ? OR LOWER(p.slug) LIKE ? OR LOWER(COALESCE(p.description, \'\')) LIKE ?)'
+      params.push(needle, needle, needle)
+    }
+
+    sql += ' ORDER BY LOWER(p.name) ASC, LOWER(p.slug) ASC, p.created_at DESC'
+    const projects = db.prepare(sql).all(...params) as Array<Record<string, unknown>>
+
+    const filtered = typeof kind === 'string' && kind !== 'all'
+      ? projects.filter((project) => {
+          const description = String(project.description ?? '').toLowerCase()
+          const hasRepo = String(project.git_repo_url ?? '').trim().length > 0
+          const hasKnowledge = Number(project.knowledge_docs ?? 0) > 0
+          if (kind === 'umbrella') return !hasRepo && (description.includes('umbrella') || description.includes('no direct repo'))
+          if (kind === 'knowledge_only') return !hasRepo && hasKnowledge
+          if (kind === 'placeholder') return !hasRepo && !hasKnowledge
+          if (kind === 'repository') return hasRepo
+          return true
+        })
+      : projects
+
+    return c.json({ projects: filtered, total: filtered.length, filters: { kind: kind ?? 'all', search: search ?? null } })
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+// ── Admin: patch raw project metadata ──
+projectsRouter.patch('/admin/:id', async (c) => {
+  const denied = requireAdminAccess(c)
+  if (denied) return denied
+
+  const { id } = c.req.param()
+  try {
+    const body = await c.req.json() as {
+      name?: string
+      description?: string | null
+      gitRepoUrl?: string | null
+      indexedAt?: string | null
+      indexedSymbols?: number | null
+    }
+
+    const existing = db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as Record<string, unknown> | undefined
+    if (!existing) return c.json({ error: 'Project not found' }, 404)
+
+    const nextName = body.name ?? String(existing.name ?? '')
+    const nextSlug = nextName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+
+    db.prepare(
+      `UPDATE projects SET
+        name = ?,
+        slug = ?,
+        description = ?,
+        git_repo_url = ?,
+        indexed_at = ?,
+        indexed_symbols = ?,
+        updated_at = datetime('now')
+       WHERE id = ?`
+    ).run(
+      nextName,
+      nextSlug,
+      body.description ?? existing.description ?? null,
+      body.gitRepoUrl ?? existing.git_repo_url ?? null,
+      body.indexedAt ?? existing.indexed_at ?? null,
+      body.indexedSymbols ?? existing.indexed_symbols ?? null,
+      id,
+    )
+
+    const project = db.prepare(
+      `SELECT p.*, o.name as org_name, o.slug as org_slug
+       FROM projects p
+       JOIN organizations o ON o.id = p.org_id
+       WHERE p.id = ?`
+    ).get(id)
+
+    return c.json(project)
   } catch (error) {
     return c.json({ error: String(error) }, 500)
   }

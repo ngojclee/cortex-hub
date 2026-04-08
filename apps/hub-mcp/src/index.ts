@@ -15,6 +15,7 @@ import { registerQualityTools } from './tools/quality.js'
 import { registerSessionTools } from './tools/session.js'
 import { registerChangeTools } from './tools/changes.js'
 import { registerAnalyticsTools } from './tools/analytics.js'
+import { registerAdminTools } from './tools/admin.js'
 import { validateApiKey } from './middleware/auth.js'
 import { telemetryStorage } from './api-call.js'
 import type { Env } from './types.js'
@@ -183,6 +184,11 @@ app.get('/', (c) => {
       'cortex_changes',
       'cortex_plan_quality',
       'cortex_tool_stats',
+      'cortex_list_knowledge_docs',
+      'cortex_update_knowledge_doc',
+      'cortex_list_projects_admin',
+      'cortex_update_project_admin',
+      'cortex_gitnexus_registry_audit',
     ],
     resources: [
       'cortex://projects',
@@ -217,6 +223,7 @@ function createMcpServer(env: Env) {
   registerSessionTools(server, env)
   registerChangeTools(server, env)
   registerAnalyticsTools(server, env)
+  registerAdminTools(server, env)
   return server
 }
 

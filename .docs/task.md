@@ -46,5 +46,6 @@
 - [x] Added live data-quality SQL audit pack: [.docs/database/data-quality-audit.sql](database/data-quality-audit.sql)
 - [x] Added MCP admin cleanup tools for knowledge/project listing and metadata repair
 - [x] Added API key dashboard support for admin-capable MCP cleanup scopes/permissions so operators can mint cleanup keys without touching SQLite directly
+- [x] Fixed admin project patch semantics so MCP cleanup can clear nullable fields (`gitRepoUrl`, `description`, `indexedAt`, `indexedSymbols`) without fallback bugs
 - [ ] Run dry-run on live `cortex.db` and review findings
 - [ ] Run `--apply` on live `cortex.db` after backup review

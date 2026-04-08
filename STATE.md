@@ -16,6 +16,7 @@
 - [x] Graph data-quality hardening: classify umbrella/knowledge-only/placeholder projects, suppress false "fresh" repo status for non-indexable projects, and surface GitNexus alias drift in Graph UI.
 - [x] MCP admin cleanup tools: list/update knowledge docs, list/update raw projects, and audit GitNexus alias drift via machine-facing admin routes.
 - [x] API Keys UI now exposes admin-capable scope/permission presets so MCP cleanup tokens can be minted from the dashboard without manual DB edits.
+- [x] Admin project patch now respects explicit `null` for nullable fields, so MCP cleanup can truly clear stale repo/index metadata.
 - [x] Build ✅ | Typecheck ✅ | Lint ✅ | Quality: A (100/100)
 
 ## Architecture — 2-Service Model

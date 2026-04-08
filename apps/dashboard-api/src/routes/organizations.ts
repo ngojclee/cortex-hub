@@ -391,6 +391,8 @@ projectsRouter.patch('/admin/:id', async (c) => {
     const existing = db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as Record<string, unknown> | undefined
     if (!existing) return c.json({ error: 'Project not found' }, 404)
 
+    const has = <K extends keyof typeof body>(key: K) => Object.prototype.hasOwnProperty.call(body, key)
+
     const nextName = body.name ?? String(existing.name ?? '')
     const nextSlug = nextName
       .toLowerCase()
@@ -410,10 +412,10 @@ projectsRouter.patch('/admin/:id', async (c) => {
     ).run(
       nextName,
       nextSlug,
-      body.description ?? existing.description ?? null,
-      body.gitRepoUrl ?? existing.git_repo_url ?? null,
-      body.indexedAt ?? existing.indexed_at ?? null,
-      body.indexedSymbols ?? existing.indexed_symbols ?? null,
+      has('description') ? (body.description ?? null) : (existing.description ?? null),
+      has('gitRepoUrl') ? (body.gitRepoUrl ?? null) : (existing.git_repo_url ?? null),
+      has('indexedAt') ? (body.indexedAt ?? null) : (existing.indexed_at ?? null),
+      has('indexedSymbols') ? (body.indexedSymbols ?? null) : (existing.indexed_symbols ?? null),
       id,
     )
 

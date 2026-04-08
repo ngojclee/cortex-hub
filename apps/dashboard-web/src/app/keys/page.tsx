@@ -7,12 +7,39 @@ import styles from './page.module.css'
 import useSWR from 'swr'
 import { listApiKeys, createApiKey, revokeApiKey } from '@/lib/api'
 
+const scopeOptions = [
+  { id: 'all', label: 'All Projects', description: 'Standard machine key for regular MCP usage across projects.' },
+  { id: 'org:personal', label: 'Personal Org', description: 'Restrict usage to the Personal workspace/project scope.' },
+  { id: 'write', label: 'Write Scope', description: 'Machine key that can pass write-oriented admin guards.' },
+  { id: 'admin', label: 'Admin Scope', description: 'Recommended for MCP cleanup, audits, and project/knowledge repair.' },
+  { id: 'owner', label: 'Owner Scope', description: 'Full owner-level machine access for trusted operators only.' },
+  { id: 'system', label: 'System Scope', description: 'Service-to-service automation and platform maintenance flows.' },
+  { id: 'full', label: 'Full Scope', description: 'Compatibility scope for legacy full-access machine clients.' },
+]
+
 const allPermissions = [
   { id: 'cortex.health', label: 'Health Check', group: 'System' },
   { id: 'cortex.memory.store', label: 'Store Memory', group: 'Memory' },
   { id: 'cortex.memory.search', label: 'Search Memory', group: 'Memory' },
   { id: 'cortex.code.search', label: 'Code Search', group: 'Code' },
+  { id: 'admin', label: 'Admin Access', group: 'Admin' },
+  { id: 'admin:write', label: 'Admin Write', group: 'Admin' },
+  { id: 'project:write', label: 'Project Write', group: 'Admin' },
+  { id: 'knowledge:write', label: 'Knowledge Write', group: 'Admin' },
+  { id: '*', label: 'Wildcard', group: 'Admin' },
 ]
+
+const standardPermissions = ['cortex.health', 'cortex.memory.store', 'cortex.memory.search', 'cortex.code.search']
+const adminPermissions = ['admin', 'admin:write', 'project:write', 'knowledge:write']
+
+function isAdminCapable(scope: string, permissions: string[]) {
+  return ['admin', 'owner', 'system', 'write', 'full'].includes(scope) ||
+    permissions.includes('*') ||
+    permissions.includes('admin') ||
+    permissions.includes('admin:write') ||
+    permissions.includes('project:write') ||
+    permissions.includes('knowledge:write')
+}
 
 export default function KeysPage() {
   const { data, mutate } = useSWR('api_keys', listApiKeys)
@@ -21,14 +48,33 @@ export default function KeysPage() {
   const [newKeyResult, setNewKeyResult] = useState<string | null>(null)
   const [isCreating, setIsCreating] = useState(false)
 
-  // Create key form state
   const [keyName, setKeyName] = useState('')
   const [keyScope, setKeyScope] = useState('all')
-  const [keyPerms, setKeyPerms] = useState<string[]>(allPermissions.map((p) => p.id))
+  const [keyPerms, setKeyPerms] = useState<string[]>(standardPermissions)
   const [keyExpiry, setKeyExpiry] = useState('never')
+
+  const selectedScope = scopeOptions.find((option) => option.id === keyScope)
+  const creatingAdminCapable = isAdminCapable(keyScope, keyPerms)
 
   function togglePerm(id: string) {
     setKeyPerms((prev) => prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id])
+  }
+
+  function applyPreset(preset: 'standard' | 'admin' | 'full') {
+    if (preset === 'standard') {
+      setKeyScope('all')
+      setKeyPerms(standardPermissions)
+      return
+    }
+
+    if (preset === 'admin') {
+      setKeyScope('admin')
+      setKeyPerms([...standardPermissions, ...adminPermissions])
+      return
+    }
+
+    setKeyScope('full')
+    setKeyPerms([...standardPermissions, ...adminPermissions, '*'])
   }
 
   async function handleCreate() {
@@ -44,7 +90,10 @@ export default function KeysPage() {
       setNewKeyResult(result.key)
       setShowCreate(false)
       setKeyName('')
-      mutate() // Refresh list
+      setKeyScope('all')
+      setKeyPerms(standardPermissions)
+      setKeyExpiry('never')
+      mutate()
     } catch (err) {
       alert(`Failed to create key: ${err instanceof Error ? err.message : String(err)}`)
     } finally {
@@ -54,10 +103,10 @@ export default function KeysPage() {
 
   async function handleRevoke(id: string) {
     if (!confirm('Are you sure you want to revoke this key? This action cannot be undone.')) return
-    
+
     try {
       await revokeApiKey(id)
-      mutate() // Refresh list
+      mutate()
     } catch (err) {
       alert(`Failed to revoke key: ${err instanceof Error ? err.message : String(err)}`)
     }
@@ -65,14 +114,13 @@ export default function KeysPage() {
 
   return (
     <DashboardLayout title="API Keys" subtitle="Manage authentication keys for MCP access">
-      {/* New Key Result */}
       {newKeyResult && (
         <div className={styles.newKeyBanner}>
           <div className={styles.newKeyHeader}>
             <span>🔑</span>
             <strong>API Key Created</strong>
             <span style={{ color: 'var(--status-warning)', fontSize: '0.8125rem' }}>
-              Copy now — won't be shown again
+              Copy now — won&apos;t be shown again
             </span>
           </div>
           <code className={styles.newKeyValue}>{newKeyResult}</code>
@@ -88,14 +136,12 @@ export default function KeysPage() {
         </div>
       )}
 
-      {/* Actions */}
       <div className={styles.actions}>
         <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
           + Create API Key
         </button>
       </div>
 
-      {/* Create Modal */}
       {showCreate && (
         <div className={styles.modal}>
           <div className={styles.modalContent}>
@@ -115,25 +161,44 @@ export default function KeysPage() {
               value={keyScope}
               onChange={(e) => setKeyScope(e.target.value)}
             >
-              <option value="all">All Projects</option>
-              <option value="org:personal">Organization: Personal/*</option>
+              {scopeOptions.map((option) => (
+                <option key={option.id} value={option.id}>{option.label}</option>
+              ))}
             </select>
+            {selectedScope && <p className={styles.fieldHint}>{selectedScope.description}</p>}
+
+            <label className={styles.fieldLabel} style={{ marginTop: 'var(--space-5)' }}>Presets</label>
+            <div className={styles.presetRow}>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => applyPreset('standard')}>
+                Standard MCP
+              </button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => applyPreset('admin')}>
+                Admin Cleanup
+              </button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => applyPreset('full')}>
+                Full Access
+              </button>
+            </div>
 
             <label className={styles.fieldLabel} style={{ marginTop: 'var(--space-5)' }}>Permissions</label>
             <div className={styles.permGrid}>
-              {allPermissions.map((p) => (
-                <label key={p.id} className={styles.permItem}>
+              {allPermissions.map((permission) => (
+                <label key={permission.id} className={styles.permItem}>
                   <input
                     type="checkbox"
-                    checked={keyPerms.includes(p.id)}
-                    onChange={() => togglePerm(p.id)}
+                    checked={keyPerms.includes(permission.id)}
+                    onChange={() => togglePerm(permission.id)}
                     style={{ accentColor: 'var(--accent-primary)' }}
                   />
-                  <span>{p.label}</span>
-                  <span className={styles.permGroup}>{p.group}</span>
+                  <span>{permission.label}</span>
+                  <span className={styles.permGroup}>{permission.group}</span>
                 </label>
               ))}
             </div>
+            <p className={styles.fieldHint}>
+              Admin cleanup MCP tools require either admin-like scope (`admin`, `owner`, `system`, `write`, `full`)
+              or one of `admin`, `admin:write`, `project:write`, `knowledge:write`, `*`.
+            </p>
 
             <label className={styles.fieldLabel} style={{ marginTop: 'var(--space-5)' }}>Expiration</label>
             <select
@@ -146,6 +211,15 @@ export default function KeysPage() {
               <option value="90">90 days</option>
               <option value="365">1 year</option>
             </select>
+
+            <div className={creatingAdminCapable ? styles.adminNotice : styles.standardNotice}>
+              <strong>{creatingAdminCapable ? 'Admin-capable key' : 'Standard machine key'}</strong>
+              <span>
+                {creatingAdminCapable
+                  ? 'This key should be able to call MCP audit and cleanup tools once created.'
+                  : 'This key is fine for normal MCP usage, but it will still be rejected by admin cleanup tools.'}
+              </span>
+            </div>
 
             <div className={styles.modalActions}>
               <button className="btn btn-ghost" onClick={() => setShowCreate(false)}>
@@ -163,7 +237,6 @@ export default function KeysPage() {
         </div>
       )}
 
-      {/* Keys Table */}
       <div className={styles.tableCard}>
         <table className={styles.table}>
           <thead>
@@ -171,6 +244,7 @@ export default function KeysPage() {
               <th>Name</th>
               <th>Key</th>
               <th>Scope</th>
+              <th>Capabilities</th>
               <th>Created</th>
               <th>Expires</th>
               <th></th>
@@ -182,6 +256,11 @@ export default function KeysPage() {
                 <td className={styles.keyName}>{key.name}</td>
                 <td><code className={styles.keyPrefix}>{key.prefix}</code></td>
                 <td>{key.scope}</td>
+                <td>
+                  <span className={isAdminCapable(key.scope, key.permissions) ? styles.capabilityAdmin : styles.capabilityStandard}>
+                    {isAdminCapable(key.scope, key.permissions) ? 'Admin-capable' : 'Standard'}
+                  </span>
+                </td>
                 <td className={styles.cellMuted}>{key.createdAt}</td>
                 <td className={styles.cellMuted}>{key.expiresAt ?? 'Never'}</td>
                 <td>
@@ -197,7 +276,7 @@ export default function KeysPage() {
             ))}
             {keys.length === 0 && (
               <tr>
-                <td colSpan={6} className={styles.emptyState}>
+                <td colSpan={7} className={styles.emptyState}>
                   No API keys. Create one to connect your AI agent.
                 </td>
               </tr>

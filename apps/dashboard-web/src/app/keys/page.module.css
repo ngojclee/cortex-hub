@@ -74,6 +74,19 @@
   margin-bottom: var(--space-2);
 }
 
+.fieldHint {
+  margin: var(--space-2) 0 0;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+}
+
+.presetRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
 /* Permissions */
 .permGrid {
   display: flex;
@@ -100,6 +113,39 @@
   font-size: 0.6875rem;
   color: var(--text-tertiary);
   font-family: var(--font-mono);
+}
+
+.adminNotice,
+.standardNotice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-5);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+}
+
+.adminNotice {
+  background: color-mix(in srgb, var(--status-healthy) 10%, var(--bg-card));
+  border-color: color-mix(in srgb, var(--status-healthy) 45%, var(--border-subtle));
+}
+
+.standardNotice {
+  background: color-mix(in srgb, var(--status-warning) 10%, var(--bg-card));
+  border-color: color-mix(in srgb, var(--status-warning) 45%, var(--border-subtle));
+}
+
+.adminNotice strong,
+.standardNotice strong {
+  font-size: 0.875rem;
+}
+
+.adminNotice span,
+.standardNotice span {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
 }
 
 /* Table */
@@ -148,6 +194,28 @@
   font-family: var(--font-mono);
   font-size: 0.8125rem;
   color: var(--text-tertiary);
+}
+
+.capabilityAdmin,
+.capabilityStandard {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 7.5rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.capabilityAdmin {
+  background: color-mix(in srgb, var(--status-healthy) 14%, var(--bg-card));
+  color: var(--status-healthy);
+}
+
+.capabilityStandard {
+  background: color-mix(in srgb, var(--text-tertiary) 12%, var(--bg-card));
+  color: var(--text-secondary);
 }
 
 .cellMuted {

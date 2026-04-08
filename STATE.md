@@ -15,6 +15,7 @@
 - [x] Knowledge + Graph normalization: accept `projectId`/`project_id`, normalize knowledge project refs to slug, improve discovery candidate matching, and sort project resources by indexing/branch readiness.
 - [x] Graph data-quality hardening: classify umbrella/knowledge-only/placeholder projects, suppress false "fresh" repo status for non-indexable projects, and surface GitNexus alias drift in Graph UI.
 - [x] MCP admin cleanup tools: list/update knowledge docs, list/update raw projects, and audit GitNexus alias drift via machine-facing admin routes.
+- [x] API Keys UI now exposes admin-capable scope/permission presets so MCP cleanup tokens can be minted from the dashboard without manual DB edits.
 - [x] Build ✅ | Typecheck ✅ | Lint ✅ | Quality: A (100/100)
 
 ## Architecture — 2-Service Model
@@ -82,6 +83,7 @@
 - **Identity resolution:** `mcp-remote` drops Authorization header → workaround: apiCall() injects `X-API-Key-Owner` header from `env.API_KEY_OWNER`. Dashboard-api uses this as authoritative identity in quality reports + sessions.
 - **Dashboard v2:** Single `/overview-v2` endpoint replaces multiple calls. Returns per-project GitNexus/Mem9 status, quality summary, knowledge stats.
 - **Knowledge project refs:** `knowledge_documents.project_id` is normalized to project slug. API filters now accept either project ID or slug, and Knowledge UI uses slug-backed filtering for stable grouping.
+- **Admin cleanup auth:** MCP cleanup tools are intentionally restricted to admin-capable API keys. The dashboard Keys page now exposes the required scopes/permissions (`admin`, `owner`, `system`, `write`, `full`, `admin:write`, `project:write`, `knowledge:write`) so operators can mint the right key from UI.
 - **Service separation:** dashboard-api and hub-mcp run as separate Docker services. hub-mcp calls dashboard-api via real HTTP.
 - MCP handler uses `WebStandardStreamableHTTPServerTransport` (stateless, enableJsonResponse)
 - Mobile responsive: hamburger toggle + backdrop overlay at ≤768px, CSS-only breakpoints at 3 tiers

@@ -189,6 +189,8 @@ app.get('/', (c) => {
       'cortex_list_projects_admin',
       'cortex_update_project_admin',
       'cortex_gitnexus_registry_audit',
+      'cortex_gitnexus_registry_cleanup',
+      'cortex_project_cleanup',
     ],
     resources: [
       'cortex://projects',

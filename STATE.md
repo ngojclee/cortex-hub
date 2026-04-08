@@ -17,6 +17,8 @@
 - [x] MCP admin cleanup tools: list/update knowledge docs, list/update raw projects, and audit GitNexus alias drift via machine-facing admin routes.
 - [x] API Keys UI now exposes admin-capable scope/permission presets so MCP cleanup tokens can be minted from the dashboard without manual DB edits.
 - [x] Admin project patch now respects explicit `null` for nullable fields, so MCP cleanup can truly clear stale repo/index metadata.
+- [x] GitNexus registry cleanup flow now supports preview/apply for alias dedupe and stale unmapped repo removal, backed by the shared `/root/.gitnexus/registry.json` volume.
+- [x] Project cleanup flow now supports preview/apply for umbrella/placeholder normalization, including clearing stale `indexed_at` / `indexed_symbols` hints.
 - [x] Build ✅ | Typecheck ✅ | Lint ✅ | Quality: A (100/100)
 
 ## Architecture — 2-Service Model
@@ -85,6 +87,7 @@
 - **Dashboard v2:** Single `/overview-v2` endpoint replaces multiple calls. Returns per-project GitNexus/Mem9 status, quality summary, knowledge stats.
 - **Knowledge project refs:** `knowledge_documents.project_id` is normalized to project slug. API filters now accept either project ID or slug, and Knowledge UI uses slug-backed filtering for stable grouping.
 - **Admin cleanup auth:** MCP cleanup tools are intentionally restricted to admin-capable API keys. The dashboard Keys page now exposes the required scopes/permissions (`admin`, `owner`, `system`, `write`, `full`, `admin:write`, `project:write`, `knowledge:write`) so operators can mint the right key from UI.
+- **Live cleanup path:** dashboard-api and gitnexus share the same `gitnexus-data` volume, so cleanup mutations are applied by editing GitNexus `registry.json` from dashboard-api instead of needing a write-capable GitNexus tool.
 - **Service separation:** dashboard-api and hub-mcp run as separate Docker services. hub-mcp calls dashboard-api via real HTTP.
 - MCP handler uses `WebStandardStreamableHTTPServerTransport` (stateless, enableJsonResponse)
 - Mobile responsive: hamburger toggle + backdrop overlay at ≤768px, CSS-only breakpoints at 3 tiers

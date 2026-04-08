@@ -147,4 +147,69 @@ export function registerAdminTools(server: McpServer, env: Env) {
       }
     },
   )
+
+  server.tool(
+    'cortex_gitnexus_registry_cleanup',
+    'Preview or apply GitNexus registry cleanup for duplicate aliases and stale unmapped entries. Use preview first, then apply once the plan looks safe.',
+    {
+      mode: z.enum(['preview', 'apply']).optional().describe('Preview or apply cleanup actions'),
+      projectId: z.string().optional().describe('Limit cleanup to one project ID or slug'),
+      includeUnmapped: z.boolean().optional().describe('Also include stale unmapped registry entries'),
+      deleteStorage: z.boolean().optional().describe('Delete duplicate .gitnexus storage directories when applying'),
+    },
+    async ({ mode, projectId, includeUnmapped, deleteStorage }) => {
+      try {
+        const res = await apiCall(env, '/api/intel/admin/gitnexus-cleanup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: mode ?? 'preview', projectId, includeUnmapped, deleteStorage }),
+        })
+        if (!res.ok) {
+          const errorText = await res.text()
+          return { content: [{ type: 'text' as const, text: `GitNexus registry cleanup failed: ${res.status} ${errorText}` }], isError: true }
+        }
+
+        const data = await res.json()
+        return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] }
+      } catch (error) {
+        return { content: [{ type: 'text' as const, text: `GitNexus registry cleanup error: ${error instanceof Error ? error.message : 'Unknown'}` }], isError: true }
+      }
+    },
+  )
+
+  server.tool(
+    'cortex_project_cleanup',
+    'Preview or apply safe project metadata cleanup. Normalizes blank repo URLs, clears stale repo URLs on umbrella projects, and clears project-level index hints for umbrella/placeholder entries.',
+    {
+      mode: z.enum(['preview', 'apply']).optional().describe('Preview or apply cleanup actions'),
+      projectIds: z.array(z.string()).optional().describe('Optional project IDs/slugs to limit cleanup scope'),
+      clearRepoUrlForUmbrella: z.boolean().optional().describe('Clear repo URLs for projects described as umbrella/no direct repo'),
+      clearLatestIndexHint: z.boolean().optional().describe('Clear indexedAt/indexedSymbols for umbrella/placeholder projects'),
+      normalizeBlankRepoUrl: z.boolean().optional().describe('Normalize empty-string repo URLs back to null'),
+    },
+    async ({ mode, projectIds, clearRepoUrlForUmbrella, clearLatestIndexHint, normalizeBlankRepoUrl }) => {
+      try {
+        const res = await apiCall(env, '/api/intel/admin/project-cleanup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mode: mode ?? 'preview',
+            projectIds,
+            clearRepoUrlForUmbrella,
+            clearLatestIndexHint,
+            normalizeBlankRepoUrl,
+          }),
+        })
+        if (!res.ok) {
+          const errorText = await res.text()
+          return { content: [{ type: 'text' as const, text: `Project cleanup failed: ${res.status} ${errorText}` }], isError: true }
+        }
+
+        const data = await res.json()
+        return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] }
+      } catch (error) {
+        return { content: [{ type: 'text' as const, text: `Project cleanup error: ${error instanceof Error ? error.message : 'Unknown'}` }], isError: true }
+      }
+    },
+  )
 }

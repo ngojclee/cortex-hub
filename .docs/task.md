@@ -47,5 +47,7 @@
 - [x] Added MCP admin cleanup tools for knowledge/project listing and metadata repair
 - [x] Added API key dashboard support for admin-capable MCP cleanup scopes/permissions so operators can mint cleanup keys without touching SQLite directly
 - [x] Fixed admin project patch semantics so MCP cleanup can clear nullable fields (`gitRepoUrl`, `description`, `indexedAt`, `indexedSymbols`) without fallback bugs
+- [x] Added GitNexus registry audit/cleanup apply flow for duplicate aliases and stale unmapped entries
+- [x] Added project cleanup preview/apply flow to normalize umbrella/placeholder metadata and clear stale latest-index hints
 - [ ] Run dry-run on live `cortex.db` and review findings
 - [ ] Run `--apply` on live `cortex.db` after backup review

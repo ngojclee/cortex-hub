@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { existsSync, readFileSync, readdirSync, statSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'fs'
 import { join, relative } from 'path'
 import { randomUUID } from 'crypto'
 import { createLogger } from '@cortex/shared-utils'
@@ -15,6 +15,8 @@ export const intelRouter = new Hono()
 const GITNEXUS_URL = () => process.env.GITNEXUS_URL ?? 'http://gitnexus:4848'
 const QDRANT_URL = process.env.QDRANT_URL ?? 'http://qdrant:6333'
 const REPOS_DIR = process.env.REPOS_DIR ?? '/app/data/repos'
+const GITNEXUS_REGISTRY_DIR = process.env.GITNEXUS_REGISTRY_DIR ?? '/root/.gitnexus'
+const GITNEXUS_REGISTRY_PATH = () => join(GITNEXUS_REGISTRY_DIR, 'registry.json')
 
 /** Max file size for code_read (512KB) */
 const MAX_READ_SIZE = 512 * 1024
@@ -156,6 +158,40 @@ type DiscoveryCandidate = {
   gitnexus: GitNexusRepoSummary | null
 }
 
+type GitNexusRegistryEntry = {
+  name: string
+  path: string
+  storagePath: string
+  indexedAt: string | null
+  lastCommit: string | null
+  stats: {
+    nodes: number | null
+    edges: number | null
+    processes: number | null
+  } | null
+}
+
+type GitNexusRegistryAuditEntry = {
+  projectId: string
+  slug: string
+  name: string
+  aliases: string[]
+  aliasCount: number
+  canonicalCandidates: string[]
+  entries: GitNexusRegistryEntry[]
+  canonicalAlias: string | null
+}
+
+type GitNexusRegistryCleanupOperation = {
+  type: 'dedupe_aliases' | 'remove_stale_unmapped'
+  projectId: string | null
+  slug: string | null
+  canonicalAlias: string | null
+  keep: GitNexusRegistryEntry | null
+  remove: GitNexusRegistryEntry[]
+  reason: string
+}
+
 type ProjectIndexJobRecord = {
   id: string
   branch: string | null
@@ -187,6 +223,19 @@ type ResourceContext = {
 
 type IndexedSource = 'gitnexus.indexedAt' | 'cortex.indexed_at' | 'cortex.index_jobs'
 type ProjectClassificationKind = 'repository' | 'umbrella' | 'knowledge_only' | 'placeholder'
+
+type ProjectCleanupOperation = {
+  projectId: string
+  slug: string
+  name: string
+  kind: ProjectClassificationKind
+  patch: {
+    gitRepoUrl?: string | null
+    indexedAt?: string | null
+    indexedSymbols?: number | null
+  }
+  reasons: string[]
+}
 
 const GITNEXUS_RESOURCE_TOOLS = [
   'cortex_code_search',
@@ -568,6 +617,177 @@ async function listGitNexusRepos(): Promise<GitNexusRepoSummary[]> {
   }
 }
 
+function readGitNexusRegistry(): GitNexusRegistryEntry[] {
+  const registryPath = GITNEXUS_REGISTRY_PATH()
+  if (!existsSync(registryPath)) return []
+
+  try {
+    const parsed = JSON.parse(readFileSync(registryPath, 'utf8')) as unknown
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object')
+      .map((entry) => ({
+        name: String(entry.name ?? ''),
+        path: String(entry.path ?? ''),
+        storagePath: String(entry.storagePath ?? join(String(entry.path ?? ''), '.gitnexus')),
+        indexedAt: normalizeStringValue(entry.indexedAt),
+        lastCommit: normalizeStringValue(entry.lastCommit),
+        stats: entry.stats && typeof entry.stats === 'object'
+          ? {
+              nodes: parseNumberLike((entry.stats as Record<string, unknown>).nodes),
+              edges: parseNumberLike((entry.stats as Record<string, unknown>).edges),
+              processes: parseNumberLike((entry.stats as Record<string, unknown>).processes),
+            }
+          : null,
+      }))
+      .filter((entry) => entry.name && entry.path)
+  } catch (error) {
+    logger.warn(`Failed to read GitNexus registry: ${String(error)}`)
+    return []
+  }
+}
+
+function writeGitNexusRegistry(entries: GitNexusRegistryEntry[]) {
+  const registryPath = GITNEXUS_REGISTRY_PATH()
+  mkdirSync(GITNEXUS_REGISTRY_DIR, { recursive: true })
+  writeFileSync(registryPath, JSON.stringify(entries, null, 2), 'utf8')
+}
+
+function hasUmbrellaHint(project: Pick<ProjectResourceRecord, 'name' | 'description'>): boolean {
+  const description = `${project.name} ${project.description ?? ''}`.toLowerCase()
+  return (
+    description.includes('umbrella project') ||
+    description.includes('brand hub') ||
+    description.includes('no direct repo') ||
+    description.includes('use sub-projects') ||
+    description.includes('use sub projects')
+  )
+}
+
+function chooseCanonicalRegistryEntry(
+  project: Pick<ProjectResourceRecord, 'id' | 'slug' | 'git_repo_url'>,
+  entries: GitNexusRegistryEntry[],
+): GitNexusRegistryEntry | null {
+  if (entries.length === 0) return null
+
+  const normalizedByName = new Map(entries.map((entry) => [entry.name.toLowerCase(), entry]))
+  const projectSlug = slugifyName(project.slug)
+  const projectId = slugifyName(project.id)
+  const repoSlug = getRepoSlugFromGitUrl(project.git_repo_url)
+
+  for (const candidate of [projectSlug, repoSlug, projectId]) {
+    if (!candidate) continue
+    const match = normalizedByName.get(candidate.toLowerCase())
+    if (match) return match
+  }
+
+  return [...entries].sort((a, b) => a.name.localeCompare(b.name))[0] ?? null
+}
+
+function buildGitNexusRegistryAuditData(
+  projects: Array<Pick<ProjectResourceRecord, 'id' | 'slug' | 'name' | 'git_repo_url'>>,
+  registryEntries: GitNexusRegistryEntry[],
+) {
+  const byProjectId = new Map<string, GitNexusRegistryEntry[]>()
+  const unmapped: Array<GitNexusRegistryEntry & { repoName: string; repoPathExists: boolean; storagePathExists: boolean }> = []
+
+  for (const entry of registryEntries) {
+    const linked = findProjectByDiscoveryCandidate(projects, {
+      slug: entry.name,
+      gitRepoUrl: readGitRemoteUrl(entry.path),
+      repoName: entry.name,
+    })
+
+    if (!linked) {
+      unmapped.push({
+        ...entry,
+        repoName: entry.name,
+        repoPathExists: existsSync(entry.path),
+        storagePathExists: existsSync(entry.storagePath),
+      })
+      continue
+    }
+
+    const list = byProjectId.get(linked.id) ?? []
+    list.push(entry)
+    byProjectId.set(linked.id, list)
+  }
+
+  const aliasDrift: GitNexusRegistryAuditEntry[] = projects
+    .map((project) => {
+      const entries = byProjectId.get(project.id) ?? []
+      const canonicalEntry = chooseCanonicalRegistryEntry(project, entries)
+      return {
+        projectId: project.id,
+        slug: project.slug,
+        name: project.name,
+        aliases: entries.map((entry) => entry.name),
+        aliasCount: entries.length,
+        canonicalCandidates: resolveRepoNames(project.id),
+        entries,
+        canonicalAlias: canonicalEntry?.name ?? null,
+      }
+    })
+    .filter((entry) => entry.aliasCount > 1)
+
+  return {
+    totalRepos: registryEntries.length,
+    mappedProjects: byProjectId.size,
+    aliasDrift,
+    unmapped,
+  }
+}
+
+function buildGitNexusRegistryCleanupOperations(
+  projects: Array<Pick<ProjectResourceRecord, 'id' | 'slug' | 'name' | 'git_repo_url'>>,
+  registryEntries: GitNexusRegistryEntry[],
+  options?: { projectId?: string | null; includeUnmapped?: boolean },
+): GitNexusRegistryCleanupOperation[] {
+  const audit = buildGitNexusRegistryAuditData(projects, registryEntries)
+  const projectFilter = normalizeStringValue(options?.projectId ?? null)
+  const operations: GitNexusRegistryCleanupOperation[] = []
+
+  for (const entry of audit.aliasDrift) {
+    if (projectFilter && entry.projectId !== projectFilter && entry.slug !== projectFilter) continue
+
+    const keep = chooseCanonicalRegistryEntry(
+      projects.find((project) => project.id === entry.projectId)!,
+      entry.entries,
+    )
+    const remove = entry.entries.filter((candidate) => keep ? candidate.path !== keep.path : true)
+    if (remove.length === 0) continue
+
+    operations.push({
+      type: 'dedupe_aliases',
+      projectId: entry.projectId,
+      slug: entry.slug,
+      canonicalAlias: keep?.name ?? null,
+      keep,
+      remove,
+      reason: `Keep canonical alias ${keep?.name ?? 'unknown'} and remove duplicate GitNexus registry aliases for ${entry.slug}.`,
+    })
+  }
+
+  if (options?.includeUnmapped) {
+    for (const entry of audit.unmapped) {
+      const missingRepo = !entry.repoPathExists
+      const missingStorage = !entry.storagePathExists
+      if (!missingRepo && !missingStorage) continue
+      operations.push({
+        type: 'remove_stale_unmapped',
+        projectId: null,
+        slug: null,
+        canonicalAlias: null,
+        keep: null,
+        remove: [entry],
+        reason: `Remove stale unmapped registry entry ${entry.name} because ${missingRepo ? 'repo path is missing' : 'storage path is missing'}.`,
+      })
+    }
+  }
+
+  return operations
+}
+
 function findGitNexusRepo(
   candidates: string[],
   repos: GitNexusRepoSummary[],
@@ -848,6 +1068,72 @@ async function listDiscoveryCandidates(): Promise<DiscoveryCandidate[]> {
   })
 }
 
+async function buildProjectCleanupOperations(options?: {
+  projectIds?: string[]
+  clearRepoUrlForUmbrella?: boolean
+  clearLatestIndexHint?: boolean
+  normalizeBlankRepoUrl?: boolean
+}): Promise<ProjectCleanupOperation[]> {
+  const projects = db.prepare(
+    `SELECT p.*, o.name AS org_name, o.slug AS org_slug
+     FROM projects p
+     JOIN organizations o ON o.id = p.org_id
+     ORDER BY LOWER(p.name) ASC`
+  ).all() as ProjectResourceRecord[]
+
+  const wanted = new Set((options?.projectIds ?? []).map((value) => value.trim()).filter(Boolean))
+  const gitnexusRepos = await listGitNexusRepos()
+  const operations: ProjectCleanupOperation[] = []
+
+  for (const project of projects) {
+    if (wanted.size > 0 && !wanted.has(project.id) && !wanted.has(project.slug)) continue
+
+    const repoCandidates = resolveRepoNames(project.id)
+    const gitnexusRepo = findGitNexusRepo(repoCandidates, gitnexusRepos)
+    const gitnexusAliases = findGitNexusRepoAliases(repoCandidates, gitnexusRepos)
+    const latestJob = getLatestIndexJob(project.id)
+    const knowledge = getKnowledgeStatsForProject(project)
+    const classification = classifyProjectResource(project, gitnexusRepo, latestJob, knowledge, gitnexusAliases)
+
+    const patch: ProjectCleanupOperation['patch'] = {}
+    const reasons: string[] = []
+
+    if ((options?.normalizeBlankRepoUrl ?? true) && project.git_repo_url !== null && normalizeStringValue(project.git_repo_url) === null) {
+      patch.gitRepoUrl = null
+      reasons.push('Normalize blank git repo URL to null.')
+    }
+
+    if ((options?.clearRepoUrlForUmbrella ?? true) && hasUmbrellaHint(project) && normalizeStringValue(project.git_repo_url)) {
+      patch.gitRepoUrl = null
+      reasons.push('Project description marks this as umbrella/no direct repo, so clear stale repo URL.')
+    }
+
+    if ((options?.clearLatestIndexHint ?? true) && (classification.kind === 'umbrella' || classification.kind === 'placeholder')) {
+      if (project.indexed_at !== null) {
+        patch.indexedAt = null
+        reasons.push(`Clear indexed_at for ${classification.kind} project.`)
+      }
+      if (project.indexed_symbols !== null) {
+        patch.indexedSymbols = null
+        reasons.push(`Clear indexed_symbols for ${classification.kind} project.`)
+      }
+    }
+
+    if (reasons.length === 0) continue
+
+    operations.push({
+      projectId: project.id,
+      slug: project.slug,
+      name: project.name,
+      kind: classification.kind,
+      patch,
+      reasons,
+    })
+  }
+
+  return operations
+}
+
 function ensureDefaultOrganizationId(): string {
   const existing = db.prepare(
     "SELECT id FROM organizations WHERE slug = 'personal' OR id = 'org-default' ORDER BY created_at ASC LIMIT 1"
@@ -985,16 +1271,9 @@ function hasRepoSignal(
 }
 
 function isUmbrellaProject(project: ProjectResourceRecord): boolean {
-  const description = `${project.name} ${project.description ?? ''}`.toLowerCase()
   if (normalizeStringValue(project.git_repo_url)) return false
 
-  return (
-    description.includes('umbrella project') ||
-    description.includes('brand hub') ||
-    description.includes('no direct repo') ||
-    description.includes('use sub-projects') ||
-    description.includes('use sub projects')
-  )
+  return hasUmbrellaHint(project)
 }
 
 function buildStaleness(
@@ -1749,56 +2028,178 @@ intelRouter.get('/admin/gitnexus-audit', async (c) => {
   if (denied) return denied
 
   try {
-    const repos = await listGitNexusRepos()
+    const registryEntries = readGitNexusRegistry()
     const projects = db.prepare(
       'SELECT id, slug, name, git_repo_url FROM projects ORDER BY LOWER(name) ASC'
     ).all() as Array<Pick<ProjectResourceRecord, 'id' | 'slug' | 'name' | 'git_repo_url'>>
-
-    const byProjectId = new Map<string, GitNexusRepoSummary[]>()
-    const unmapped: Array<{ repoName: string; path: string | null; indexedAt: string | null }> = []
-
-    for (const repo of repos) {
-      const linked = findProjectByDiscoveryCandidate(projects, {
-        slug: repo.name,
-        gitRepoUrl: readGitRemoteUrl(repo.path),
-        repoName: repo.name,
-      })
-
-      if (!linked) {
-        unmapped.push({ repoName: repo.name, path: repo.path, indexedAt: repo.indexedAt })
-        continue
-      }
-
-      const list = byProjectId.get(linked.id) ?? []
-      list.push(repo)
-      byProjectId.set(linked.id, list)
-    }
-
-    const aliasDrift = projects
-      .map((project) => {
-        const aliases = byProjectId.get(project.id) ?? []
-        return {
-          projectId: project.id,
-          slug: project.slug,
-          name: project.name,
-          aliases: aliases.map((alias) => alias.name),
-          aliasCount: aliases.length,
-          canonicalCandidates: resolveRepoNames(project.id),
-        }
-      })
-      .filter((entry) => entry.aliasCount > 1)
+    const audit = buildGitNexusRegistryAuditData(projects, registryEntries)
 
     return c.json({
       success: true,
       data: {
-        totalRepos: repos.length,
-        mappedProjects: byProjectId.size,
-        aliasDrift,
-        unmapped,
+        totalRepos: audit.totalRepos,
+        mappedProjects: audit.mappedProjects,
+        aliasDrift: audit.aliasDrift,
+        unmapped: audit.unmapped,
       },
     })
   } catch (error) {
     logger.error(`GitNexus audit failed: ${String(error)}`)
+    return c.json({ success: false, error: String(error) }, 500)
+  }
+})
+
+// ── Admin: GitNexus registry cleanup preview/apply ──
+intelRouter.post('/admin/gitnexus-cleanup', async (c) => {
+  const denied = requireAdminAccess(c)
+  if (denied) return denied
+
+  try {
+    const body = await c.req.json() as {
+      mode?: 'preview' | 'apply'
+      projectId?: string
+      includeUnmapped?: boolean
+      deleteStorage?: boolean
+    }
+
+    const mode = body.mode === 'apply' ? 'apply' : 'preview'
+    const registryEntries = readGitNexusRegistry()
+    const projects = db.prepare(
+      'SELECT id, slug, name, git_repo_url FROM projects ORDER BY LOWER(name) ASC'
+    ).all() as Array<Pick<ProjectResourceRecord, 'id' | 'slug' | 'name' | 'git_repo_url'>>
+    const operations = buildGitNexusRegistryCleanupOperations(projects, registryEntries, {
+      projectId: normalizeStringValue(body.projectId),
+      includeUnmapped: body.includeUnmapped ?? false,
+    })
+
+    if (mode === 'preview') {
+      return c.json({
+        success: true,
+        mode,
+        data: {
+          registryPath: GITNEXUS_REGISTRY_PATH(),
+          operations,
+          operationCount: operations.length,
+        },
+      })
+    }
+
+    const removePaths = new Set(
+      operations.flatMap((operation) => operation.remove.map((entry) => entry.path)),
+    )
+    const keepStoragePaths = new Set(
+      operations
+        .map((operation) => operation.keep?.storagePath)
+        .filter((value): value is string => Boolean(value)),
+    )
+
+    const nextRegistry = registryEntries.filter((entry) => !removePaths.has(entry.path))
+    writeGitNexusRegistry(nextRegistry)
+
+    const deletedStorage: string[] = []
+    if (body.deleteStorage ?? true) {
+      for (const operation of operations) {
+        for (const entry of operation.remove) {
+          if (!entry.storagePath || keepStoragePaths.has(entry.storagePath)) continue
+          if (!existsSync(entry.storagePath)) continue
+          rmSync(entry.storagePath, { recursive: true, force: true })
+          deletedStorage.push(entry.storagePath)
+        }
+      }
+    }
+
+    return c.json({
+      success: true,
+      mode,
+      data: {
+        operations,
+        operationCount: operations.length,
+        removedRegistryEntries: Array.from(removePaths),
+        deletedStorage,
+        registryPath: GITNEXUS_REGISTRY_PATH(),
+      },
+    })
+  } catch (error) {
+    logger.error(`GitNexus cleanup failed: ${String(error)}`)
+    return c.json({ success: false, error: String(error) }, 500)
+  }
+})
+
+// ── Admin: project metadata cleanup preview/apply ──
+intelRouter.post('/admin/project-cleanup', async (c) => {
+  const denied = requireAdminAccess(c)
+  if (denied) return denied
+
+  try {
+    const body = await c.req.json() as {
+      mode?: 'preview' | 'apply'
+      projectIds?: string[]
+      clearRepoUrlForUmbrella?: boolean
+      clearLatestIndexHint?: boolean
+      normalizeBlankRepoUrl?: boolean
+    }
+
+    const mode = body.mode === 'apply' ? 'apply' : 'preview'
+    const operations = await buildProjectCleanupOperations({
+      projectIds: Array.isArray(body.projectIds) ? body.projectIds : [],
+      clearRepoUrlForUmbrella: body.clearRepoUrlForUmbrella ?? true,
+      clearLatestIndexHint: body.clearLatestIndexHint ?? true,
+      normalizeBlankRepoUrl: body.normalizeBlankRepoUrl ?? true,
+    })
+
+    if (mode === 'preview') {
+      return c.json({
+        success: true,
+        mode,
+        data: {
+          operations,
+          operationCount: operations.length,
+        },
+      })
+    }
+
+    const selectProjectCleanupState = db.prepare(
+      'SELECT git_repo_url, indexed_at, indexed_symbols FROM projects WHERE id = ?'
+    )
+
+    for (const operation of operations) {
+      const existing = selectProjectCleanupState.get(operation.projectId) as {
+        git_repo_url: string | null
+        indexed_at: string | null
+        indexed_symbols: number | null
+      } | undefined
+
+      db.prepare(
+        `UPDATE projects
+         SET git_repo_url = ?,
+             indexed_at = ?,
+             indexed_symbols = ?,
+             updated_at = datetime('now')
+         WHERE id = ?`
+      ).run(
+        Object.prototype.hasOwnProperty.call(operation.patch, 'gitRepoUrl')
+          ? (operation.patch.gitRepoUrl ?? null)
+          : existing?.git_repo_url ?? null,
+        Object.prototype.hasOwnProperty.call(operation.patch, 'indexedAt')
+          ? (operation.patch.indexedAt ?? null)
+          : existing?.indexed_at ?? null,
+        Object.prototype.hasOwnProperty.call(operation.patch, 'indexedSymbols')
+          ? (operation.patch.indexedSymbols ?? null)
+          : existing?.indexed_symbols ?? null,
+        operation.projectId,
+      )
+    }
+
+    return c.json({
+      success: true,
+      mode,
+      data: {
+        operations,
+        operationCount: operations.length,
+      },
+    })
+  } catch (error) {
+    logger.error(`Project cleanup failed: ${String(error)}`)
     return c.json({ success: false, error: String(error) }, 500)
   }
 })

@@ -22,6 +22,7 @@
 - [x] GitNexus registry cleanup flow now supports preview/apply for alias dedupe and stale unmapped repo removal, backed by the shared `/root/.gitnexus/registry.json` volume.
 - [x] Project cleanup flow now supports preview/apply for umbrella/placeholder normalization, including clearing stale `indexed_at` / `indexed_symbols` hints.
 - [x] Auth/session hardening: fixed dashboard login revoke 500 by allowing `auth_requests.status='revoked'` with a migration for existing SQLite DBs, and fixed MCP Bearer auth routing for `/api/sessions`, `/api/metrics`, and `/api/webhooks` so `cortex_session_start` no longer falls through to dashboard session validation.
+- [x] Internal header hardening: percent-encode Unicode-bearing MCP headers before service-to-service fetches and decode them in dashboard-api so API key labels or client metadata with non-ASCII characters do not crash Node fetch with `ByteString` errors.
 - [x] Build ✅ | Typecheck ✅ | Lint ✅ | Quality: A (100/100)
 
 ## Architecture — 2-Service Model
@@ -97,6 +98,7 @@
 - **Admin cleanup auth:** MCP cleanup tools are intentionally restricted to admin-capable API keys. The dashboard Keys page now exposes the required scopes/permissions (`admin`, `owner`, `system`, `write`, `full`, `admin:write`, `project:write`, `knowledge:write`) so operators can mint the right key from UI.
 - **Live cleanup path:** dashboard-api and gitnexus share the same `gitnexus-data` volume, so cleanup mutations are applied by editing GitNexus `registry.json` from dashboard-api instead of needing a write-capable GitNexus tool.
 - **Auth route classification:** dashboard-api now treats `/api/sessions`, `/api/metrics`, and `/api/webhooks` as machine-facing API routes for Bearer API keys, and hub-mcp metrics/analytics calls use `apiCall()` so auth headers are forwarded consistently.
+- **Header transport safety:** hub-mcp now percent-encodes forwarded custom headers (`X-API-Key-Owner`, `X-Cortex-*`) when values contain non-ASCII characters, and dashboard-api decodes them before using them for connection metadata or attribution.
 - **Service separation:** dashboard-api and hub-mcp run as separate Docker services. hub-mcp calls dashboard-api via real HTTP.
 - MCP handler uses `WebStandardStreamableHTTPServerTransport` (stateless, enableJsonResponse)
 - Mobile responsive: hamburger toggle + backdrop overlay at ≤768px, CSS-only breakpoints at 3 tiers

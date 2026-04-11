@@ -35,18 +35,14 @@ function parseSessionContext(raw: unknown): Record<string, unknown> | null {
   if (typeof raw !== 'string' || !raw.trim()) return null
   try {
     const parsed = JSON.parse(raw)
-    return parsed && typeof parsed === 'object'
-      ? parsed as Record<string, unknown>
-      : null
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null
   } catch {
     return null
   }
 }
 
 function normalizeSessionMode(value: unknown): string {
-  return typeof value === 'string' && value.trim()
-    ? value.trim()
-    : 'development'
+  return typeof value === 'string' && value.trim() ? value.trim() : 'development'
 }
 
 function clampDimensionScore(value: unknown): number {
@@ -56,9 +52,7 @@ function clampDimensionScore(value: unknown): number {
 }
 
 function asNonEmptyString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim().length > 0
-    ? value.trim()
-    : undefined
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined
 }
 
 function firstForwardedValue(value: string | undefined): string | undefined {
@@ -107,14 +101,21 @@ function extractConnectionMetadata(value: unknown): SharedConnectionMetadata | u
   if (!value || typeof value !== 'object') return undefined
 
   const input = value as Record<string, unknown>
-  const connection = input.connection && typeof input.connection === 'object'
-    ? input.connection as Record<string, unknown>
-    : input
+  const connection =
+    input.connection && typeof input.connection === 'object'
+      ? (input.connection as Record<string, unknown>)
+      : input
 
   return compactConnectionMetadata({
     transport: asNonEmptyString(connection.transport),
-    clientApp: asNonEmptyString(connection.clientApp) ?? asNonEmptyString(connection.client_app) ?? asNonEmptyString(connection.app),
-    clientHost: asNonEmptyString(connection.clientHost) ?? asNonEmptyString(connection.client_host) ?? asNonEmptyString(connection.host),
+    clientApp:
+      asNonEmptyString(connection.clientApp) ??
+      asNonEmptyString(connection.client_app) ??
+      asNonEmptyString(connection.app),
+    clientHost:
+      asNonEmptyString(connection.clientHost) ??
+      asNonEmptyString(connection.client_host) ??
+      asNonEmptyString(connection.host),
     clientUserAgent:
       asNonEmptyString(connection.clientUserAgent) ??
       asNonEmptyString(connection.client_user_agent) ??
@@ -144,18 +145,14 @@ function mergeConnectionMetadata(
 function inferClientApp(
   explicitApp: string | undefined,
   agentId: string,
-  apiKeyName: string | null,
+  apiKeyName: string | null | undefined,
   userAgent: string | undefined,
   transport: string | undefined,
 ): string | undefined {
   const direct = explicitApp
   if (direct) return direct
 
-  const haystack = [
-    agentId,
-    apiKeyName ?? '',
-    userAgent ?? '',
-  ].join(' ').toLowerCase()
+  const haystack = [agentId, apiKeyName ?? '', userAgent ?? ''].join(' ').toLowerCase()
 
   const inferred = [
     ['antigravity', 'antigravity'],
@@ -173,31 +170,43 @@ function inferClientApp(
   return asNonEmptyString(apiKeyName) ?? asNonEmptyString(agentId)
 }
 
+function decodeInternalHeaderValue(value: string | null | undefined): string | undefined {
+  if (!value) return undefined
+
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
 function buildConnectionMetadata(
   c: Context,
   agentId: string,
-  apiKeyName: string | null,
+  apiKeyName: string | null | undefined,
 ): SharedConnectionMetadata | undefined {
-  const headerTransport = asNonEmptyString(c.req.header('x-cortex-transport'))
+  const headerTransport = asNonEmptyString(
+    decodeInternalHeaderValue(c.req.header('x-cortex-transport')),
+  )
   const rawUserAgent =
-    asNonEmptyString(c.req.header('x-cortex-client-user-agent')) ??
+    asNonEmptyString(decodeInternalHeaderValue(c.req.header('x-cortex-client-user-agent'))) ??
     asNonEmptyString(c.req.header('user-agent'))
-  const transport = headerTransport ??
-    (rawUserAgent?.toLowerCase().includes('mozilla/') ? 'dashboard' : 'api')
+  const transport =
+    headerTransport ?? (rawUserAgent?.toLowerCase().includes('mozilla/') ? 'dashboard' : 'api')
 
   const metadata: SharedConnectionMetadata = {
     transport,
     clientApp: inferClientApp(
-      asNonEmptyString(c.req.header('x-cortex-client-app')),
+      asNonEmptyString(decodeInternalHeaderValue(c.req.header('x-cortex-client-app'))),
       agentId,
       apiKeyName,
       rawUserAgent,
       transport,
     ),
-    clientHost: asNonEmptyString(c.req.header('x-cortex-client-host')),
+    clientHost: asNonEmptyString(decodeInternalHeaderValue(c.req.header('x-cortex-client-host'))),
     clientUserAgent: rawUserAgent,
     clientIp:
-      asNonEmptyString(c.req.header('x-cortex-client-ip')) ??
+      asNonEmptyString(decodeInternalHeaderValue(c.req.header('x-cortex-client-ip'))) ??
       firstForwardedValue(c.req.header('cf-connecting-ip')) ??
       firstForwardedValue(c.req.header('x-forwarded-for')) ??
       asNonEmptyString(c.req.header('x-real-ip')),
@@ -209,26 +218,37 @@ function buildConnectionMetadata(
 // ── Server-side session validation ──
 // Warns (but doesn't block) if agent hasn't started a session.
 // This provides enforcement for IDEs that don't support hooks (Cursor, Windsurf, etc.)
-function validateSession(agentId: string, sessionId?: string): { valid: boolean; warning?: string } {
+function validateSession(
+  agentId: string,
+  sessionId?: string,
+): { valid: boolean; warning?: string } {
   if (sessionId) {
     // Verify session exists and is active
-    const session = db.prepare(
-      "SELECT id, status FROM session_handoffs WHERE id = ? AND status = 'active'"
-    ).get(sessionId) as { id: string; status: string } | undefined
+    const session = db
+      .prepare("SELECT id, status FROM session_handoffs WHERE id = ? AND status = 'active'")
+      .get(sessionId) as { id: string; status: string } | undefined
 
     if (!session) {
-      return { valid: true, warning: `Session ${sessionId} not found or not active. Call cortex_session_start first.` }
+      return {
+        valid: true,
+        warning: `Session ${sessionId} not found or not active. Call cortex_session_start first.`,
+      }
     }
     return { valid: true }
   }
 
   // No session_id provided — check if agent has ANY active session
-  const anySession = db.prepare(
-    "SELECT id FROM session_handoffs WHERE from_agent = ? AND status = 'active' ORDER BY created_at DESC LIMIT 1"
-  ).get(agentId) as { id: string } | undefined
+  const anySession = db
+    .prepare(
+      "SELECT id FROM session_handoffs WHERE from_agent = ? AND status = 'active' ORDER BY created_at DESC LIMIT 1",
+    )
+    .get(agentId) as { id: string } | undefined
 
   if (!anySession) {
-    return { valid: true, warning: `No active session for agent "${agentId}". Call cortex_session_start before submitting reports.` }
+    return {
+      valid: true,
+      warning: `No active session for agent "${agentId}". Call cortex_session_start before submitting reports.`,
+    }
   }
 
   return { valid: true }
@@ -255,7 +275,7 @@ qualityRouter.post('/report', async (c) => {
     if (!gate_name) return c.json({ error: 'gate_name is required' }, 400)
 
     // Identity resolution: keep agent_id from self-report, track API key name separately
-    const apiKeyName = c.req.header('X-API-Key-Owner') || null
+    const apiKeyName = decodeInternalHeaderValue(c.req.header('X-API-Key-Owner') || null)
     const agentId = agent_id || 'unknown'
 
     // Server-side enforcement: validate session
@@ -317,7 +337,11 @@ qualityRouter.post('/report', async (c) => {
     }
 
     // Ensure api_key_name column exists (safe migration)
-    try { db.exec('ALTER TABLE quality_reports ADD COLUMN api_key_name TEXT') } catch { /* already exists */ }
+    try {
+      db.exec('ALTER TABLE quality_reports ADD COLUMN api_key_name TEXT')
+    } catch {
+      /* already exists */
+    }
 
     const stmt = db.prepare(`
       INSERT INTO quality_reports (id, project_id, agent_id, session_id, gate_name,
@@ -326,9 +350,18 @@ qualityRouter.post('/report', async (c) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
     stmt.run(
-      reportId, project_id || null, agentId, session_id || null, gate_name,
-      scoreBuild, scoreRegression, scoreStandards, scoreTraceability,
-      scoreTotal, grade, reportPassed ? 1 : 0,
+      reportId,
+      project_id || null,
+      agentId,
+      session_id || null,
+      gate_name,
+      scoreBuild,
+      scoreRegression,
+      scoreStandards,
+      scoreTraceability,
+      scoreTotal,
+      grade,
+      reportPassed ? 1 : 0,
       details ? (typeof details === 'string' ? details : JSON.stringify(details)) : null,
       apiKeyName,
       normalizedSharedMetadata ? JSON.stringify(normalizedSharedMetadata) : null,
@@ -394,10 +427,14 @@ qualityRouter.get('/reports', (c) => {
       params.push(grade)
     }
 
-    const total = (db.prepare(`SELECT COUNT(*) as count FROM quality_reports ${where}`).get(...params) as { count: number }).count
-    const reports = db.prepare(
-      `SELECT * FROM quality_reports ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
-    ).all(...params, limit, offset) as Array<Record<string, unknown>>
+    const total = (
+      db.prepare(`SELECT COUNT(*) as count FROM quality_reports ${where}`).get(...params) as {
+        count: number
+      }
+    ).count
+    const reports = db
+      .prepare(`SELECT * FROM quality_reports ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`)
+      .all(...params, limit, offset) as Array<Record<string, unknown>>
 
     const normalizedReports = reports.map((report) => ({
       ...report,
@@ -424,27 +461,33 @@ qualityRouter.get('/reports/latest', (c) => {
     const projectId = c.req.query('project_id')
 
     if (projectId) {
-      const report = db.prepare(
-        'SELECT * FROM quality_reports WHERE project_id = ? ORDER BY created_at DESC LIMIT 1'
-      ).get(projectId) as Record<string, unknown> | undefined
+      const report = db
+        .prepare(
+          'SELECT * FROM quality_reports WHERE project_id = ? ORDER BY created_at DESC LIMIT 1',
+        )
+        .get(projectId) as Record<string, unknown> | undefined
       return c.json({
-        report: report ? {
-          ...report,
-          sharedMetadata: parseSharedProjectMetadataJson(report.shared_metadata, { projectId }),
-        } : null,
+        report: report
+          ? {
+              ...report,
+              sharedMetadata: parseSharedProjectMetadataJson(report.shared_metadata, { projectId }),
+            }
+          : null,
       })
     }
 
-    const report = db.prepare(
-      'SELECT * FROM quality_reports ORDER BY created_at DESC LIMIT 1'
-    ).get() as Record<string, unknown> | undefined
+    const report = db
+      .prepare('SELECT * FROM quality_reports ORDER BY created_at DESC LIMIT 1')
+      .get() as Record<string, unknown> | undefined
     return c.json({
-      report: report ? {
-        ...report,
-        sharedMetadata: parseSharedProjectMetadataJson(report.shared_metadata, {
-          projectId: typeof report.project_id === 'string' ? report.project_id : undefined,
-        }),
-      } : null,
+      report: report
+        ? {
+            ...report,
+            sharedMetadata: parseSharedProjectMetadataJson(report.shared_metadata, {
+              projectId: typeof report.project_id === 'string' ? report.project_id : undefined,
+            }),
+          }
+        : null,
     })
   } catch (error) {
     return c.json({ error: String(error) }, 500)
@@ -490,7 +533,9 @@ qualityRouter.get('/trends', (c) => {
 // ── GET /summary — Aggregated quality summary ──
 qualityRouter.get('/summary', (c) => {
   try {
-    const summary = db.prepare(`
+    const summary = db
+      .prepare(
+        `
       SELECT
         COUNT(*) as total_reports,
         ROUND(AVG(score_total), 1) as avg_score,
@@ -506,11 +551,13 @@ qualityRouter.get('/summary', (c) => {
         SUM(CASE WHEN grade = 'D' THEN 1 ELSE 0 END) as grade_d,
         SUM(CASE WHEN grade = 'F' THEN 1 ELSE 0 END) as grade_f
       FROM quality_reports
-    `).get()
+    `,
+      )
+      .get()
 
-    const latest = db.prepare(
-      'SELECT * FROM quality_reports ORDER BY created_at DESC LIMIT 1'
-    ).get()
+    const latest = db
+      .prepare('SELECT * FROM quality_reports ORDER BY created_at DESC LIMIT 1')
+      .get()
 
     return c.json({ summary, latest })
   } catch (error) {
@@ -521,7 +568,7 @@ qualityRouter.get('/summary', (c) => {
 // ── POST /plan-quality — Assess plan quality (8 criteria, threshold >= 8.0) ──
 qualityRouter.post('/plan-quality', async (c) => {
   try {
-    const body = await c.req.json() as PlanInput
+    const body = (await c.req.json()) as PlanInput
     if (!body.plan) return c.json({ error: 'plan is required' }, 400)
     if (!body.request) return c.json({ error: 'request is required' }, 400)
 
@@ -539,8 +586,12 @@ qualityRouter.get('/logs', (c) => {
     const limit = Math.min(100, Math.max(1, Number(c.req.query('limit') || '20')))
     const offset = (page - 1) * limit
 
-    const total = (db.prepare('SELECT COUNT(*) as count FROM query_logs').get() as { count: number }).count
-    const logs = db.prepare('SELECT * FROM query_logs ORDER BY created_at DESC LIMIT ? OFFSET ?').all(limit, offset) as Array<Record<string, unknown>>
+    const total = (
+      db.prepare('SELECT COUNT(*) as count FROM query_logs').get() as { count: number }
+    ).count
+    const logs = db
+      .prepare('SELECT * FROM query_logs ORDER BY created_at DESC LIMIT ? OFFSET ?')
+      .all(limit, offset) as Array<Record<string, unknown>>
     const normalizedLogs = logs.map((log) => ({
       ...log,
       sharedMetadata: parseSharedProjectMetadataJson(log.shared_metadata, {
@@ -571,41 +622,49 @@ sessionsRouter.post('/start', async (c) => {
 
     // Identity resolution: keep self-reported agentId, API key name tracked separately
     const agentId = bodyAgentId
-    const apiKeyName = c.req.header('X-API-Key-Owner') || null
+    const apiKeyName = decodeInternalHeaderValue(c.req.header('X-API-Key-Owner') || null)
 
     // Safe migration: add api_key_name column if not exists
     try {
-      db.exec("ALTER TABLE session_handoffs ADD COLUMN api_key_name TEXT")
-    } catch { /* column already exists */ }
-
-    if (!agentId) {
-      return c.json({ error: 'agentId is required. Identify your agent (e.g., "claude-code", "antigravity", "cursor").' }, 400)
+      db.exec('ALTER TABLE session_handoffs ADD COLUMN api_key_name TEXT')
+    } catch {
+      /* column already exists */
     }
 
-    const normalizedRepo = repo
-      ? repo.replace(/\.git$/, '').replace(/\/$/, '')
-      : 'unknown'
+    if (!agentId) {
+      return c.json(
+        {
+          error:
+            'agentId is required. Identify your agent (e.g., "claude-code", "antigravity", "cursor").',
+        },
+        400,
+      )
+    }
+
+    const normalizedRepo = repo ? repo.replace(/\.git$/, '').replace(/\/$/, '') : 'unknown'
 
     let project: Record<string, unknown> | undefined
     if (repo) {
       // Strategy 1: match by git_repo_url
       const stmt = db.prepare(
         `SELECT * FROM projects
-         WHERE git_repo_url IN (?, ?, ?, ?)`
+         WHERE git_repo_url IN (?, ?, ?, ?)`,
       )
-      project = stmt.get(
-        normalizedRepo,
-        `${normalizedRepo}.git`,
-        `${normalizedRepo}/`,
-        repo
-      ) as Record<string, unknown> | undefined
+      project = stmt.get(normalizedRepo, `${normalizedRepo}.git`, `${normalizedRepo}/`, repo) as
+        | Record<string, unknown>
+        | undefined
 
       // Strategy 2: match by slug derived from repo basename
       if (!project) {
         const repoBasename = normalizedRepo.split('/').pop() ?? ''
-        const slug = repoBasename.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+        const slug = repoBasename
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '')
         if (slug) {
-          project = db.prepare('SELECT * FROM projects WHERE slug = ?').get(slug) as Record<string, unknown> | undefined
+          project = db.prepare('SELECT * FROM projects WHERE slug = ?').get(slug) as
+            | Record<string, unknown>
+            | undefined
           // Backfill git_repo_url if found by slug but URL was missing
           if (project && !project.git_repo_url) {
             db.prepare('UPDATE projects SET git_repo_url = ? WHERE id = ?').run(repo, project.id)
@@ -617,18 +676,37 @@ sessionsRouter.post('/start', async (c) => {
       // Strategy 3: auto-create project if repo provided but no match
       if (!project) {
         const repoBasename = normalizedRepo.split('/').pop() ?? 'unknown'
-        const slug = repoBasename.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-        const readableName = repoBasename.split('-').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+        const slug = repoBasename
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '')
+        const readableName = repoBasename
+          .split('-')
+          .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
+          .join(' ')
         const newId = `proj-${randomUUID().slice(0, 8)}`
-        const defaultOrg = db.prepare("SELECT id FROM organizations WHERE slug = 'default' OR slug = 'personal' ORDER BY created_at LIMIT 1").get() as { id: string } | undefined
+        const defaultOrg = db
+          .prepare(
+            "SELECT id FROM organizations WHERE slug = 'default' OR slug = 'personal' ORDER BY created_at LIMIT 1",
+          )
+          .get() as { id: string } | undefined
         const orgId = defaultOrg?.id ?? 'org-default'
         try {
           db.prepare(
-            `INSERT INTO projects (id, org_id, name, slug, git_repo_url) VALUES (?, ?, ?, ?, ?)`
+            `INSERT INTO projects (id, org_id, name, slug, git_repo_url) VALUES (?, ?, ?, ?, ?)`,
           ).run(newId, orgId, readableName, slug, repo)
-          project = { id: newId, org_id: orgId, name: readableName, slug, git_repo_url: repo } as Record<string, unknown>
-        } catch { /* slug collision — try lookup again */
-          project = db.prepare('SELECT * FROM projects WHERE slug = ?').get(slug) as Record<string, unknown> | undefined
+          project = {
+            id: newId,
+            org_id: orgId,
+            name: readableName,
+            slug,
+            git_repo_url: repo,
+          } as Record<string, unknown>
+        } catch {
+          /* slug collision — try lookup again */
+          project = db.prepare('SELECT * FROM projects WHERE slug = ?').get(slug) as
+            | Record<string, unknown>
+            | undefined
         }
       }
     }
@@ -638,22 +716,26 @@ sessionsRouter.post('/start', async (c) => {
       projectId: (project?.id as string | undefined) ?? undefined,
     })
     const normalizedSharedMetadata = attachConnectionMetadata(
-      normalizedProjectMetadata ? { ...normalizedProjectMetadata } as Record<string, unknown> : null,
+      normalizedProjectMetadata
+        ? ({ ...normalizedProjectMetadata } as Record<string, unknown>)
+        : null,
       connectionMetadata,
     )
 
     let sessionId: string
-    const existingSession = db.prepare(
-      `SELECT id, project_id, shared_metadata FROM session_handoffs
+    const existingSession = db
+      .prepare(
+        `SELECT id, project_id, shared_metadata FROM session_handoffs
        WHERE from_agent = ? AND project IN (?, ?, ?, ?) AND status = 'active'
-       ORDER BY created_at DESC LIMIT 1`
-    ).get(
-      agentId,
-      normalizedRepo,
-      `${normalizedRepo}.git`,
-      `${normalizedRepo}/`,
-      repo ?? 'unknown'
-    ) as { id: string; project_id: string | null; shared_metadata: string | null } | undefined
+       ORDER BY created_at DESC LIMIT 1`,
+      )
+      .get(
+        agentId,
+        normalizedRepo,
+        `${normalizedRepo}.git`,
+        `${normalizedRepo}/`,
+        repo ?? 'unknown',
+      ) as { id: string; project_id: string | null; shared_metadata: string | null } | undefined
 
     if (existingSession) {
       sessionId = existingSession.id
@@ -664,7 +746,7 @@ sessionsRouter.post('/start', async (c) => {
         normalizedProjectMetadata,
       )
       const mergedSharedMetadata = attachConnectionMetadata(
-        mergedProjectMetadata ? { ...mergedProjectMetadata } as Record<string, unknown> : null,
+        mergedProjectMetadata ? ({ ...mergedProjectMetadata } as Record<string, unknown>) : null,
         mergeConnectionMetadata(
           extractConnectionMetadata(existingSession.shared_metadata),
           connectionMetadata,
@@ -684,7 +766,7 @@ sessionsRouter.post('/start', async (c) => {
              context = ?,
              project_id = COALESCE(?, project_id),
              shared_metadata = COALESCE(?, shared_metadata)
-         WHERE id = ?`
+         WHERE id = ?`,
       ).run(
         `Session started: mode=${resolvedMode}`,
         nextContext,
@@ -697,16 +779,20 @@ sessionsRouter.post('/start', async (c) => {
     }
 
     // Recent quality — now reads from quality_reports first, falls back to query_logs
-    let recentQuality = db.prepare(
-      'SELECT gate_name as tool, grade, score_total, passed, created_at FROM quality_reports ORDER BY created_at DESC LIMIT 5'
-    ).all()
+    let recentQuality = db
+      .prepare(
+        'SELECT gate_name as tool, grade, score_total, passed, created_at FROM quality_reports ORDER BY created_at DESC LIMIT 5',
+      )
+      .all()
     if (recentQuality.length === 0) {
-      recentQuality = db.prepare(
-        'SELECT tool, status, created_at FROM query_logs ORDER BY created_at DESC LIMIT 5'
-      ).all()
+      recentQuality = db
+        .prepare('SELECT tool, status, created_at FROM query_logs ORDER BY created_at DESC LIMIT 5')
+        .all()
     }
 
-    const recentStmt = db.prepare('SELECT id, task_summary, created_at FROM session_handoffs ORDER BY created_at DESC LIMIT 3')
+    const recentStmt = db.prepare(
+      'SELECT id, task_summary, created_at FROM session_handoffs ORDER BY created_at DESC LIMIT 3',
+    )
     const recentSessions = recentStmt.all()
 
     const projectName = (project?.name as string) ?? 'Unknown Project'
@@ -717,7 +803,7 @@ sessionsRouter.post('/start', async (c) => {
       const insertStmt = db.prepare(
         `INSERT INTO session_handoffs
           (id, from_agent, project, task_summary, context, status, api_key_name, project_id, shared_metadata)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       insertStmt.run(
         sessionId,
@@ -729,7 +815,8 @@ sessionsRouter.post('/start', async (c) => {
           mode: resolvedMode,
           agentId,
           projectId: project?.id,
-          connection: extractConnectionMetadata(normalizedSharedMetadata) ?? connectionMetadata ?? null,
+          connection:
+            extractConnectionMetadata(normalizedSharedMetadata) ?? connectionMetadata ?? null,
         }),
         'active',
         apiKeyName,
@@ -742,15 +829,17 @@ sessionsRouter.post('/start', async (c) => {
       sessionId,
       status: 'active',
       mode: resolvedMode,
-      project: project ? {
-        id: project.id,
-        name: projectName,
-        description: projectDesc,
-        orgId,
-        repo: project.git_repo_url,
-        indexedAt: project.indexed_at,
-        indexedSymbols: project.indexed_symbols,
-      } : null,
+      project: project
+        ? {
+            id: project.id,
+            name: projectName,
+            description: projectDesc,
+            orgId,
+            repo: project.git_repo_url,
+            indexedAt: project.indexed_at,
+            indexedSymbols: project.indexed_symbols,
+          }
+        : null,
       sharedMetadata: normalizedSharedMetadata,
       standards: [
         'SOLID Principles',
@@ -771,9 +860,13 @@ sessionsRouter.get('/all', (c) => {
     const limit = Number(c.req.query('limit') || '50')
     const status = c.req.query('status')
     const stmt = status
-      ? db.prepare('SELECT * FROM session_handoffs WHERE status = ? ORDER BY created_at DESC LIMIT ?')
+      ? db.prepare(
+          'SELECT * FROM session_handoffs WHERE status = ? ORDER BY created_at DESC LIMIT ?',
+        )
       : db.prepare('SELECT * FROM session_handoffs ORDER BY created_at DESC LIMIT ?')
-    const rawSessions = (status ? stmt.all(status, limit) : stmt.all(limit)) as Array<Record<string, unknown>>
+    const rawSessions = (status ? stmt.all(status, limit) : stmt.all(limit)) as Array<
+      Record<string, unknown>
+    >
 
     // Enrich each session with token savings from query_logs
     const sessionsWithSavings = rawSessions.map((session) => {
@@ -789,22 +882,31 @@ sessionsRouter.get('/all', (c) => {
         const sessionCreatedAt = session.created_at as string
         // For completed sessions, look at tool calls made by same agent within a 4-hour window
         // For active sessions, look from session start to now
-        const savings = db.prepare(`
+        const savings = db
+          .prepare(
+            `
           SELECT COUNT(*) as tool_calls,
                  COALESCE(SUM(output_size), 0) as output_bytes,
                  COALESCE(SUM(input_size), 0) + COALESCE(SUM(output_size), 0) as data_bytes
           FROM query_logs
           WHERE agent_id = ? AND created_at >= ? AND created_at <= datetime(?, '+4 hours')
             AND status = 'ok'
-        `).get(agentId, sessionCreatedAt, sessionCreatedAt) as {
-          tool_calls: number; output_bytes: number; data_bytes: number
+        `,
+          )
+          .get(agentId, sessionCreatedAt, sessionCreatedAt) as {
+          tool_calls: number
+          output_bytes: number
+          data_bytes: number
         }
 
         return {
           ...session,
           mode: normalizeSessionMode(sessionContext?.mode),
           sharedMetadata,
-          connection: extractConnectionMetadata(sharedMetadata) ?? extractConnectionMetadata(sessionContext?.connection) ?? null,
+          connection:
+            extractConnectionMetadata(sharedMetadata) ??
+            extractConnectionMetadata(sessionContext?.connection) ??
+            null,
           savings: {
             toolCalls: savings.tool_calls,
             tokensSaved: Math.round(savings.output_bytes / 4),
@@ -816,7 +918,10 @@ sessionsRouter.get('/all', (c) => {
           ...session,
           mode: normalizeSessionMode(sessionContext?.mode),
           sharedMetadata,
-          connection: extractConnectionMetadata(sharedMetadata) ?? extractConnectionMetadata(sessionContext?.connection) ?? null,
+          connection:
+            extractConnectionMetadata(sharedMetadata) ??
+            extractConnectionMetadata(sessionContext?.connection) ??
+            null,
           savings: { toolCalls: 0, tokensSaved: 0, dataBytes: 0 },
         }
       }
@@ -838,9 +943,11 @@ sessionsRouter.patch('/:id/complete', async (c) => {
       shared_metadata?: unknown
     }
 
-    const existing = db.prepare(
-      'SELECT id, project_id, shared_metadata FROM session_handoffs WHERE id = ?',
-    ).get(id) as { id: string; project_id: string | null; shared_metadata: string | null } | undefined
+    const existing = db
+      .prepare('SELECT id, project_id, shared_metadata FROM session_handoffs WHERE id = ?')
+      .get(id) as
+      | { id: string; project_id: string | null; shared_metadata: string | null }
+      | undefined
     if (!existing) return c.json({ error: 'Session not found' }, 404)
 
     const mergedSharedMetadata = mergeSharedProjectMetadata(
@@ -855,7 +962,7 @@ sessionsRouter.patch('/:id/complete', async (c) => {
     db.prepare(
       `UPDATE session_handoffs
        SET status = ?, task_summary = COALESCE(?, task_summary), shared_metadata = ?
-       WHERE id = ?`
+       WHERE id = ?`,
     ).run(
       status ?? 'completed',
       task_summary ?? null,
@@ -881,9 +988,11 @@ sessionsRouter.patch('/:id/metadata', async (c) => {
     const body = await c.req.json().catch(() => ({}))
     const { shared_metadata } = body as { shared_metadata?: unknown }
 
-    const existing = db.prepare(
-      'SELECT id, project_id, shared_metadata FROM session_handoffs WHERE id = ?',
-    ).get(id) as { id: string; project_id: string | null; shared_metadata: string | null } | undefined
+    const existing = db
+      .prepare('SELECT id, project_id, shared_metadata FROM session_handoffs WHERE id = ?')
+      .get(id) as
+      | { id: string; project_id: string | null; shared_metadata: string | null }
+      | undefined
 
     if (!existing) return c.json({ error: 'Session not found' }, 404)
 
@@ -896,9 +1005,10 @@ sessionsRouter.patch('/:id/metadata', async (c) => {
       }),
     )
 
-    db.prepare(
-      'UPDATE session_handoffs SET shared_metadata = ? WHERE id = ?',
-    ).run(mergedSharedMetadata ? JSON.stringify(mergedSharedMetadata) : null, id)
+    db.prepare('UPDATE session_handoffs SET shared_metadata = ? WHERE id = ?').run(
+      mergedSharedMetadata ? JSON.stringify(mergedSharedMetadata) : null,
+      id,
+    )
 
     return c.json({ success: true, id, sharedMetadata: mergedSharedMetadata })
   } catch (error) {

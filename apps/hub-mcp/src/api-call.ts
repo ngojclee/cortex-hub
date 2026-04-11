@@ -6,6 +6,15 @@ export const telemetryStorage = new AsyncLocalStorage<{
   computeModel: string | null
 }>()
 
+function encodeHeaderValue(value: string): string {
+  return /[^\x20-\x7E]/.test(value) ? encodeURIComponent(value) : value
+}
+
+function setInternalHeader(headers: Headers, name: string, value: string | undefined): void {
+  if (!value || headers.has(name)) return
+  headers.set(name, encodeHeaderValue(value))
+}
+
 /**
  * Make an API call to dashboard-api.
  *
@@ -25,24 +34,12 @@ export async function apiCall(env: Env, path: string, init?: RequestInit): Promi
   if (env.API_KEY_TOKEN && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${env.API_KEY_TOKEN}`)
   }
-  if (env.API_KEY_OWNER && !headers.has('X-API-Key-Owner')) {
-    headers.set('X-API-Key-Owner', env.API_KEY_OWNER)
-  }
-  if (env.CLIENT_TRANSPORT && !headers.has('X-Cortex-Transport')) {
-    headers.set('X-Cortex-Transport', env.CLIENT_TRANSPORT)
-  }
-  if (env.CLIENT_APP && !headers.has('X-Cortex-Client-App')) {
-    headers.set('X-Cortex-Client-App', env.CLIENT_APP)
-  }
-  if (env.CLIENT_HOST && !headers.has('X-Cortex-Client-Host')) {
-    headers.set('X-Cortex-Client-Host', env.CLIENT_HOST)
-  }
-  if (env.CLIENT_IP && !headers.has('X-Cortex-Client-IP')) {
-    headers.set('X-Cortex-Client-IP', env.CLIENT_IP)
-  }
-  if (env.CLIENT_USER_AGENT && !headers.has('X-Cortex-Client-User-Agent')) {
-    headers.set('X-Cortex-Client-User-Agent', env.CLIENT_USER_AGENT)
-  }
+  setInternalHeader(headers, 'X-API-Key-Owner', env.API_KEY_OWNER)
+  setInternalHeader(headers, 'X-Cortex-Transport', env.CLIENT_TRANSPORT)
+  setInternalHeader(headers, 'X-Cortex-Client-App', env.CLIENT_APP)
+  setInternalHeader(headers, 'X-Cortex-Client-Host', env.CLIENT_HOST)
+  setInternalHeader(headers, 'X-Cortex-Client-IP', env.CLIENT_IP)
+  setInternalHeader(headers, 'X-Cortex-Client-User-Agent', env.CLIENT_USER_AGENT)
 
   const response = await fetch(`${baseUrl}${path}`, {
     ...init,

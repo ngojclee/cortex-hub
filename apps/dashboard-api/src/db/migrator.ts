@@ -145,6 +145,43 @@ export const migrations: Migration[] = [
       db.exec(`ALTER TABLE session_handoffs ADD COLUMN client_ip TEXT`)
     },
   },
+  {
+    id: 11,
+    name: 'expand_auth_requests_revoked_status',
+    up(db) {
+      const authRequestsTable = db
+        .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'auth_requests'")
+        .get() as { sql: string | null } | undefined
+
+      if (!authRequestsTable?.sql || authRequestsTable.sql.includes("'revoked'")) {
+        return
+      }
+
+      db.exec(`
+        ALTER TABLE auth_requests RENAME TO auth_requests_old;
+
+        CREATE TABLE auth_requests (
+          id TEXT PRIMARY KEY,
+          email TEXT NOT NULL,
+          token TEXT NOT NULL UNIQUE,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'denied', 'revoked')),
+          ip_address TEXT,
+          user_agent TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          resolved_at TEXT
+        );
+
+        INSERT INTO auth_requests (id, email, token, status, ip_address, user_agent, created_at, resolved_at)
+        SELECT id, email, token, status, ip_address, user_agent, created_at, resolved_at
+        FROM auth_requests_old;
+
+        DROP TABLE auth_requests_old;
+
+        CREATE INDEX IF NOT EXISTS idx_auth_requests_token ON auth_requests(token);
+        CREATE INDEX IF NOT EXISTS idx_auth_requests_status ON auth_requests(status, created_at DESC);
+      `)
+    },
+  },
 ]
 
 /* ── Runner ── */
@@ -160,12 +197,13 @@ export function runMigrations(db: Database.Database): void {
   `)
 
   const applied = new Set(
-    db.prepare('SELECT id FROM _migrations').all().map((r: any) => r.id as number),
+    db
+      .prepare('SELECT id FROM _migrations')
+      .all()
+      .map((r: any) => r.id as number),
   )
 
-  const pending = migrations
-    .filter((m) => !applied.has(m.id))
-    .sort((a, b) => a.id - b.id)
+  const pending = migrations.filter((m) => !applied.has(m.id)).sort((a, b) => a.id - b.id)
 
   if (pending.length === 0) {
     console.log(`[migrator] All ${migrations.length} migrations already applied.`)
@@ -189,7 +227,9 @@ export function runMigrations(db: Database.Database): void {
       console.error(`[migrator] FAILED #${migration.id} (${migration.name}):`, err)
       // Continue with next migration — individual column/table failures
       // (e.g., column already exists) are non-fatal for additive migrations
-      const fallbackInsert = db.prepare('INSERT OR IGNORE INTO _migrations (id, name) VALUES (?, ?)')
+      const fallbackInsert = db.prepare(
+        'INSERT OR IGNORE INTO _migrations (id, name) VALUES (?, ?)',
+      )
       fallbackInsert.run(migration.id, migration.name)
     }
   }

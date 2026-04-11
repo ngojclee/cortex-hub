@@ -3,10 +3,12 @@
 > Auto-read by agents at session start. Update at session end.
 
 ## Active Phase
+
 - **Phase:** 6 (Polish, docs, testing, GA release)
 - **Gate Passed:** Gate 5 (Phase 5→6) on 2026-03-19
 
 ## Current Task — Dashboard Redesign + Identity Resolution
+
 - [x] Auto-detect Git provider from repo URL in project creation (`d0b28ee`)
 - [x] X-API-Key-Owner identity resolution: apiCall injects header, quality/session handlers use it (`d0b28ee`)
 - [x] Dashboard redesign: hero bar, project overview cards, intelligence panels (`d8efdef`)
@@ -19,14 +21,17 @@
 - [x] Admin project patch now respects explicit `null` for nullable fields, so MCP cleanup can truly clear stale repo/index metadata.
 - [x] GitNexus registry cleanup flow now supports preview/apply for alias dedupe and stale unmapped repo removal, backed by the shared `/root/.gitnexus/registry.json` volume.
 - [x] Project cleanup flow now supports preview/apply for umbrella/placeholder normalization, including clearing stale `indexed_at` / `indexed_symbols` hints.
+- [x] Auth/session hardening: fixed dashboard login revoke 500 by allowing `auth_requests.status='revoked'` with a migration for existing SQLite DBs, and fixed MCP Bearer auth routing for `/api/sessions`, `/api/metrics`, and `/api/webhooks` so `cortex_session_start` no longer falls through to dashboard session validation.
 - [x] Build ✅ | Typecheck ✅ | Lint ✅ | Quality: A (100/100)
 
 ## Architecture — 2-Service Model
+
 - **cortex-api** (port 4000): Dashboard API + Dashboard Web static files
 - **cortex-mcp** (port 8317): MCP Gateway (standalone, calls cortex-api over Docker network)
 - hub-mcp uses `DASHBOARD_API_URL=http://cortex-api:4000` for real HTTP calls
 
 ## MCP Server Status ✅
+
 - **Endpoint:** `POST https://cortexhub.lengoc.me/mcp`
 - **Auth:** Bearer token (`sk_ctx_...`)
 - **12 tools operational:** session_start, session_end, changes, code_search, code_impact, code_reindex, memory_search, memory_store, knowledge_search, knowledge_store, quality_report, health
@@ -35,6 +40,7 @@
 - **Agent workflow:** session_start → code_search → implement → quality_report → memory_store → session_end
 
 ## In Progress
+
 - [x] MCP auth + handler fix chain (5 bugs fixed in `3df37dd`)
 - [x] Onboarding: `mcp-remote` + URL as-is + connection test
 - [x] Uninstall script + bootstrap option
@@ -66,6 +72,7 @@
 - [x] **LLM Telemetry Optimization** — Extracted Mem9 token responses, propagated via MCP storage headers, updated `query_logs` & `usage_logs` bridging, rendering "Compute Cost" widgets in Usage Dashboard.
 
 ## Completed (Phase 6)
+
 - [x] Dashboard API — 9 real routes (no stubs)
 - [x] Dashboard Web — 8 pages, full-featured
 - [x] LLM API Gateway (multi-provider fallback, budget, usage logging)
@@ -81,6 +88,7 @@
 - [x] Mobile-Responsive Dashboard UI (hamburger sidebar, 3-tier breakpoints)
 
 ## Recent Decisions
+
 - **Multi-repo routing:** `callGitNexusWithFallback()` tries slug → URL-derived → projectId → no-filter as cascading fallback when routing to GitNexus eval-server. All intel routes (search, impact, context, cypher, detect-changes) use this helper.
 - **GitNexus auto-discovery:** Updated `gitnexus-entrypoint.sh` to scan `/app/data/repos/` for cloned repos and run `gitnexus analyze` on any not already registered in `~/.gitnexus/registry.json`.
 - **Identity resolution:** `mcp-remote` drops Authorization header → workaround: apiCall() injects `X-API-Key-Owner` header from `env.API_KEY_OWNER`. Dashboard-api uses this as authoritative identity in quality reports + sessions.
@@ -88,6 +96,7 @@
 - **Knowledge project refs:** `knowledge_documents.project_id` is normalized to project slug. API filters now accept either project ID or slug, and Knowledge UI uses slug-backed filtering for stable grouping.
 - **Admin cleanup auth:** MCP cleanup tools are intentionally restricted to admin-capable API keys. The dashboard Keys page now exposes the required scopes/permissions (`admin`, `owner`, `system`, `write`, `full`, `admin:write`, `project:write`, `knowledge:write`) so operators can mint the right key from UI.
 - **Live cleanup path:** dashboard-api and gitnexus share the same `gitnexus-data` volume, so cleanup mutations are applied by editing GitNexus `registry.json` from dashboard-api instead of needing a write-capable GitNexus tool.
+- **Auth route classification:** dashboard-api now treats `/api/sessions`, `/api/metrics`, and `/api/webhooks` as machine-facing API routes for Bearer API keys, and hub-mcp metrics/analytics calls use `apiCall()` so auth headers are forwarded consistently.
 - **Service separation:** dashboard-api and hub-mcp run as separate Docker services. hub-mcp calls dashboard-api via real HTTP.
 - MCP handler uses `WebStandardStreamableHTTPServerTransport` (stateless, enableJsonResponse)
 - Mobile responsive: hamburger toggle + backdrop overlay at ≤768px, CSS-only breakpoints at 3 tiers
@@ -95,6 +104,7 @@
 - **Hints engine evolution:** 4 new scenarios (code_search empty → suggest context/cypher, code_context → suggest list_repos, cypher → schema tips, list_repos → next steps)
 
 ## Quality Status
+
 - Build ✅ | Typecheck ✅ | Lint ✅ (Verified 2026-03-24T14:17+07:00)
 - Architecture: 2-service model (cortex-api + cortex-mcp)
 - MCP: 17 tools, hub-mcp as standalone service (latest: cortex_list_repos + cross-project intelligence fixes)

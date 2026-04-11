@@ -1,7 +1,10 @@
 import type { Env } from './types.js'
 import { AsyncLocalStorage } from 'node:async_hooks'
 
-export const telemetryStorage = new AsyncLocalStorage<{ computeTokens: number; computeModel: string | null }>()
+export const telemetryStorage = new AsyncLocalStorage<{
+  computeTokens: number
+  computeModel: string | null
+}>()
 
 /**
  * Make an API call to dashboard-api.
@@ -14,11 +17,7 @@ export const telemetryStorage = new AsyncLocalStorage<{ computeTokens: number; c
  * authenticate consistently. X-API-Key-Owner remains as a
  * convenience identity header for internal attribution.
  */
-export async function apiCall(
-  env: Env,
-  path: string,
-  init?: RequestInit
-): Promise<Response> {
+export async function apiCall(env: Env, path: string, init?: RequestInit): Promise<Response> {
   const baseUrl = env.DASHBOARD_API_URL || 'http://localhost:4000'
 
   // Merge X-API-Key-Owner header when identity is resolved
@@ -50,11 +49,11 @@ export async function apiCall(
     headers,
     signal: init?.signal ?? AbortSignal.timeout(30000),
   })
-  
+
   // Extract compute telemetry headers if present
   const computeTokens = parseInt(response.headers.get('X-Cortex-Compute-Tokens') || '0', 10)
   const computeModel = response.headers.get('X-Cortex-Compute-Model')
-  
+
   const store = telemetryStorage.getStore()
   if (store && computeTokens > 0) {
     store.computeTokens += computeTokens

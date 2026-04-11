@@ -17,19 +17,15 @@ import { registerChangeTools } from './tools/changes.js'
 import { registerAnalyticsTools } from './tools/analytics.js'
 import { registerAdminTools } from './tools/admin.js'
 import { validateApiKey } from './middleware/auth.js'
-import { telemetryStorage } from './api-call.js'
+import { apiCall, telemetryStorage } from './api-call.js'
 import type { Env } from './types.js'
-
-
 
 const app = new Hono<{ Bindings: Env }>()
 const authRequired = (process.env['MCP_AUTH_REQUIRED'] ?? 'true').toLowerCase() !== 'false'
 
 function getHeaderValue(headers: Headers, key: string): string | undefined {
   const value = headers.get(key)
-  return typeof value === 'string' && value.trim().length > 0
-    ? value.trim()
-    : undefined
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined
 }
 
 function firstForwardedValue(value: string | undefined): string | undefined {
@@ -43,10 +39,9 @@ function inferClientApp(headers: Headers, agentId?: string): string | undefined 
   const explicit = getHeaderValue(headers, 'x-cortex-client-app')
   if (explicit) return explicit
 
-  const haystack = [
-    agentId ?? '',
-    getHeaderValue(headers, 'user-agent') ?? '',
-  ].join(' ').toLowerCase()
+  const haystack = [agentId ?? '', getHeaderValue(headers, 'user-agent') ?? '']
+    .join(' ')
+    .toLowerCase()
 
   const inferred = [
     ['antigravity', 'antigravity'],
@@ -78,7 +73,9 @@ function getRequestOrigin(req: Request): string {
   if (publicUrl) {
     try {
       return new URL(publicUrl).origin
-    } catch { /* invalid URL, ignore */ }
+    } catch {
+      /* invalid URL, ignore */
+    }
   }
 
   return new URL(req.url).origin
@@ -89,9 +86,16 @@ function getRequestOrigin(req: Request): string {
 //  In Node.js, c.env is empty — this middleware fills it from process.env.)
 app.use('*', async (c, next) => {
   const envKeys: (keyof Env)[] = [
-    'QDRANT_URL', 'CLIPROXY_URL',
-    'DASHBOARD_API_URL', 'MCP_SERVER_NAME', 'MCP_SERVER_VERSION',
-    'CLIENT_TRANSPORT', 'CLIENT_APP', 'CLIENT_HOST', 'CLIENT_IP', 'CLIENT_USER_AGENT',
+    'QDRANT_URL',
+    'CLIPROXY_URL',
+    'DASHBOARD_API_URL',
+    'MCP_SERVER_NAME',
+    'MCP_SERVER_VERSION',
+    'CLIENT_TRANSPORT',
+    'CLIENT_APP',
+    'CLIENT_HOST',
+    'CLIENT_IP',
+    'CLIENT_USER_AGENT',
   ]
   for (const key of envKeys) {
     if (!c.env[key] && process.env[key]) {
@@ -107,11 +111,14 @@ app.use('*', logger())
 // Global error handler — return JSON instead of text/plain
 app.onError((err, c) => {
   console.error('[MCP Global Error]', err.message, err.stack)
-  return c.json({
-    jsonrpc: '2.0',
-    error: { code: -32603, message: err.message },
-    id: null,
-  }, 500)
+  return c.json(
+    {
+      jsonrpc: '2.0',
+      error: { code: -32603, message: err.message },
+      id: null,
+    },
+    500,
+  )
 })
 
 // Health endpoint (no auth required)
@@ -151,11 +158,13 @@ app.get('/.well-known/oauth-protected-resource', (c) => {
 
 // Return 404 for OAuth endpoints we don't support (authorization server, OpenID)
 // This is intentional — we use static Bearer tokens, not OAuth flows.
-app.get('/.well-known/oauth-authorization-server', (c) => c.json({ error: 'OAuth not supported. Use Bearer token.' }, 404))
-app.get('/.well-known/openid-configuration', (c) => c.json({ error: 'OAuth not supported. Use Bearer token.' }, 404))
+app.get('/.well-known/oauth-authorization-server', (c) =>
+  c.json({ error: 'OAuth not supported. Use Bearer token.' }, 404),
+)
+app.get('/.well-known/openid-configuration', (c) =>
+  c.json({ error: 'OAuth not supported. Use Bearer token.' }, 404),
+)
 app.post('/register', (c) => c.json({ error: 'Dynamic client registration not supported.' }, 404))
-
-
 
 // Root endpoint — server info
 app.get('/', (c) => {
@@ -201,10 +210,7 @@ app.get('/', (c) => {
       'cortex://project/{projectId}/process/{processName}',
       'cortex://project/{projectId}/schema',
     ],
-    prompts: [
-      'cortex_detect_impact',
-      'cortex_generate_map',
-    ],
+    prompts: ['cortex_detect_impact', 'cortex_generate_map'],
   })
 })
 
@@ -239,23 +245,32 @@ app.all('/mcp', async (c) => {
   // ─── Auth: resolve API key owner (strict by default) ───────────
   const envWithOwner = { ...c.env } as Env & { API_KEY_OWNER?: string; API_KEY_TOKEN?: string }
 
-  let authResult: { valid: boolean; error?: string; agentId?: string; scope?: string; token?: string } = { valid: false, error: 'Unauthorized' }
+  let authResult: {
+    valid: boolean
+    error?: string
+    agentId?: string
+    scope?: string
+    token?: string
+  } = { valid: false, error: 'Unauthorized' }
   try {
     authResult = await validateApiKey(c.req.raw, c.env)
   } catch (error) {
     authResult = {
       valid: false,
-      error: `Authentication check failed: ${error instanceof Error ? error.message : String(error)}`
+      error: `Authentication check failed: ${error instanceof Error ? error.message : String(error)}`,
     }
   }
 
   if (authRequired && !authResult.valid) {
     c.header('WWW-Authenticate', 'Bearer realm="cortex-hub"')
-    return c.json({
-      jsonrpc: '2.0',
-      error: { code: -32001, message: authResult.error ?? 'Unauthorized' },
-      id: null,
-    }, 401)
+    return c.json(
+      {
+        jsonrpc: '2.0',
+        error: { code: -32001, message: authResult.error ?? 'Unauthorized' },
+        id: null,
+      },
+      401,
+    )
   }
 
   if (authResult.valid && authResult.agentId) {
@@ -266,11 +281,9 @@ app.all('/mcp', async (c) => {
   }
   envWithOwner.CLIENT_TRANSPORT = 'mcp'
   envWithOwner.CLIENT_APP =
-    inferClientApp(c.req.raw.headers, authResult.agentId) ??
-    envWithOwner.CLIENT_APP
+    inferClientApp(c.req.raw.headers, authResult.agentId) ?? envWithOwner.CLIENT_APP
   envWithOwner.CLIENT_HOST =
-    getHeaderValue(c.req.raw.headers, 'x-cortex-client-host') ??
-    envWithOwner.CLIENT_HOST
+    getHeaderValue(c.req.raw.headers, 'x-cortex-client-host') ?? envWithOwner.CLIENT_HOST
   envWithOwner.CLIENT_IP =
     getHeaderValue(c.req.raw.headers, 'x-cortex-client-ip') ??
     firstForwardedValue(getHeaderValue(c.req.raw.headers, 'cf-connecting-ip')) ??
@@ -278,8 +291,7 @@ app.all('/mcp', async (c) => {
     getHeaderValue(c.req.raw.headers, 'x-real-ip') ??
     envWithOwner.CLIENT_IP
   envWithOwner.CLIENT_USER_AGENT =
-    getHeaderValue(c.req.raw.headers, 'user-agent') ??
-    envWithOwner.CLIENT_USER_AGENT
+    getHeaderValue(c.req.raw.headers, 'user-agent') ?? envWithOwner.CLIENT_USER_AGENT
 
   const mcpServer = createMcpServer(envWithOwner)
   const transport = new WebStandardStreamableHTTPServerTransport({
@@ -317,75 +329,86 @@ app.all('/mcp', async (c) => {
   } catch (e) {}
 
   try {
-    const response = await telemetryStorage.run({ computeTokens: 0, computeModel: null }, async () => {
-      const res = await transport.handleRequest(newReq)
-      const latencyMs = Date.now() - startTime
-      const inputSize = bodyText.length
+    const response = await telemetryStorage.run(
+      { computeTokens: 0, computeModel: null },
+      async () => {
+        const res = await transport.handleRequest(newReq)
+        const latencyMs = Date.now() - startTime
+        const inputSize = bodyText.length
 
-      let outputSize = 0
-      let respBody = ''
-      try {
-        const cloned = res.clone()
-        respBody = await cloned.text()
-        outputSize = respBody.length
-      } catch { /* ignore clone failures */ }
-
-      const store = telemetryStorage.getStore()
-      const computeTokens = store?.computeTokens || 0
-      const computeModel = store?.computeModel || null
-
-      const apiUrl = (c.env.DASHBOARD_API_URL || 'http://localhost:4000').replace(/\/$/, '')
-      const agentId = envWithOwner.API_KEY_OWNER || 'unknown'
-
-      if (toolName !== 'unknown') {
-        fetch(`${apiUrl}/api/metrics/query-log`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agentId,
-            tool: toolName,
-            params: argsObj,
-            status: res.status >= 400 ? 'error' : 'ok',
-            latencyMs,
-            projectId,
-            inputSize,
-            outputSize,
-            computeTokens,
-            computeModel,
-          })
-        }).catch((err: any) => console.error('[MCP Telemetry Error]', err))
-      }
-
-      if (toolName !== 'unknown' && toolName !== 'cortex_health' && agentId !== 'unknown') {
+        let outputSize = 0
+        let respBody = ''
         try {
-          const hintsRes = await fetch(
-            `${apiUrl}/api/metrics/hints/${encodeURIComponent(agentId)}?currentTool=${encodeURIComponent(toolName)}`,
-            { signal: AbortSignal.timeout(2000) }
-          )
-          if (hintsRes.ok) {
-            const hintsData = (await hintsRes.json()) as { hints: string[] }
-            if (hintsData.hints.length > 0 && respBody) {
-              try {
-                const parsed = JSON.parse(respBody)
-                if (parsed.result?.content && Array.isArray(parsed.result.content)) {
-                  const lastItem = parsed.result.content[parsed.result.content.length - 1]
-                  if (lastItem?.type === 'text' && typeof lastItem.text === 'string') {
-                    lastItem.text += '\n\n---\n💡 Cortex hints:\n' + hintsData.hints.map((h: string) => `  ${h}`).join('\n')
-                  }
-                  const modifiedBody = JSON.stringify(parsed)
-                  return new Response(modifiedBody, {
-                    status: res.status,
-                    headers: res.headers,
-                  })
-                }
-              } catch { /* JSON parse failed */ }
-            }
-          }
-        } catch { /* hints fetch failed */ }
-      }
+          const cloned = res.clone()
+          respBody = await cloned.text()
+          outputSize = respBody.length
+        } catch {
+          /* ignore clone failures */
+        }
 
-      return res
-    })
+        const store = telemetryStorage.getStore()
+        const computeTokens = store?.computeTokens || 0
+        const computeModel = store?.computeModel || null
+
+        const agentId = envWithOwner.API_KEY_OWNER || 'unknown'
+
+        if (toolName !== 'unknown') {
+          apiCall(envWithOwner, '/api/metrics/query-log', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              agentId,
+              tool: toolName,
+              params: argsObj,
+              status: res.status >= 400 ? 'error' : 'ok',
+              latencyMs,
+              projectId,
+              inputSize,
+              outputSize,
+              computeTokens,
+              computeModel,
+            }),
+          }).catch((err: any) => console.error('[MCP Telemetry Error]', err))
+        }
+
+        if (toolName !== 'unknown' && toolName !== 'cortex_health' && agentId !== 'unknown') {
+          try {
+            const hintsRes = await apiCall(
+              envWithOwner,
+              `/api/metrics/hints/${encodeURIComponent(agentId)}?currentTool=${encodeURIComponent(toolName)}`,
+              { signal: AbortSignal.timeout(2000) },
+            )
+            if (hintsRes.ok) {
+              const hintsData = (await hintsRes.json()) as { hints: string[] }
+              if (hintsData.hints.length > 0 && respBody) {
+                try {
+                  const parsed = JSON.parse(respBody)
+                  if (parsed.result?.content && Array.isArray(parsed.result.content)) {
+                    const lastItem = parsed.result.content[parsed.result.content.length - 1]
+                    if (lastItem?.type === 'text' && typeof lastItem.text === 'string') {
+                      lastItem.text +=
+                        '\n\n---\n💡 Cortex hints:\n' +
+                        hintsData.hints.map((h: string) => `  ${h}`).join('\n')
+                    }
+                    const modifiedBody = JSON.stringify(parsed)
+                    return new Response(modifiedBody, {
+                      status: res.status,
+                      headers: res.headers,
+                    })
+                  }
+                } catch {
+                  /* JSON parse failed */
+                }
+              }
+            }
+          } catch {
+            /* hints fetch failed */
+          }
+        }
+
+        return res
+      },
+    )
 
     return response
   } catch (error: any) {
@@ -393,8 +416,7 @@ app.all('/mcp', async (c) => {
     const latencyMs = Date.now() - startTime
 
     if (toolName !== 'unknown') {
-      const apiUrl = (c.env.DASHBOARD_API_URL || 'http://localhost:4000').replace(/\/$/, '')
-      fetch(`${apiUrl}/api/metrics/query-log`, {
+      apiCall(envWithOwner, '/api/metrics/query-log', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -407,18 +429,19 @@ app.all('/mcp', async (c) => {
           projectId,
           inputSize: bodyText.length,
           outputSize: 0,
-        })
+        }),
       }).catch((err: any) => console.error('[MCP Telemetry Error]', err))
     }
 
-    return c.json({
-      jsonrpc: '2.0',
-      error: { code: -32603, message: error.message || 'Internal error' },
-      id: null,
-    }, 500)
+    return c.json(
+      {
+        jsonrpc: '2.0',
+        error: { code: -32603, message: error.message || 'Internal error' },
+        id: null,
+      },
+      500,
+    )
   }
 })
-
-
 
 export default app

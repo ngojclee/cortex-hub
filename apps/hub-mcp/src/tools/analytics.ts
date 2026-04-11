@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Env } from '../types.js'
+import { apiCall } from '../api-call.js'
 
 /**
  * Register analytics tools.
@@ -9,8 +10,6 @@ import type { Env } from '../types.js'
  * This enables self-evaluation: "Is Cortex making me more effective?"
  */
 export function registerAnalyticsTools(server: McpServer, env: Env) {
-  const apiUrl = () => env.DASHBOARD_API_URL || 'http://localhost:4000'
-
   // ── cortex_tool_stats — view tool usage analytics ──
   server.tool(
     'cortex_tool_stats',
@@ -27,15 +26,16 @@ export function registerAnalyticsTools(server: McpServer, env: Env) {
         if (agentId) params.set('agentId', agentId)
         if (projectId) params.set('projectId', projectId)
 
-        const response = await fetch(
-          `${apiUrl()}/api/metrics/tool-analytics?${params.toString()}`,
-          { signal: AbortSignal.timeout(10000) },
-        )
+        const response = await apiCall(env, `/api/metrics/tool-analytics?${params.toString()}`, {
+          signal: AbortSignal.timeout(10000),
+        })
 
         if (!response.ok) {
           const errorText = await response.text()
           return {
-            content: [{ type: 'text' as const, text: `Analytics error: ${response.status} ${errorText}` }],
+            content: [
+              { type: 'text' as const, text: `Analytics error: ${response.status} ${errorText}` },
+            ],
             isError: true,
           }
         }
@@ -65,7 +65,9 @@ export function registerAnalyticsTools(server: McpServer, env: Env) {
         lines.push(`**Total calls:** ${data.summary.totalCalls}`)
         lines.push(`**Success rate:** ${data.summary.overallSuccessRate}%`)
         lines.push(`**Active agents:** ${data.summary.activeAgents}`)
-        lines.push(`**Estimated tokens saved:** ~${data.summary.estimatedTokensSaved.toLocaleString()}\n`)
+        lines.push(
+          `**Estimated tokens saved:** ~${data.summary.estimatedTokensSaved.toLocaleString()}\n`,
+        )
 
         if (data.tools.length > 0) {
           lines.push(`### Per-Tool Breakdown\n`)
@@ -73,7 +75,9 @@ export function registerAnalyticsTools(server: McpServer, env: Env) {
           lines.push(`|------|------:|----------:|-------:|------------:|`)
           for (const t of data.tools) {
             const flag = t.successRate < 90 ? '⚠️ ' : t.successRate === 100 ? '✅ ' : ''
-            lines.push(`| ${flag}${t.tool} | ${t.totalCalls} | ${t.successRate}% | ${t.errorCount} | ${t.avgLatencyMs}ms |`)
+            lines.push(
+              `| ${flag}${t.tool} | ${t.totalCalls} | ${t.successRate}% | ${t.errorCount} | ${t.avgLatencyMs}ms |`,
+            )
           }
         }
 
@@ -88,7 +92,9 @@ export function registerAnalyticsTools(server: McpServer, env: Env) {
           lines.push(`\n### Daily Trend\n`)
           for (const t of data.trend) {
             const bar = '█'.repeat(Math.min(Math.ceil(t.calls / 5), 20))
-            lines.push(`${t.day}: ${bar} ${t.calls} calls${t.errors > 0 ? ` (${t.errors} errors)` : ''}`)
+            lines.push(
+              `${t.day}: ${bar} ${t.calls} calls${t.errors > 0 ? ` (${t.errors} errors)` : ''}`,
+            )
           }
         }
 
@@ -97,13 +103,15 @@ export function registerAnalyticsTools(server: McpServer, env: Env) {
         }
       } catch (error) {
         return {
-          content: [{
-            type: 'text' as const,
-            text: `Tool stats error: ${error instanceof Error ? error.message : 'Unknown'}`,
-          }],
+          content: [
+            {
+              type: 'text' as const,
+              text: `Tool stats error: ${error instanceof Error ? error.message : 'Unknown'}`,
+            },
+          ],
           isError: true,
         }
       }
-    }
+    },
   )
 }

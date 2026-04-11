@@ -34,18 +34,23 @@ function isMachineApiRoute(path: string): boolean {
     path.startsWith('/api/mem9-proxy') ||
     path.startsWith('/api/indexing') ||
     path.startsWith('/api/quality') ||
-    path.startsWith('/api/usage')
+    path.startsWith('/api/usage') ||
+    path.startsWith('/api/sessions') ||
+    path.startsWith('/api/metrics') ||
+    path.startsWith('/api/webhooks')
   )
 }
 
 function verifyApiKey(token: string): ApiKeyRecord | undefined {
   const hash = createHash('sha256').update(token).digest('hex')
-  const record = db.prepare(
-    `SELECT id, name, scope, permissions, project_id, expires_at
+  const record = db
+    .prepare(
+      `SELECT id, name, scope, permissions, project_id, expires_at
      FROM api_keys
      WHERE key_hash = ?
-       AND (expires_at IS NULL OR expires_at > datetime('now'))`
-  ).get(hash) as ApiKeyRecord | undefined
+       AND (expires_at IS NULL OR expires_at > datetime('now'))`,
+    )
+    .get(hash) as ApiKeyRecord | undefined
 
   if (record) {
     db.prepare('UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?').run(record.id)
@@ -59,11 +64,16 @@ function verifyApiKey(token: string): ApiKeyRecord | undefined {
  * These come from localhost, 127.0.0.1, or Docker internal IPs (172.*, 10.*, 192.168.*).
  */
 function isInternalRequest(c: Context): boolean {
-  const ip = c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
-    c.req.header('x-real-ip') ||
-    ''
-  return ip === '127.0.0.1' || ip === '::1' || ip === '' ||
-    ip.startsWith('172.') || ip.startsWith('10.') || ip.startsWith('192.168.')
+  const ip =
+    c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip') || ''
+  return (
+    ip === '127.0.0.1' ||
+    ip === '::1' ||
+    ip === '' ||
+    ip.startsWith('172.') ||
+    ip.startsWith('10.') ||
+    ip.startsWith('192.168.')
+  )
 }
 
 /**
@@ -132,10 +142,12 @@ export function dashboardAuth() {
     }
 
     const ttlHours = AUTH_SESSION_TTL_HOURS()
-    const session = db.prepare(
-      `SELECT id, email FROM auth_requests
-       WHERE token = ? AND status = 'approved' AND created_at > datetime('now', '-${ttlHours} hours')`
-    ).get(token) as { id: string; email: string } | undefined
+    const session = db
+      .prepare(
+        `SELECT id, email FROM auth_requests
+       WHERE token = ? AND status = 'approved' AND created_at > datetime('now', '-${ttlHours} hours')`,
+      )
+      .get(token) as { id: string; email: string } | undefined
 
     if (!session) {
       if (path.startsWith('/api/')) {

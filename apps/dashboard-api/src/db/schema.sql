@@ -220,7 +220,7 @@ CREATE TABLE IF NOT EXISTS auth_requests (
     id TEXT PRIMARY KEY,
     email TEXT NOT NULL,
     token TEXT NOT NULL UNIQUE,
-    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'denied')),
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'denied', 'revoked')),
     ip_address TEXT,
     user_agent TEXT,
     created_at TEXT DEFAULT (datetime('now')),

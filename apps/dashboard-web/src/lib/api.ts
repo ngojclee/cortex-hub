@@ -11,7 +11,7 @@ class ApiError extends Error {
   constructor(
     message: string,
     public status: number,
-    public data?: unknown
+    public data?: unknown,
   ) {
     super(message)
     this.name = 'ApiError'
@@ -33,11 +33,7 @@ async function apiFetch<T = unknown>(path: string, options: ApiOptions = {}): Pr
 
   if (!res.ok) {
     const data = await res.json().catch(() => null)
-    throw new ApiError(
-      data?.error ?? `API error: ${res.status}`,
-      res.status,
-      data
-    )
+    throw new ApiError(data?.error ?? `API error: ${res.status}`, res.status, data)
   }
 
   return res.json() as Promise<T>
@@ -45,7 +41,15 @@ async function apiFetch<T = unknown>(path: string, options: ApiOptions = {}): Pr
 
 // ── Health ──
 export async function checkHealth() {
-  return apiFetch<{ status: string; services?: Record<string, unknown>; uptime?: number; commit?: string; version?: string; buildDate?: string; image?: string }>('/health')
+  return apiFetch<{
+    status: string
+    services?: Record<string, unknown>
+    uptime?: number
+    commit?: string
+    version?: string
+    buildDate?: string
+    image?: string
+  }>('/health')
 }
 
 // ── API Keys ──
@@ -91,10 +95,7 @@ export async function getSetupStatus() {
   return apiFetch<{ completed: boolean; step?: string }>('/api/setup/status')
 }
 
-export async function completeSetup(data: {
-  provider: string
-  models: string[]
-}) {
+export async function completeSetup(data: { provider: string; models: string[] }) {
   return apiFetch('/api/setup/complete', { method: 'POST', body: data })
 }
 
@@ -110,7 +111,12 @@ export async function getModels() {
 
 export async function testConnection() {
   const res = await fetch(`${config.api.setup}/test`, { signal: AbortSignal.timeout(10000) })
-  return res.json() as Promise<{ cliproxy: boolean; qdrant: boolean; dashboardApi: boolean; allPassed: boolean }>
+  return res.json() as Promise<{
+    cliproxy: boolean
+    qdrant: boolean
+    dashboardApi: boolean
+    allPassed: boolean
+  }>
 }
 
 // ── OAuth Flow ──
@@ -132,7 +138,11 @@ export async function pollOAuthStatus(state: string) {
 }
 
 // ── API Key Configuration ──
-export async function configureProvider(data: { provider: string; apiKey: string; apiBase?: string }) {
+export async function configureProvider(data: {
+  provider: string
+  apiKey: string
+  apiBase?: string
+}) {
   return apiFetch<{
     success: boolean
     provider: string
@@ -158,7 +168,13 @@ export async function getQualityLogs(opts?: { limit?: number; page?: number }) {
   const params = new URLSearchParams()
   if (opts?.limit) params.set('limit', String(opts.limit))
   if (opts?.page) params.set('page', String(opts.page))
-  return apiFetch<{ logs: QueryLog[]; total: number; page: number; limit: number; totalPages: number }>(`/api/quality/logs?${params}`)
+  return apiFetch<{
+    logs: QueryLog[]
+    total: number
+    page: number
+    limit: number
+    totalPages: number
+  }>(`/api/quality/logs?${params}`)
 }
 
 // ── Quality Reports (4-dimension scoring) ──
@@ -216,14 +232,26 @@ export interface QualityDimensionScores {
   traceability: number
 }
 
-export async function getQualityReports(opts?: { limit?: number; page?: number; projectId?: string; agentId?: string; grade?: string }) {
+export async function getQualityReports(opts?: {
+  limit?: number
+  page?: number
+  projectId?: string
+  agentId?: string
+  grade?: string
+}) {
   const params = new URLSearchParams()
   if (opts?.limit) params.set('limit', String(opts.limit))
   if (opts?.page) params.set('page', String(opts.page))
   if (opts?.projectId) params.set('project_id', opts.projectId)
   if (opts?.agentId) params.set('agent_id', opts.agentId)
   if (opts?.grade) params.set('grade', opts.grade)
-  return apiFetch<{ reports: QualityReportRow[]; total: number; page: number; limit: number; totalPages: number }>(`/api/quality/reports?${params}`)
+  return apiFetch<{
+    reports: QualityReportRow[]
+    total: number
+    page: number
+    limit: number
+    totalPages: number
+  }>(`/api/quality/reports?${params}`)
 }
 
 export async function getLatestQualityReport(projectId?: string) {
@@ -238,7 +266,9 @@ export async function getQualityTrends(days = 30, projectId?: string) {
 }
 
 export async function getQualitySummary() {
-  return apiFetch<{ summary: QualitySummary; latest: QualityReportRow | null }>('/api/quality/summary')
+  return apiFetch<{ summary: QualitySummary; latest: QualityReportRow | null }>(
+    '/api/quality/summary',
+  )
 }
 
 export async function submitQualityReport(data: {
@@ -334,7 +364,7 @@ export async function requestAccess(email: string) {
 
 export async function getAuthStatus(requestId: string) {
   return apiFetch<{ id: string; status: string; sessionToken?: string; reason?: string }>(
-    `/api/auth/status/${requestId}`
+    `/api/auth/status/${requestId}`,
   )
 }
 
@@ -655,8 +685,23 @@ export async function getIntelProjectCrossLinks(projectId: string) {
   }>(`/api/intel/resources/project/${projectId}/cross-links`)
 }
 
-export type IntelGraphNodeType = 'File' | 'Class' | 'Function' | 'Method' | 'Interface' | 'Module' | 'Process' | 'Knowledge'
-export type IntelGraphEdgeType = 'CALLS' | 'IMPORTS' | 'EXTENDS' | 'IMPLEMENTS' | 'ACCESSES' | 'CONTAINS' | 'REFERENCES'
+export type IntelGraphNodeType =
+  | 'File'
+  | 'Class'
+  | 'Function'
+  | 'Method'
+  | 'Interface'
+  | 'Module'
+  | 'Process'
+  | 'Knowledge'
+export type IntelGraphEdgeType =
+  | 'CALLS'
+  | 'IMPORTS'
+  | 'EXTENDS'
+  | 'IMPLEMENTS'
+  | 'ACCESSES'
+  | 'CONTAINS'
+  | 'REFERENCES'
 
 export interface IntelGraphNode {
   id: string
@@ -704,6 +749,26 @@ export interface IntelGraphSlice {
   totalCounts: { nodes: number | null; edges: number | null }
   truncated: boolean
   capReason: string | null
+  snapshotHit?: boolean
+  snapshotAt?: string | null
+  snapshotAgeSeconds?: number | null
+  stale?: boolean
+  cache?: {
+    hit?: boolean
+    key?: string | null
+    generatedAt?: string | null
+    ageSeconds?: number | null
+  } | null
+  snapshot?: {
+    snapshotHit?: boolean | null
+    snapshotCreatedAt?: string | null
+    snapshotAgeMs?: number | null
+    snapshotMaxAgeMs?: number | null
+    stale?: boolean | null
+    source?: string | null
+    refresh?: boolean | null
+    snapshotKey?: string | null
+  } | null
 }
 
 type RawIntelGraphNode = Omit<IntelGraphNode, 'label' | 'lineStart' | 'lineEnd'> & {
@@ -723,12 +788,35 @@ type RawIntelGraphEdge = IntelGraphEdge & {
   confidence?: number | null
 }
 
-type RawIntelGraphSlice = Omit<IntelGraphSlice, 'projectId' | 'nodes' | 'edges' | 'totalCounts' | 'capReason'> & {
+type RawIntelGraphSlice = Omit<
+  IntelGraphSlice,
+  'projectId' | 'nodes' | 'edges' | 'totalCounts' | 'capReason'
+> & {
   projectId?: string
   nodes: RawIntelGraphNode[]
   edges: RawIntelGraphEdge[]
   totalCounts: { nodes: number | null; edges: number | null }
   capReason?: string | string[] | null
+  snapshotHit?: boolean | null
+  snapshotAt?: string | null
+  snapshotAgeSeconds?: number | null
+  stale?: boolean | null
+  cache?: {
+    hit?: boolean | null
+    key?: string | null
+    generatedAt?: string | null
+    ageSeconds?: number | null
+  } | null
+  snapshot?: {
+    snapshotHit?: boolean | null
+    snapshotCreatedAt?: string | null
+    snapshotAgeMs?: number | null
+    snapshotMaxAgeMs?: number | null
+    stale?: boolean | null
+    source?: string | null
+    refresh?: boolean | null
+    snapshotKey?: string | null
+  } | null
 }
 
 function normalizeIntelGraphSlice(data: RawIntelGraphSlice, projectId: string): IntelGraphSlice {
@@ -741,7 +829,28 @@ function normalizeIntelGraphSlice(data: RawIntelGraphSlice, projectId: string): 
     },
     capReason: Array.isArray(data.capReason)
       ? data.capReason.filter(Boolean).join('; ') || null
-      : data.capReason ?? null,
+      : (data.capReason ?? null),
+    snapshotHit: data.snapshot?.snapshotHit ?? data.snapshotHit ?? undefined,
+    snapshotAt: data.snapshot?.snapshotCreatedAt ?? data.snapshotAt ?? null,
+    snapshotAgeSeconds:
+      data.snapshot?.snapshotAgeMs != null
+        ? Math.round(data.snapshot.snapshotAgeMs / 1000)
+        : (data.snapshotAgeSeconds ?? null),
+    stale: data.snapshot?.stale ?? data.stale ?? undefined,
+    cache:
+      data.cache ??
+      (data.snapshot
+        ? {
+            hit: data.snapshot.snapshotHit ?? undefined,
+            key: data.snapshot.snapshotKey ?? null,
+            generatedAt: data.snapshot.snapshotCreatedAt ?? null,
+            ageSeconds:
+              data.snapshot.snapshotAgeMs != null
+                ? Math.round(data.snapshot.snapshotAgeMs / 1000)
+                : null,
+          }
+        : null),
+    snapshot: data.snapshot ?? null,
     nodes: data.nodes.map((node) => {
       const label = node.label ?? node.name ?? node.heuristicLabel ?? node.id
       return {
@@ -759,16 +868,20 @@ function normalizeIntelGraphSlice(data: RawIntelGraphSlice, projectId: string): 
     })),
   }
 }
-export async function getIntelProjectGraph(projectId: string, opts?: {
-  nodeTypes?: string[]
-  edgeTypes?: string[]
-  focus?: string
-  depth?: number
-  community?: string
-  search?: string
-  limitNodes?: number
-  limitEdges?: number
-}) {
+export async function getIntelProjectGraph(
+  projectId: string,
+  opts?: {
+    nodeTypes?: string[]
+    edgeTypes?: string[]
+    focus?: string
+    depth?: number
+    community?: string
+    search?: string
+    limitNodes?: number
+    limitEdges?: number
+    refresh?: boolean
+  },
+) {
   const qs = new URLSearchParams()
   if (opts?.nodeTypes?.length) qs.set('nodeTypes', opts.nodeTypes.join(','))
   if (opts?.edgeTypes?.length) qs.set('edgeTypes', opts.edgeTypes.join(','))
@@ -778,6 +891,7 @@ export async function getIntelProjectGraph(projectId: string, opts?: {
   if (opts?.search) qs.set('search', opts.search)
   if (opts?.limitNodes) qs.set('limitNodes', String(opts.limitNodes))
   if (opts?.limitEdges) qs.set('limitEdges', String(opts.limitEdges))
+  if (opts?.refresh) qs.set('refresh', 'true')
   const query = qs.toString()
   const response = await apiFetch<{
     success: boolean
@@ -812,7 +926,9 @@ export async function getIntelProjectSymbolTree(
         }>
       }>
     }
-  }>(`/api/intel/resources/project/${projectId}/symbol/${encodeURIComponent(name)}/tree?${qs.toString()}`)
+  }>(
+    `/api/intel/resources/project/${projectId}/symbol/${encodeURIComponent(name)}/tree?${qs.toString()}`,
+  )
 }
 
 // ── Intel: Symbol context (360° view) ──
@@ -829,7 +945,11 @@ export async function getIntelSymbolContext(projectId: string, name: string, fil
 }
 
 // ── Intel: Impact analysis (blast radius) ──
-export async function getIntelSymbolImpact(projectId: string, target: string, direction?: 'upstream' | 'downstream') {
+export async function getIntelSymbolImpact(
+  projectId: string,
+  target: string,
+  direction?: 'upstream' | 'downstream',
+) {
   return apiFetch<{
     success: boolean
     data: {
@@ -879,31 +999,37 @@ export async function generateProjectWiki(projectId: string) {
   }>('/api/intel/wiki', { method: 'POST', body: { projectId } })
 }
 
-export async function createProject(orgId: string, data: {
-  name: string
-  description?: string
-  gitRepoUrl?: string
-  gitProvider?: string
-  gitUsername?: string
-  gitToken?: string
-}) {
+export async function createProject(
+  orgId: string,
+  data: {
+    name: string
+    description?: string
+    gitRepoUrl?: string
+    gitProvider?: string
+    gitUsername?: string
+    gitToken?: string
+  },
+) {
   return apiFetch<Project>(`/api/orgs/${orgId}/projects`, { method: 'POST', body: data })
 }
 
 export async function getProject(id: string) {
   return apiFetch<Project & { stats: { apiKeys: number; queryLogs: number; sessions: number } }>(
-    `/api/projects/${id}`
+    `/api/projects/${id}`,
   )
 }
 
-export async function updateProject(id: string, data: {
-  name?: string
-  description?: string
-  gitRepoUrl?: string
-  gitProvider?: string
-  gitUsername?: string
-  gitToken?: string
-}) {
+export async function updateProject(
+  id: string,
+  data: {
+    name?: string
+    description?: string
+    gitRepoUrl?: string
+    gitProvider?: string
+    gitUsername?: string
+    gitToken?: string
+  },
+) {
   return apiFetch<{ success: boolean }>(`/api/projects/${id}`, { method: 'PUT', body: data })
 }
 
@@ -1018,7 +1144,11 @@ export async function getBudget() {
   return apiFetch<BudgetData>('/api/metrics/budget')
 }
 
-export async function setBudget(data: { dailyLimit: number; monthlyLimit: number; alertThreshold?: number }) {
+export async function setBudget(data: {
+  dailyLimit: number
+  monthlyLimit: number
+  alertThreshold?: number
+}) {
   return apiFetch<{ success: boolean }>('/api/metrics/budget', { method: 'POST', body: data })
 }
 
@@ -1034,7 +1164,13 @@ export interface UsageSummary {
 }
 
 export interface UsageByModel {
-  models: Array<{ model: string; requests: number; total_tokens: number; prompt_tokens: number; completion_tokens: number }>
+  models: Array<{
+    model: string
+    requests: number
+    total_tokens: number
+    prompt_tokens: number
+    completion_tokens: number
+  }>
 }
 
 export interface UsageByAgent {
@@ -1091,7 +1227,9 @@ export async function getUsageHistory(days = 7) {
 
 // ── Admin ──
 export async function restartService(service: string) {
-  return apiFetch<{ success: boolean; message: string }>(`/api/metrics/admin/restart/${service}`, { method: 'POST' })
+  return apiFetch<{ success: boolean; message: string }>(`/api/metrics/admin/restart/${service}`, {
+    method: 'POST',
+  })
 }
 
 // ── Per-Project Analytics ──
@@ -1145,7 +1283,7 @@ export interface IndexJobSummary {
 export async function startIndexing(projectId: string, branch?: string) {
   return apiFetch<{ jobId: string; status: string; branch: string }>(
     `/api/projects/${projectId}/index`,
-    { method: 'POST', body: { branch } }
+    { method: 'POST', body: { branch } },
   )
 }
 
@@ -1155,15 +1293,14 @@ export async function getIndexStatus(projectId: string) {
 
 export async function getIndexHistory(projectId: string, page = 1, limit = 10) {
   return apiFetch<{ jobs: IndexJobSummary[]; total: number; page: number; totalPages: number }>(
-    `/api/projects/${projectId}/index/history?page=${page}&limit=${limit}`
+    `/api/projects/${projectId}/index/history?page=${page}&limit=${limit}`,
   )
 }
 
 export async function cancelIndexing(projectId: string) {
-  return apiFetch<{ success: boolean; jobId: string }>(
-    `/api/projects/${projectId}/index/cancel`,
-    { method: 'POST' }
-  )
+  return apiFetch<{ success: boolean; jobId: string }>(`/api/projects/${projectId}/index/cancel`, {
+    method: 'POST',
+  })
 }
 
 // ── Branches ──
@@ -1172,17 +1309,27 @@ export async function listBranches(projectId: string) {
 }
 
 export async function testGitConnection(projectId: string) {
-  return apiFetch<{ success: boolean; message?: string; error?: string; branchCount?: number; defaultBranch?: string }>(
-    `/api/projects/${projectId}/git/test`,
-    { method: 'POST' }
-  )
+  return apiFetch<{
+    success: boolean
+    message?: string
+    error?: string
+    branchCount?: number
+    defaultBranch?: string
+  }>(`/api/projects/${projectId}/git/test`, { method: 'POST' })
 }
 
 export async function buildDocsKnowledge(projectId: string) {
-  return apiFetch<{ success: boolean; docsFound?: number; docsProcessed?: number; chunksCreated?: number; error?: string; errors?: string[] }>(
-    `/api/projects/${projectId}/knowledge/build-from-docs`,
-    { method: 'POST', signal: AbortSignal.timeout(120000) }
-  )
+  return apiFetch<{
+    success: boolean
+    docsFound?: number
+    docsProcessed?: number
+    chunksCreated?: number
+    error?: string
+    errors?: string[]
+  }>(`/api/projects/${projectId}/knowledge/build-from-docs`, {
+    method: 'POST',
+    signal: AbortSignal.timeout(120000),
+  })
 }
 
 export interface BranchDiff {
@@ -1196,7 +1343,7 @@ export interface BranchDiff {
 
 export async function getBranchDiff(projectId: string, branch: string, base = 'main') {
   return apiFetch<BranchDiff>(
-    `/api/projects/${projectId}/branches/diff?branch=${encodeURIComponent(branch)}&base=${encodeURIComponent(base)}`
+    `/api/projects/${projectId}/branches/diff?branch=${encodeURIComponent(branch)}&base=${encodeURIComponent(base)}`,
   )
 }
 
@@ -1234,10 +1381,9 @@ export async function startMemNineEmbedding(projectId: string, branch?: string) 
   const url = branch
     ? `/api/projects/${projectId}/index/mem9?branch=${encodeURIComponent(branch)}`
     : `/api/projects/${projectId}/index/mem9`
-  return apiFetch<{ success: boolean; jobId: string; branch: string; status: string }>(
-    url,
-    { method: 'POST' }
-  )
+  return apiFetch<{ success: boolean; jobId: string; branch: string; status: string }>(url, {
+    method: 'POST',
+  })
 }
 
 // ── System Metrics ──
@@ -1316,7 +1462,7 @@ export async function getKnowledgeDocuments(params?: { tag?: string; projectId?:
   if (params?.projectId) qs.set('projectId', params.projectId)
   const query = qs.toString()
   return apiFetch<{ documents: KnowledgeDocument[]; total: number; stats: KnowledgeStats }>(
-    `/api/knowledge${query ? '?' + query : ''}`
+    `/api/knowledge${query ? '?' + query : ''}`,
   )
 }
 
@@ -1330,20 +1476,31 @@ export async function createKnowledgeDocument(data: {
 }
 
 export async function getKnowledgeDocument(id: string) {
-  return apiFetch<KnowledgeDocument & { chunks: Array<{ id: string; content: string; chunk_index: number; char_count: number }> }>(
-    `/api/knowledge/${id}`
-  )
+  return apiFetch<
+    KnowledgeDocument & {
+      chunks: Array<{ id: string; content: string; chunk_index: number; char_count: number }>
+    }
+  >(`/api/knowledge/${id}`)
 }
 
 export async function deleteKnowledgeDocument(id: string) {
   return apiFetch<{ success: boolean }>(`/api/knowledge/${id}`, { method: 'DELETE' })
 }
 
-export async function searchKnowledge(query: string, opts?: { tags?: string[]; projectId?: string; limit?: number }) {
-  return apiFetch<{ query: string; results: Array<{ score: number; content: unknown; title: unknown; documentId: string; document?: KnowledgeDocument }> }>(
-    '/api/knowledge/search',
-    { method: 'POST', body: { query, ...opts } }
-  )
+export async function searchKnowledge(
+  query: string,
+  opts?: { tags?: string[]; projectId?: string; limit?: number },
+) {
+  return apiFetch<{
+    query: string
+    results: Array<{
+      score: number
+      content: unknown
+      title: unknown
+      documentId: string
+      document?: KnowledgeDocument
+    }>
+  }>('/api/knowledge/search', { method: 'POST', body: { query, ...opts } })
 }
 export async function getKnowledgeTags() {
   return apiFetch<{ tags: string[] }>('/api/knowledge/tags')
@@ -1373,7 +1530,7 @@ export async function getMemories(projectId?: string, limit: number = 50) {
   const query = new URLSearchParams()
   if (projectId) query.append('projectId', projectId)
   query.append('limit', limit.toString())
-  
+
   return apiFetch<{ memories: AgentMemory[]; total: number }>(`/api/mem9/list?${query.toString()}`)
 }
 
@@ -1396,9 +1553,13 @@ export async function getAuthSessions() {
 }
 
 export async function revokeSession(id: string) {
-  return apiFetch<{ success: boolean; message: string }>(`/api/auth/sessions/${id}`, { method: 'DELETE' })
+  return apiFetch<{ success: boolean; message: string }>(`/api/auth/sessions/${id}`, {
+    method: 'DELETE',
+  })
 }
 
 export async function revokeAllSessions() {
-  return apiFetch<{ success: boolean; revokedCount: number }>('/api/auth/sessions', { method: 'DELETE' })
+  return apiFetch<{ success: boolean; revokedCount: number }>('/api/auth/sessions', {
+    method: 'DELETE',
+  })
 }

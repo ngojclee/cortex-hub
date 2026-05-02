@@ -136,3 +136,17 @@
 - [ ] Add dashboard usage widgets for graph-slice savings and compaction savings
 - [ ] Gate default enablement on passing retrieval quality checks and low raw fallback rate
 - [ ] Run full verify: `pnpm build`, `pnpm typecheck`, `pnpm lint`
+
+---
+
+### Graph Runtime Lightweight Round
+- [x] Create runbook: `.docs/guides/graph-runtime-lightweight.md`
+- [x] Document snapshot-first graph runtime and safe defaults
+- [x] Document bounded graph response contract and snapshot metadata expectations
+- [x] Document alias drift audit/cleanup preview/apply flow
+- [x] Document deploy/redeploy and live verification steps
+- [x] Document MCP graph usage policy that avoids realtime full graph queries by default
+- [ ] Implement dashboard-api snapshot/cache runtime path
+- [ ] Adapt MCP graph tools to return snapshot/stale/truncation metadata
+- [ ] Make `/graph` UI default-light with search/click-to-expand behavior
+- [ ] QA integration: run verify and live/perf smoke checklist after T1-T4 reports

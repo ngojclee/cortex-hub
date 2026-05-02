@@ -270,3 +270,32 @@ Evaluate a caveman-shrink-like transform for MCP tool/resource/prompt descriptio
 4. Add compact retrieval for MCP memory/knowledge search; measure token reduction and raw fallback quality.
 5. Add Explorer View using `sigma.js` + `graphology`, backed by the same bounded API.
 6. Benchmark large repo behavior and tune defaults before enabling broadly.
+
+---
+
+## Graph Runtime Lightweight Round
+
+Runbook: [.docs/guides/graph-runtime-lightweight.md](guides/graph-runtime-lightweight.md)
+
+### Decision
+
+GitNexus should act as the indexing/refresh engine, not the default realtime dependency for every `/graph` UI or MCP graph request. Dashboard API should serve graph reads from registry-first repo resolution, snapshots, and bounded caches. Live GitNexus fallback must be explicit and narrow.
+
+### Runtime Rules
+
+- Default graph reads use snapshot/cache/registry data before any live GitNexus call.
+- Health checks and initial page loads must not run broad `list_repos` or `cypher` paths.
+- `/api/intel/resources/project/:projectId/graph` remains the shared UI/MCP graph contract.
+- Responses should expose `visibleCounts`, `totalCounts`, `truncated`, `capReason`, and snapshot metadata such as `snapshotHit`, `cacheHit`, `stale`, and `source`.
+- Explorer UI should start empty/light, then use search-submit and click-to-expand slices.
+- MCP graph tools should prefer bounded graph search/slice/briefs before raw code reads and should not force realtime full graph queries by default.
+
+### Operator Scope
+
+Operators should use preview-first cleanup for GitNexus alias drift and project metadata drift:
+
+- `GET /api/intel/admin/gitnexus-audit`
+- `POST /api/intel/admin/gitnexus-cleanup` with `mode=preview` before `mode=apply`
+- `POST /api/intel/admin/project-cleanup` with `mode=preview` before `mode=apply`
+
+Deployment verification should include health, resources, one narrow graph request, and observation that normal `/graph` browsing does not spike GitNexus CPU.

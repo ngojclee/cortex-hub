@@ -23,6 +23,17 @@ type GraphEdge = {
   reason?: string | null
 }
 
+type GraphSnapshotMeta = {
+  snapshotHit?: boolean
+  stale?: boolean
+  source?: string
+  refresh?: boolean
+  snapshotCreatedAt?: string | null
+  snapshotAgeMs?: number | null
+  snapshotMaxAgeMs?: number | null
+  snapshotKey?: string | null
+}
+
 type GraphPayload = {
   success?: boolean
   data?: {
@@ -34,6 +45,11 @@ type GraphPayload = {
     totalCounts?: { nodes?: number | null; edges?: number | null }
     truncated?: boolean
     capReason?: string[]
+    snapshotHit?: boolean
+    stale?: boolean
+    source?: string
+    refresh?: boolean
+    snapshot?: GraphSnapshotMeta
     hint?: string | null
   }
   error?: string
@@ -41,6 +57,16 @@ type GraphPayload = {
 
 const commaListSchema = z.array(z.string()).optional()
 const directionSchema = z.enum(['upstream', 'downstream', 'both']).optional()
+const refreshSchema = z.boolean().optional()
+
+const DEFAULT_SEARCH_NODES = 24
+const DEFAULT_SEARCH_EDGES = 48
+const DEFAULT_SLICE_NODES = 60
+const DEFAULT_SLICE_EDGES = 120
+const DEFAULT_NEIGHBOR_NODES = 60
+const DEFAULT_NEIGHBOR_EDGES = 120
+const DEFAULT_BRIEF_NODES = 40
+const DEFAULT_BRIEF_EDGES = 80
 
 function appendList(params: URLSearchParams, key: string, value?: string[]): void {
   if (value && value.length > 0) params.set(key, value.join(','))
@@ -48,6 +74,22 @@ function appendList(params: URLSearchParams, key: string, value?: string[]): voi
 
 function appendNumber(params: URLSearchParams, key: string, value?: number): void {
   if (typeof value === 'number' && Number.isFinite(value)) params.set(key, String(value))
+}
+
+function appendBoundedNumber(
+  params: URLSearchParams,
+  key: string,
+  value: number | undefined,
+  fallback: number,
+  max: number,
+): void {
+  const candidate = typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback
+  params.set(key, String(Math.min(candidate, max)))
+}
+
+function setSnapshotFirstParams(params: URLSearchParams, refresh?: boolean): void {
+  params.set('format', 'json')
+  params.set('refresh', refresh ? 'true' : 'false')
 }
 
 function firstLineLocation(node: GraphNode): string {
@@ -72,23 +114,52 @@ function edgeLabel(edge: GraphEdge): string {
   return `- ${source} -[${type}${confidence}]-> ${target}`
 }
 
+function runtimeMeta(payload: GraphPayload): GraphSnapshotMeta {
+  const data = payload.data
+  const snapshot = data?.snapshot ?? {}
+  return {
+    snapshotHit: data?.snapshotHit ?? snapshot.snapshotHit,
+    stale: data?.stale ?? snapshot.stale,
+    source: data?.source ?? snapshot.source,
+    refresh: data?.refresh ?? snapshot.refresh,
+    snapshotCreatedAt: snapshot.snapshotCreatedAt,
+    snapshotAgeMs: snapshot.snapshotAgeMs,
+    snapshotMaxAgeMs: snapshot.snapshotMaxAgeMs,
+    snapshotKey: snapshot.snapshotKey,
+  }
+}
+
+function boolLabel(value: boolean | undefined): string {
+  return typeof value === 'boolean' ? (value ? 'yes' : 'no') : 'unknown'
+}
+
+function capReasonLabel(value: string[] | undefined): string {
+  return value && value.length > 0 ? value.join('; ') : 'none'
+}
+
 function buildGraphSummary(title: string, payload: GraphPayload, maxNodes = 20, maxEdges = 20): string {
   const data = payload.data
   if (!data) return JSON.stringify(payload, null, 2)
 
   const nodes = data.nodes ?? []
   const edges = data.edges ?? []
+  const meta = runtimeMeta(payload)
   const lines = [
     title,
     '',
     `Repo: ${data.repo ?? '(not indexed)'}`,
+    `Snapshot: snapshotHit=${boolLabel(meta.snapshotHit)} stale=${boolLabel(meta.stale)} source=${meta.source ?? 'unknown'} refresh=${boolLabel(meta.refresh)}`,
     `Visible: ${data.visibleCounts?.nodes ?? nodes.length} nodes, ${data.visibleCounts?.edges ?? edges.length} edges`,
     `Total: ${data.totalCounts?.nodes ?? '?'} nodes, ${data.totalCounts?.edges ?? '?'} edges`,
     `Truncated: ${data.truncated ? 'yes' : 'no'}`,
+    `CapReason: ${capReasonLabel(data.capReason)}`,
   ]
 
-  if (data.capReason && data.capReason.length > 0) {
-    lines.push(`Caps: ${data.capReason.join('; ')}`)
+  if (meta.snapshotCreatedAt) {
+    lines.push(`SnapshotCreatedAt: ${meta.snapshotCreatedAt}`)
+  }
+  if (typeof meta.snapshotAgeMs === 'number') {
+    lines.push(`SnapshotAgeMs: ${meta.snapshotAgeMs}`)
   }
   if (data.hint) lines.push(`Hint: ${data.hint}`)
 
@@ -110,7 +181,7 @@ export function registerGraphTools(server: McpServer, env: Env) {
   async function callGraph(
     projectId: string,
     params: URLSearchParams,
-    timeoutMs = 15000,
+    timeoutMs = params.get('refresh') === 'true' ? 15000 : 8000,
   ): Promise<GraphPayload> {
     const queryString = params.toString()
     const response = await apiCall(
@@ -129,22 +200,25 @@ export function registerGraphTools(server: McpServer, env: Env) {
 
   server.tool(
     'cortex_graph_search',
-    'Find candidate files and symbols from the GitNexus graph without reading raw source code. Returns a capped node/edge set for planning.',
+    'Find candidate files and symbols from the snapshot-first graph API without reading raw source code. Returns a capped node/edge set for planning.',
     {
       projectId: z.string().describe('Project ID or slug to scope graph search'),
       query: z.string().describe('Symbol, file, or text fragment to search in graph node names and file paths'),
       nodeTypes: commaListSchema.describe('Optional node types, e.g. File,Class,Function,Method,Interface'),
       limit: z.number().optional().describe('Maximum candidate nodes to return, capped server-side'),
+      refresh: refreshSchema.describe('Explicitly refresh from GitNexus instead of snapshot/cache when supported; default false'),
     },
-    async ({ projectId, query, nodeTypes, limit }) => {
+    async ({ projectId, query, nodeTypes, limit, refresh }) => {
       try {
         const params = new URLSearchParams({ search: query, depth: '1' })
+        setSnapshotFirstParams(params, refresh)
         appendList(params, 'nodeTypes', nodeTypes)
-        appendNumber(params, 'limitNodes', limit)
+        appendBoundedNumber(params, 'limitNodes', limit, DEFAULT_SEARCH_NODES, 50)
+        appendBoundedNumber(params, 'limitEdges', undefined, DEFAULT_SEARCH_EDGES, 100)
 
         const payload = await callGraph(projectId, params)
         return {
-          content: [{ type: 'text' as const, text: buildGraphSummary(`Graph search: ${query}`, payload, limit ?? 20, 12) }],
+          content: [{ type: 'text' as const, text: buildGraphSummary(`Graph search: ${query}`, payload, limit ?? DEFAULT_SEARCH_NODES, 12) }],
         }
       } catch (error) {
         return {
@@ -157,7 +231,7 @@ export function registerGraphTools(server: McpServer, env: Env) {
 
   server.tool(
     'cortex_graph_slice',
-    'Return a bounded graph neighborhood around a file or symbol. Use before raw file reads to understand nearby code relationships.',
+    'Return a bounded snapshot-first graph neighborhood around a file or symbol. Use before raw file reads to understand nearby code relationships.',
     {
       projectId: z.string().describe('Project ID or slug to scope graph slice'),
       focus: z.string().describe('Focused symbol name, node id, or file path'),
@@ -167,16 +241,18 @@ export function registerGraphTools(server: McpServer, env: Env) {
       nodeTypes: commaListSchema.describe('Optional node types, e.g. File,Class,Function,Method,Interface'),
       limitNodes: z.number().optional().describe('Maximum nodes, capped server-side'),
       limitEdges: z.number().optional().describe('Maximum edges, capped server-side'),
+      refresh: refreshSchema.describe('Explicitly refresh from GitNexus instead of snapshot/cache when supported; default false'),
     },
-    async ({ projectId, focus, depth, direction, edgeTypes, nodeTypes, limitNodes, limitEdges }) => {
+    async ({ projectId, focus, depth, direction, edgeTypes, nodeTypes, limitNodes, limitEdges, refresh }) => {
       try {
         const params = new URLSearchParams({ focus })
-        appendNumber(params, 'depth', depth)
+        setSnapshotFirstParams(params, refresh)
+        appendNumber(params, 'depth', depth ?? 1)
         if (direction) params.set('direction', direction)
         appendList(params, 'edgeTypes', edgeTypes)
         appendList(params, 'nodeTypes', nodeTypes)
-        appendNumber(params, 'limitNodes', limitNodes)
-        appendNumber(params, 'limitEdges', limitEdges)
+        appendBoundedNumber(params, 'limitNodes', limitNodes, DEFAULT_SLICE_NODES, 120)
+        appendBoundedNumber(params, 'limitEdges', limitEdges, DEFAULT_SLICE_EDGES, 240)
 
         const payload = await callGraph(projectId, params)
         return {
@@ -193,22 +269,26 @@ export function registerGraphTools(server: McpServer, env: Env) {
 
   server.tool(
     'cortex_file_neighbors',
-    'Show imports, definitions, calls, and nearby symbols around one file path using a bounded graph slice.',
+    'Show imports, definitions, calls, and nearby symbols around one file path using a bounded snapshot-first graph slice.',
     {
       projectId: z.string().describe('Project ID or slug to scope lookup'),
       filePath: z.string().describe('Relative file path within the indexed repository'),
       direction: directionSchema.describe('Neighbor direction: upstream, downstream, or both'),
       depth: z.number().optional().describe('Traversal depth, capped at 5'),
+      refresh: refreshSchema.describe('Explicitly refresh from GitNexus instead of snapshot/cache when supported; default false'),
     },
-    async ({ projectId, filePath, direction, depth }) => {
+    async ({ projectId, filePath, direction, depth, refresh }) => {
       try {
         const params = new URLSearchParams({
           focus: filePath,
           nodeTypes: 'File,Class,Function,Method,Interface,Route,Tool',
           edgeTypes: 'CONTAINS,DEFINES,IMPORTS,CALLS,EXTENDS,IMPLEMENTS,HAS_METHOD',
         })
+        setSnapshotFirstParams(params, refresh)
         if (direction) params.set('direction', direction)
-        appendNumber(params, 'depth', depth)
+        appendNumber(params, 'depth', depth ?? 1)
+        appendBoundedNumber(params, 'limitNodes', undefined, DEFAULT_NEIGHBOR_NODES, 120)
+        appendBoundedNumber(params, 'limitEdges', undefined, DEFAULT_NEIGHBOR_EDGES, 240)
 
         const payload = await callGraph(projectId, params)
         return {
@@ -225,14 +305,15 @@ export function registerGraphTools(server: McpServer, env: Env) {
 
   server.tool(
     'cortex_symbol_brief',
-    'Build a compact symbol brief from a bounded graph slice, with optional raw cortex_code_context fallback for ambiguous or detailed inspection.',
+    'Build a compact symbol brief from a bounded snapshot-first graph slice, with optional raw cortex_code_context fallback for ambiguous or detailed inspection.',
     {
       projectId: z.string().describe('Project ID or slug to scope lookup'),
       symbol: z.string().describe('Symbol name or graph node id'),
       includeRaw: z.boolean().optional().describe('When true, append raw cortex_code_context output'),
       depth: z.number().optional().describe('Traversal depth for the compact slice, default 1'),
+      refresh: refreshSchema.describe('Explicitly refresh from GitNexus instead of snapshot/cache when supported; default false'),
     },
-    async ({ projectId, symbol, includeRaw, depth }) => {
+    async ({ projectId, symbol, includeRaw, depth, refresh }) => {
       try {
         const params = new URLSearchParams({
           focus: symbol,
@@ -240,9 +321,10 @@ export function registerGraphTools(server: McpServer, env: Env) {
           edgeTypes: 'CALLS,IMPORTS,EXTENDS,IMPLEMENTS,HAS_METHOD,DEFINES,STEP_IN_PROCESS',
           direction: 'both',
         })
+        setSnapshotFirstParams(params, refresh)
         appendNumber(params, 'depth', depth ?? 1)
-        appendNumber(params, 'limitNodes', 40)
-        appendNumber(params, 'limitEdges', 80)
+        appendBoundedNumber(params, 'limitNodes', undefined, DEFAULT_BRIEF_NODES, 80)
+        appendBoundedNumber(params, 'limitEdges', undefined, DEFAULT_BRIEF_EDGES, 160)
 
         const payload = await callGraph(projectId, params)
         let text = buildGraphSummary(`Symbol brief: ${symbol}`, payload, 16, 16)

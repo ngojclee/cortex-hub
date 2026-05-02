@@ -683,7 +683,7 @@ function BranchDrilldownPanel({
 }
 
 export default function GraphPage() {
-  const [graphMode, setGraphMode] = useState<GraphMode>('architecture')
+  const [graphMode, setGraphMode] = useState<GraphMode>('explorer')
   const [projectId, setProjectId] = useState('')
   const [linkingKey, setLinkingKey] = useState<string | null>(null)
   const [selectedProcess, setSelectedProcess] = useState<string | null>(null)
@@ -704,16 +704,17 @@ export default function GraphPage() {
   const [cypherResult, setCypherResult] = useState<string | null>(null)
   const [cypherError, setCypherError] = useState<string | null>(null)
   const [runningCypher, setRunningCypher] = useState(false)
+  const [architectureLoaded, setArchitectureLoaded] = useState(false)
 
   const { data: projectsData, error: projectsError, mutate: mutateProjects } = useSWR(
     'intel-projects-resource',
     getIntelProjectsResource,
-    { refreshInterval: 30000 },
+    { refreshInterval: 0, revalidateOnFocus: false, revalidateOnReconnect: false },
   )
   const { data: discoveryData, mutate: mutateDiscovery } = useSWR(
     'intel-project-discovery',
     getIntelProjectDiscovery,
-    { refreshInterval: 30000 },
+    { refreshInterval: 0, revalidateOnFocus: false, revalidateOnReconnect: false },
   )
 
   const projects = projectsData?.data.items ?? []
@@ -749,30 +750,30 @@ export default function GraphPage() {
     [selectedProject],
   )
 
-  const shouldLoadArchitecture = graphMode === 'architecture'
+  const shouldLoadArchitecture = graphMode === 'architecture' && architectureLoaded
 
   const { data: contextData, error: contextError } = useSWR(
     projectId && shouldLoadArchitecture ? ['intel-project-context', projectId] : null,
     () => getIntelProjectContext(projectId),
-    { refreshInterval: shouldLoadArchitecture ? 30000 : 0 },
+    { refreshInterval: 0, revalidateOnFocus: false, revalidateOnReconnect: false },
   )
 
   const { data: clustersData } = useSWR(
     projectId && shouldLoadArchitecture ? ['intel-project-clusters', projectId] : null,
     () => getIntelProjectClusters(projectId, 12),
-    { refreshInterval: shouldLoadArchitecture ? 30000 : 0 },
+    { refreshInterval: 0, revalidateOnFocus: false, revalidateOnReconnect: false },
   )
 
   const { data: processesData } = useSWR(
     projectId && shouldLoadArchitecture ? ['intel-project-processes', projectId] : null,
     () => getIntelProjectProcesses(projectId, 12),
-    { refreshInterval: shouldLoadArchitecture ? 30000 : 0 },
+    { refreshInterval: 0, revalidateOnFocus: false, revalidateOnReconnect: false },
   )
 
   const { data: crossLinksData } = useSWR(
     projectId && shouldLoadArchitecture ? ['intel-project-crosslinks', projectId] : null,
     () => getIntelProjectCrossLinks(projectId),
-    { refreshInterval: shouldLoadArchitecture ? 60000 : 0 },
+    { refreshInterval: 0, revalidateOnFocus: false, revalidateOnReconnect: false },
   )
 
   const [selectedCluster, setSelectedCluster] = useState<string | null>(null)
@@ -792,9 +793,9 @@ export default function GraphPage() {
   const [loadingBranchDrilldown, setLoadingBranchDrilldown] = useState(false)
 
   const { data: clusterMembersData } = useSWR(
-    projectId && selectedCluster ? ['intel-project-cluster-members', projectId, selectedCluster] : null,
+    shouldLoadArchitecture && projectId && selectedCluster ? ['intel-project-cluster-members', projectId, selectedCluster] : null,
     () => getIntelProjectClusterMembers(projectId, selectedCluster ?? ''),
-    { refreshInterval: 60000 },
+    { refreshInterval: 0, revalidateOnFocus: false, revalidateOnReconnect: false },
   )
 
   const context = contextData?.data
@@ -1040,8 +1041,22 @@ export default function GraphPage() {
         </div>
       )}
 
-      {contextError && (
+      {contextError && graphMode === 'architecture' && architectureLoaded && (
         <div className={styles.errorBanner}>Failed to load graph context for the selected project.</div>
+      )}
+
+      {selectedProject && graphMode === 'architecture' && !architectureLoaded && (
+        <div className={`card ${styles.architecturePrompt}`}>
+          <div>
+            <h3 className={styles.cardTitle}>Architecture View</h3>
+            <p className={styles.cardSub}>Load clusters, processes, cross-links, and context only when you need the high-level map.</p>
+          </div>
+          <button className="btn btn-primary btn-sm" onClick={() => setArchitectureLoaded(true)}>Load Architecture</button>
+        </div>
+      )}
+
+      {selectedProject && graphMode === 'architecture' && architectureLoaded && !context && !contextError && (
+        <div className={`card ${styles.architecturePrompt}`}>Loading architecture resources...</div>
       )}
 
       {selectedProject && graphMode === 'explorer' && (

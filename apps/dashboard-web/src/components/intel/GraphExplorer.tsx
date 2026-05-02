@@ -15,8 +15,8 @@ const EDGE_TYPE_OPTIONS = ['CALLS', 'IMPORTS', 'EXTENDS', 'IMPLEMENTS', 'ACCESSE
 const DEFAULT_NODE_TYPES = ['File', 'Class', 'Function', 'Method', 'Interface']
 const DEFAULT_EDGE_TYPES = ['CALLS', 'IMPORTS', 'EXTENDS', 'IMPLEMENTS']
 const DEPTH_OPTIONS = [1, 2, 3, 5]
-const DEFAULT_SLICE_NODES = 80
-const DEFAULT_SLICE_EDGES = 160
+const DEFAULT_SLICE_NODES = 40
+const DEFAULT_SLICE_EDGES = 80
 
 type CanvasCommand = {
   id: number
@@ -103,6 +103,17 @@ interface GraphExplorerProps {
   indexStatus: string
 }
 
+function formatAge(seconds: number | null | undefined) {
+  if (seconds == null || !Number.isFinite(seconds)) return null
+  if (seconds < 60) return `${Math.max(0, Math.round(seconds))}s old`
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m old`
+  if (seconds < 86400) return `${Math.round(seconds / 3600)}h old`
+  return `${Math.round(seconds / 86400)}d old`
+}
+
+function totalCountLabel(visible: number, total: number | null) {
+  return total == null ? `${visible}/?` : `${visible}/${total}`
+}
 function toggleList(list: string[], value: string) {
   return list.includes(value) ? list.filter((item) => item !== value) : [...list, value]
 }
@@ -427,7 +438,7 @@ function GraphInspector({
       {node.summary && <p className={styles.summary}>{node.summary}</p>}
 
       <div className={styles.inspectorActions}>
-        <button className="btn btn-primary btn-sm" onClick={() => onFocus(node)}>Focus Slice</button>
+        <button className="btn btn-primary btn-sm" onClick={() => onFocus(node)}>Expand Slice</button>
         <button className="btn btn-secondary btn-sm" onClick={onClear}>Clear Selection</button>
       </div>
 
@@ -459,6 +470,7 @@ export default function GraphExplorer({ projectId, projectName, indexStatus }: G
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [layoutSeed, setLayoutSeed] = useState(0)
   const [command, setCommand] = useState<CanvasCommand>({ id: 0, kind: 'fit' })
+  const [refreshArmed, setRefreshArmed] = useState(false)
   const searchRef = useRef<HTMLInputElement | null>(null)
 
   const { data, error, isLoading, mutate } = useSWR(
@@ -473,7 +485,7 @@ export default function GraphExplorer({ projectId, projectName, indexStatus }: G
       limitNodes: DEFAULT_SLICE_NODES,
       limitEdges: DEFAULT_SLICE_EDGES,
     }),
-    { keepPreviousData: true },
+    { keepPreviousData: true, refreshInterval: 0, revalidateOnFocus: false, revalidateOnReconnect: false },
   )
 
   const fallbackSlice = useMemo(
@@ -483,6 +495,12 @@ export default function GraphExplorer({ projectId, projectName, indexStatus }: G
 
   const slice = data?.data ?? fallbackSlice
   const usingMock = Boolean(error && !data?.data)
+  const snapshotAgeLabel = formatAge(slice.snapshotAgeSeconds ?? slice.cache?.ageSeconds)
+  const sourceLabel = usingMock
+    ? 'mock contract'
+    : slice.snapshotHit || slice.cache?.hit
+      ? 'snapshot'
+      : 'live slice'
   const selectedNode = useMemo(
     () => slice.nodes.find((node) => node.id === selectedNodeId) ?? null,
     [selectedNodeId, slice.nodes],
@@ -518,7 +536,28 @@ export default function GraphExplorer({ projectId, projectName, indexStatus }: G
 
   function runSearch(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault()
+    setRefreshArmed(false)
     setSubmittedSearch(searchInput.trim())
+  }
+
+  async function refreshSnapshot() {
+    setRefreshArmed(true)
+    try {
+      const refreshed = await getIntelProjectGraph(projectId, {
+        nodeTypes,
+        edgeTypes,
+        depth,
+        community: community || undefined,
+        search: submittedSearch.trim() || undefined,
+        focus: selectedNodeId ?? undefined,
+        limitNodes: DEFAULT_SLICE_NODES,
+        limitEdges: DEFAULT_SLICE_EDGES,
+        refresh: true,
+      })
+      await mutate(refreshed, { revalidate: false })
+    } finally {
+      setRefreshArmed(false)
+    }
   }
 
   function setCanvasCommand(kind: CanvasCommand['kind']) {
@@ -539,16 +578,20 @@ export default function GraphExplorer({ projectId, projectName, indexStatus }: G
           <button className="btn btn-primary btn-sm" type="submit">Search</button>
         </form>
         <div className={styles.countStrip}>
-          <span>{slice.visibleCounts.nodes}/{slice.totalCounts.nodes} nodes</span>
-          <span>{slice.visibleCounts.edges}/{slice.totalCounts.edges} edges</span>
+          <span>{totalCountLabel(slice.visibleCounts.nodes, slice.totalCounts.nodes)} nodes</span>
+          <span>{totalCountLabel(slice.visibleCounts.edges, slice.totalCounts.edges)} edges</span>
           <span>{indexStatus}</span>
-          <span>{isLoading ? 'loading' : usingMock ? 'mock contract' : 'live slice'}</span>
+          <span>{isLoading ? 'loading' : sourceLabel}</span>
+          {snapshotAgeLabel && <span>{snapshotAgeLabel}</span>}
+          {refreshArmed && <span className={styles.warningChip}>refreshing</span>}
+          {slice.stale && <span className={styles.warningChip}>stale</span>}
+          {slice.truncated && <span className={styles.warningChip}>capped</span>}
         </div>
       </div>
 
       {usingMock && (
         <div className={styles.noticeBar}>
-          Backend graph contract not available yet. Explorer is rendering the expected bounded slice shape with local mock data.
+          Backend graph contract unavailable. Explorer is rendering a small local slice with the expected response shape.
         </div>
       )}
       {slice.truncated && <div className={styles.noticeBar}>{slice.capReason ?? 'Graph slice capped by server limits.'}</div>}
@@ -608,6 +651,7 @@ export default function GraphExplorer({ projectId, projectName, indexStatus }: G
               <button className="btn btn-secondary btn-sm" onClick={() => setCanvasCommand('zoom-out')}>Zoom Out</button>
               <button className="btn btn-secondary btn-sm" onClick={() => setCanvasCommand('fit')}>Fit</button>
               <button className="btn btn-secondary btn-sm" onClick={() => setLayoutSeed((current) => current + 1)}>Rerun Layout</button>
+              <button className="btn btn-secondary btn-sm" onClick={refreshSnapshot} disabled={isLoading || refreshArmed}>Refresh Snapshot</button>
               <button className="btn btn-secondary btn-sm" disabled>Stop</button>
             </div>
           </div>
@@ -634,9 +678,9 @@ export default function GraphExplorer({ projectId, projectName, indexStatus }: G
           node={selectedNode}
           edges={slice.edges}
           onFocus={(node) => {
+            setRefreshArmed(false)
             setSelectedNodeId(node.id)
             setSubmittedSearch('')
-            void mutate()
           }}
           onClear={() => setSelectedNodeId(null)}
           onSelectNode={setSelectedNodeId}

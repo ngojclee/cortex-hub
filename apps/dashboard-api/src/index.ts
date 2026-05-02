@@ -67,6 +67,16 @@ app.use('/mcp', cors({
 }))
 app.use('*', honoLogger())
 
+app.get('/live', (c) => {
+  return c.json({
+    status: 'ok',
+    service: 'dashboard-api',
+    version: appVersion,
+    timestamp: new Date().toISOString(),
+    uptime: Math.floor(process.uptime()),
+  })
+})
+
 app.get('/health', async (c) => {
   const startTime = Date.now()
 

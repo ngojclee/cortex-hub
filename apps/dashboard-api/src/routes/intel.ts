@@ -6,6 +6,7 @@ import { createLogger } from '@cortex/shared-utils'
 import { Embedder } from '@cortex/shared-mem9'
 import { db } from '../db/client.js'
 import { resolveEmbeddingConfig } from '../services/embedding-config.js'
+import { buildGraphSnapshotMeta, readGraphSnapshot, writeGraphSnapshot, type GraphSnapshotMeta } from '../services/graph-snapshot.js'
 import { requireAdminAccess } from './admin-helpers.js'
 
 const logger = createLogger('intel')
@@ -276,7 +277,7 @@ type BoundedGraphEdge = {
 }
 
 type BoundedGraphData = {
-  repo: string
+  repo: string | null
   nodes: BoundedGraphNode[]
   edges: BoundedGraphEdge[]
   visibleCounts: {
@@ -289,6 +290,7 @@ type BoundedGraphData = {
   }
   truncated: boolean
   capReason: string[]
+  snapshot?: GraphSnapshotMeta
 }
 
 const DEFAULT_GRAPH_NODE_TYPES = ['File', 'Class', 'Function', 'Method', 'Interface'] as const
@@ -675,15 +677,6 @@ function parseGitNexusListRepos(result: unknown): GitNexusRepoSummary[] {
   return repos
 }
 
-async function listGitNexusRepos(): Promise<GitNexusRepoSummary[]> {
-  try {
-    return parseGitNexusListRepos(await callGitNexus('list_repos', {}))
-  } catch (error) {
-    logger.warn(`listGitNexusRepos failed: ${String(error)}`)
-    return []
-  }
-}
-
 function readGitNexusRegistry(): GitNexusRegistryEntry[] {
   const registryPath = GITNEXUS_REGISTRY_PATH()
   if (!existsSync(registryPath)) return []
@@ -710,6 +703,31 @@ function readGitNexusRegistry(): GitNexusRegistryEntry[] {
       .filter((entry) => entry.name && entry.path)
   } catch (error) {
     logger.warn(`Failed to read GitNexus registry: ${String(error)}`)
+    return []
+  }
+}
+
+function mapRegistryEntryToRepoSummary(entry: GitNexusRegistryEntry): GitNexusRepoSummary {
+  return {
+    name: entry.name,
+    path: entry.path,
+    indexedAt: entry.indexedAt,
+    stats: {
+      symbols: entry.stats?.nodes ?? null,
+      relationships: entry.stats?.edges ?? null,
+      processes: entry.stats?.processes ?? null,
+    },
+  }
+}
+
+async function listGitNexusRepos(options: { allowLiveFallback?: boolean } = {}): Promise<GitNexusRepoSummary[]> {
+  const registryRepos = readGitNexusRegistry().map(mapRegistryEntryToRepoSummary)
+  if (registryRepos.length > 0 || !options.allowLiveFallback) return registryRepos
+
+  try {
+    return parseGitNexusListRepos(await callGitNexus('list_repos', {}))
+  } catch (error) {
+    logger.warn(`listGitNexusRepos live fallback failed: ${String(error)}`)
     return []
   }
 }
@@ -1607,6 +1625,24 @@ function buildGraphOptions(query: (name: string) => string | undefined): GraphQu
     limitNodes: clampGraphInteger(query('limitNodes'), DEFAULT_GRAPH_NODES, MAX_GRAPH_NODES),
     limitEdges: clampGraphInteger(query('limitEdges'), DEFAULT_GRAPH_EDGES, MAX_GRAPH_EDGES),
     format: normalizeStringValue(query('format')) ?? 'json',
+  }
+}
+
+function parseBooleanQuery(value: string | undefined): boolean {
+  if (!value) return false
+  return ['1', 'true', 'yes', 'y'].includes(value.trim().toLowerCase())
+}
+
+function emptyGraphData(repo: string | null, snapshot: GraphSnapshotMeta): BoundedGraphData {
+  return {
+    repo,
+    nodes: [],
+    edges: [],
+    visibleCounts: { nodes: 0, edges: 0 },
+    totalCounts: { nodes: 0, edges: 0 },
+    truncated: false,
+    capReason: [],
+    snapshot,
   }
 }
 
@@ -2742,9 +2778,10 @@ intelRouter.get('/resources/project/:projectId/context', async (c) => {
     const { projectId } = c.req.param()
     const context = await resolveResourceContext(projectId)
     if (!context) return c.json({ success: false, error: 'Project not found' }, 404)
+    const refresh = parseBooleanQuery(c.req.query('refresh'))
 
     let fileCount: number | null = null
-    if (context.gitnexusRepo) {
+    if (context.gitnexusRepo && refresh) {
       try {
         const { rows } = await queryProjectCypherRows(
           context.project.id,
@@ -2769,6 +2806,11 @@ intelRouter.get('/resources/project/:projectId/context', async (c) => {
         },
         toolsAvailable: GITNEXUS_RESOURCE_TOOLS,
         resourcesAvailable: buildResourceUris(context.project.id),
+        runtime: {
+          registryFirst: true,
+          liveFileCount: refresh,
+          hint: refresh ? null : 'Add refresh=true to compute file count from GitNexus explicitly.',
+        },
         hint: context.gitnexusRepo
           ? null
           : 'Project exists in Cortex but is not yet registered in GitNexus. Run indexing/register first to unlock clusters and processes.',
@@ -2788,27 +2830,82 @@ intelRouter.get('/resources/project/:projectId/graph', async (c) => {
     if (!context) return c.json({ success: false, error: 'Project not found' }, 404)
 
     const options = buildGraphOptions((name) => c.req.query(name))
+    const refresh = parseBooleanQuery(c.req.query('refresh'))
+    const snapshotRead = readGraphSnapshot<BoundedGraphData>(context.project.id, options, refresh)
 
     if (!context.gitnexusRepo) {
+      const snapshot = buildGraphSnapshotMeta(snapshotRead, {
+        source: 'empty',
+        refresh,
+      })
+      const graph = emptyGraphData(null, snapshot)
       return c.json({
         success: true,
         data: {
           uri: `cortex://project/${context.project.id}/graph`,
           project: buildProjectResourceSummary(context),
-          repo: null,
           query: options,
-          nodes: [],
-          edges: [],
-          visibleCounts: { nodes: 0, edges: 0 },
-          totalCounts: { nodes: 0, edges: 0 },
-          truncated: false,
-          capReason: [],
+          ...graph,
           hint: 'No GitNexus index found for this project yet.',
         },
       })
     }
 
-    const graph = await buildBoundedGraph(context.project.id, options)
+    if (!refresh && snapshotRead.record) {
+      const graph = {
+        ...snapshotRead.record.data,
+        snapshot: buildGraphSnapshotMeta(snapshotRead, {
+          source: 'snapshot',
+          refresh,
+        }),
+      }
+      const data = {
+        uri: `cortex://project/${context.project.id}/graph`,
+        project: buildProjectResourceSummary(context),
+        query: options,
+        ...graph,
+        hint: graph.truncated
+          ? 'Snapshot result was capped. Narrow nodeTypes/edgeTypes/search/focus, or lower depth.'
+          : graph.snapshot.stale
+            ? 'Snapshot is stale. Add refresh=true to rebuild it from GitNexus explicitly.'
+            : null,
+      }
+
+      return c.json({ success: true, data })
+    }
+
+    if (!refresh) {
+      const snapshot = buildGraphSnapshotMeta(snapshotRead, {
+        source: 'empty',
+        refresh,
+      })
+      const graph = emptyGraphData(context.gitnexusRepo.name, snapshot)
+      return c.json({
+        success: true,
+        data: {
+          uri: `cortex://project/${context.project.id}/graph`,
+          project: buildProjectResourceSummary(context),
+          query: options,
+          ...graph,
+          hint: 'No graph snapshot is cached for this query. Add refresh=true to build one explicitly.',
+        },
+      })
+    }
+
+    const liveGraph = await buildBoundedGraph(context.project.id, options)
+    const snapshotRecord = writeGraphSnapshot(context.project.id, options, liveGraph)
+    const freshSnapshotRead = readGraphSnapshot<BoundedGraphData>(context.project.id, options, refresh)
+    const graph = {
+      ...snapshotRecord.data,
+      snapshot: buildGraphSnapshotMeta(freshSnapshotRead, {
+        snapshotHit: true,
+        snapshotCreatedAt: snapshotRecord.createdAt,
+        snapshotAgeMs: 0,
+        stale: false,
+        source: 'gitnexus',
+        refresh,
+      }),
+    }
     const data = {
       uri: `cortex://project/${context.project.id}/graph`,
       project: buildProjectResourceSummary(context),
@@ -3336,7 +3433,9 @@ intelRouter.get('/resources/project/:projectId/schema', async (c) => {
 // ── List Repos: discover indexed repositories with project mapping ──
 intelRouter.get('/repos', async (c) => {
   try {
-    const gitNexusRepos = await listGitNexusRepos()
+    const gitNexusRepos = await listGitNexusRepos({
+      allowLiveFallback: parseBooleanQuery(c.req.query('refresh')),
+    })
 
     // Enrich with project DB data for project ID mapping
     const projects = db.prepare(

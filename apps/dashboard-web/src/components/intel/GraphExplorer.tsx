@@ -15,6 +15,8 @@ const EDGE_TYPE_OPTIONS = ['CALLS', 'IMPORTS', 'EXTENDS', 'IMPLEMENTS', 'ACCESSE
 const DEFAULT_NODE_TYPES = ['File', 'Class', 'Function', 'Method', 'Interface']
 const DEFAULT_EDGE_TYPES = ['CALLS', 'IMPORTS', 'EXTENDS', 'IMPLEMENTS']
 const DEPTH_OPTIONS = [1, 2, 3, 5]
+const DEFAULT_SLICE_NODES = 80
+const DEFAULT_SLICE_EDGES = 160
 
 type CanvasCommand = {
   id: number
@@ -220,8 +222,8 @@ function buildMockGraphSlice(
       depth: opts.depth,
       community: opts.community || null,
       search: opts.search || null,
-      limitNodes: 1200,
-      limitEdges: 5000,
+      limitNodes: DEFAULT_SLICE_NODES,
+      limitEdges: DEFAULT_SLICE_EDGES,
     },
     nodes: filteredNodes,
     edges: filteredEdges,
@@ -452,7 +454,7 @@ export default function GraphExplorer({ projectId, projectName, indexStatus }: G
   const [submittedSearch, setSubmittedSearch] = useState('')
   const [nodeTypes, setNodeTypes] = useState<string[]>(DEFAULT_NODE_TYPES)
   const [edgeTypes, setEdgeTypes] = useState<string[]>(DEFAULT_EDGE_TYPES)
-  const [depth, setDepth] = useState(2)
+  const [depth, setDepth] = useState(1)
   const [community, setCommunity] = useState('')
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [layoutSeed, setLayoutSeed] = useState(0)
@@ -468,8 +470,8 @@ export default function GraphExplorer({ projectId, projectName, indexStatus }: G
       community: community || undefined,
       search: submittedSearch.trim() || undefined,
       focus: selectedNodeId ?? undefined,
-      limitNodes: 1200,
-      limitEdges: 5000,
+      limitNodes: DEFAULT_SLICE_NODES,
+      limitEdges: DEFAULT_SLICE_EDGES,
     }),
     { keepPreviousData: true },
   )

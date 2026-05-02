@@ -749,28 +749,30 @@ export default function GraphPage() {
     [selectedProject],
   )
 
+  const shouldLoadArchitecture = graphMode === 'architecture'
+
   const { data: contextData, error: contextError } = useSWR(
-    projectId ? ['intel-project-context', projectId] : null,
+    projectId && shouldLoadArchitecture ? ['intel-project-context', projectId] : null,
     () => getIntelProjectContext(projectId),
-    { refreshInterval: 30000 },
+    { refreshInterval: shouldLoadArchitecture ? 30000 : 0 },
   )
 
   const { data: clustersData } = useSWR(
-    projectId ? ['intel-project-clusters', projectId] : null,
+    projectId && shouldLoadArchitecture ? ['intel-project-clusters', projectId] : null,
     () => getIntelProjectClusters(projectId, 12),
-    { refreshInterval: 30000 },
+    { refreshInterval: shouldLoadArchitecture ? 30000 : 0 },
   )
 
   const { data: processesData } = useSWR(
-    projectId ? ['intel-project-processes', projectId] : null,
+    projectId && shouldLoadArchitecture ? ['intel-project-processes', projectId] : null,
     () => getIntelProjectProcesses(projectId, 12),
-    { refreshInterval: 30000 },
+    { refreshInterval: shouldLoadArchitecture ? 30000 : 0 },
   )
 
   const { data: crossLinksData } = useSWR(
-    projectId ? ['intel-project-crosslinks', projectId] : null,
+    projectId && shouldLoadArchitecture ? ['intel-project-crosslinks', projectId] : null,
     () => getIntelProjectCrossLinks(projectId),
-    { refreshInterval: 60000 },
+    { refreshInterval: shouldLoadArchitecture ? 60000 : 0 },
   )
 
   const [selectedCluster, setSelectedCluster] = useState<string | null>(null)
@@ -799,7 +801,8 @@ export default function GraphPage() {
   const clusters = clustersData?.data.clusters ?? []
   const processes = processesData?.data.processes ?? []
   const crossLinks = crossLinksData?.data.crossLinks ?? []
-  const freshnessTone = statusTone(context?.project.staleness.status)
+  const selectedStaleness = context?.project.staleness ?? selectedProject?.staleness
+  const freshnessTone = statusTone(selectedStaleness?.status)
 
   function handleLinkCandidate(candidate: IntelDiscoveryCandidate) {
     setLinkingKey(candidate.key)
@@ -976,7 +979,7 @@ export default function GraphPage() {
             <>
               <span>{projectKindLabel(selectedProject.classification.kind)}</span>
               <span>{selectedProject.branch ?? 'unknown branch'}</span>
-              <span className={`badge badge-${freshnessTone}`}>{statusLabel(context?.project.staleness.status)}</span>
+              <span className={`badge badge-${freshnessTone}`}>{statusLabel(selectedStaleness?.status)}</span>
               {selectedProject.classification.hasAliasDrift && (
                 <span className={styles.selectorWarning}>aliases {selectedProject.classification.aliasCount}</span>
               )}
@@ -1045,7 +1048,7 @@ export default function GraphPage() {
         <GraphExplorer
           projectId={selectedProject.projectId}
           projectName={selectedProject.name}
-          indexStatus={statusLabel(context?.project.staleness.status)}
+          indexStatus={statusLabel(selectedStaleness?.status)}
         />
       )}
 

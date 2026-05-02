@@ -954,16 +954,8 @@ export default function GraphPage() {
 
   return (
     <DashboardLayout title="Graph" subtitle="Project architecture explorer built from Cortex intel resources">
-      <div className={styles.hero}>
-        <div className={styles.heroIntro}>
-          <span className={styles.kicker}>Graph Explorer</span>
-          <h2 className={styles.heroTitle}>Link orphan repos, surface knowledge-aware projects, and inspect architecture without raw Cypher.</h2>
-          <p className={styles.heroText}>
-            Cortex now needs to do more than show already-linked projects. This view is meant to expose missing project candidates and give you a graph that still reads when branches grow.
-          </p>
-        </div>
-
-        <div className={`card ${styles.selectorCard}`}>
+      <div className={styles.graphToolbar}>
+        <div className={styles.projectControl}>
           <label className={styles.selectorLabel} htmlFor="graph-project-select">Project</label>
           <select
             id="graph-project-select"
@@ -977,40 +969,42 @@ export default function GraphPage() {
               </option>
             ))}
           </select>
-          <div className={styles.selectorMeta}>
-            {selectedProject ? (
-              <>
-                <span>kind: {projectKindLabel(selectedProject.classification.kind)}</span>
-                <span>branch: {selectedProject.branch ?? 'unknown'}</span>
-                <span className={`badge badge-${freshnessTone}`}>{statusLabel(context?.project.staleness.status)}</span>
-                {selectedProject.classification.hasAliasDrift && (
-                  <span className={styles.selectorWarning}>repo aliases: {selectedProject.classification.aliasCount}</span>
-                )}
-              </>
-            ) : (
-              <span>No linked projects yet.</span>
-            )}
-          </div>
-          {selectedProjectNote && (
-            <p className={styles.selectorHint}>{selectedProjectNote}</p>
+        </div>
+
+        <div className={styles.toolbarMeta}>
+          {selectedProject ? (
+            <>
+              <span>{projectKindLabel(selectedProject.classification.kind)}</span>
+              <span>{selectedProject.branch ?? 'unknown branch'}</span>
+              <span className={`badge badge-${freshnessTone}`}>{statusLabel(context?.project.staleness.status)}</span>
+              {selectedProject.classification.hasAliasDrift && (
+                <span className={styles.selectorWarning}>aliases {selectedProject.classification.aliasCount}</span>
+              )}
+            </>
+          ) : (
+            <span>No linked projects yet.</span>
           )}
+        </div>
+
+        <div className={styles.modeSwitch} aria-label="Graph view mode">
+          <button
+            className={`${styles.modeButton} ${graphMode === 'architecture' ? styles.modeButtonActive : ''}`}
+            onClick={() => setGraphMode('architecture')}
+          >
+            Architecture
+          </button>
+          <button
+            className={`${styles.modeButton} ${graphMode === 'explorer' ? styles.modeButtonActive : ''}`}
+            onClick={() => setGraphMode('explorer')}
+          >
+            Explorer
+          </button>
         </div>
       </div>
 
-      <div className={styles.modeSwitch} aria-label="Graph view mode">
-        <button
-          className={`${styles.modeButton} ${graphMode === 'architecture' ? styles.modeButtonActive : ''}`}
-          onClick={() => setGraphMode('architecture')}
-        >
-          Architecture
-        </button>
-        <button
-          className={`${styles.modeButton} ${graphMode === 'explorer' ? styles.modeButtonActive : ''}`}
-          onClick={() => setGraphMode('explorer')}
-        >
-          Explorer
-        </button>
-      </div>
+      {selectedProjectNote && (
+        <div className={styles.projectNotice}>{selectedProjectNote}</div>
+      )}
 
       {discoveryCandidates.length > 0 && (
         <div className={styles.discoverySection}>

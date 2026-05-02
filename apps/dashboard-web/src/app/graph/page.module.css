@@ -1,60 +1,18 @@
-.hero {
+.graphToolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.9fr);
-  gap: var(--space-5);
-  align-items: stretch;
-  margin-bottom: var(--space-6);
+  grid-template-columns: minmax(280px, 1fr) auto auto;
+  align-items: end;
+  gap: var(--space-4);
+  margin-bottom: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
 }
 
-.heroIntro {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
+.projectControl {
+  min-width: 0;
 }
-
-.kicker {
-  display: inline-flex;
-  align-items: center;
-  width: fit-content;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background:
-    linear-gradient(135deg, rgba(124, 58, 237, 0.18), rgba(59, 130, 246, 0.18)),
-    var(--bg-secondary);
-  border: 1px solid rgba(124, 58, 237, 0.3);
-  color: #d8c4ff;
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.heroTitle {
-  margin: 0;
-  font-size: clamp(1.65rem, 1.15rem + 1.8vw, 2.55rem);
-  line-height: 1.08;
-  color: var(--text-primary);
-  max-width: 16ch;
-}
-
-.heroText {
-  margin: 0;
-  max-width: 72ch;
-  color: var(--text-secondary);
-  line-height: 1.65;
-}
-
-.selectorCard {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-5);
-  min-height: 100%;
-  background:
-    radial-gradient(circle at top right, rgba(124, 58, 237, 0.14), transparent 45%),
-    var(--bg-secondary);
-}
-
 .selectorLabel {
   font-size: 0.75rem;
   font-weight: 600;
@@ -80,23 +38,36 @@
   box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.16);
 }
 
-.selectorMeta {
+.toolbarMeta {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
+  justify-content: flex-end;
+  gap: 8px;
   flex-wrap: wrap;
   font-size: 0.8125rem;
   color: var(--text-secondary);
 }
 
-.selectorHint {
-  margin: 10px 0 0;
-  font-size: 0.8125rem;
-  line-height: 1.6;
-  color: var(--text-secondary);
+.toolbarMeta span:not(.selectorWarning) {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--border-subtle);
 }
 
+.projectNotice {
+  margin-bottom: var(--space-3);
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(245, 158, 11, 0.18);
+  background: rgba(120, 53, 15, 0.12);
+  color: #fde68a;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
 .selectorWarning {
   color: #fbbf24;
 }
@@ -105,11 +76,10 @@
 .modeSwitch {
   display: inline-flex;
   gap: 4px;
-  margin-bottom: var(--space-5);
   padding: 4px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  background: var(--bg-secondary);
+  background: var(--bg-primary);
 }
 
 .modeButton {
@@ -568,11 +538,19 @@
 }
 
 @media (max-width: 1120px) {
-  .hero {
+  .graphToolbar {
     grid-template-columns: 1fr;
+    align-items: stretch;
   }
 
-  .presetGrid,
+  .toolbarMeta {
+    justify-content: flex-start;
+  }
+
+  .modeSwitch {
+    width: fit-content;
+  }
+.presetGrid,
   .discoveryGrid,
   .statsGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -590,19 +568,18 @@
   .graphCard,
   .listCard,
   .hintsCard,
-  .selectorCard {
+  .graphToolbar {
     padding: var(--space-4);
   }
 
-  .heroTitle {
-    max-width: none;
+  .modeSwitch {
+    width: 100%;
   }
 
-  .selectorMeta {
-    align-items: flex-start;
-    flex-direction: column;
+  .modeButton {
+    min-width: 0;
+    flex: 1;
   }
-
 }
 
 .graphWrapper {

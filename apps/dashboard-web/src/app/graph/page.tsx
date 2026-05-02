@@ -24,10 +24,12 @@ import {
 import styles from './page.module.css'
 import SymbolTreeViewer from '@/components/intel/SymbolTreeViewer'
 import ForceGraph from '@/components/intel/ForceGraph'
+import GraphExplorer from '@/components/intel/GraphExplorer'
 
 const EDGE_FILTER_OPTIONS = ['CALLS', 'IMPORTS', 'EXTENDS', 'IMPLEMENTS', 'ACCESSES'] as const
 type EdgeFilter = typeof EDGE_FILTER_OPTIONS[number]
 type GraphPreset = 'overview' | 'dependencies' | 'types'
+type GraphMode = 'architecture' | 'explorer'
 
 const GRAPH_PRESETS: Array<{
   key: GraphPreset
@@ -681,6 +683,7 @@ function BranchDrilldownPanel({
 }
 
 export default function GraphPage() {
+  const [graphMode, setGraphMode] = useState<GraphMode>('architecture')
   const [projectId, setProjectId] = useState('')
   const [linkingKey, setLinkingKey] = useState<string | null>(null)
   const [selectedProcess, setSelectedProcess] = useState<string | null>(null)
@@ -994,6 +997,21 @@ export default function GraphPage() {
         </div>
       </div>
 
+      <div className={styles.modeSwitch} aria-label="Graph view mode">
+        <button
+          className={`${styles.modeButton} ${graphMode === 'architecture' ? styles.modeButtonActive : ''}`}
+          onClick={() => setGraphMode('architecture')}
+        >
+          Architecture
+        </button>
+        <button
+          className={`${styles.modeButton} ${graphMode === 'explorer' ? styles.modeButtonActive : ''}`}
+          onClick={() => setGraphMode('explorer')}
+        >
+          Explorer
+        </button>
+      </div>
+
       {discoveryCandidates.length > 0 && (
         <div className={styles.discoverySection}>
           <div className={styles.sectionHeader}>
@@ -1029,7 +1047,15 @@ export default function GraphPage() {
         <div className={styles.errorBanner}>Failed to load graph context for the selected project.</div>
       )}
 
-      {selectedProject && context && (
+      {selectedProject && graphMode === 'explorer' && (
+        <GraphExplorer
+          projectId={selectedProject.projectId}
+          projectName={selectedProject.name}
+          indexStatus={statusLabel(context?.project.staleness.status)}
+        />
+      )}
+
+      {selectedProject && context && graphMode === 'architecture' && (
         <>
           <div className={styles.statsGrid}>
             <StatCard label="Indexed At" value={formatIndexedAt(context.project.indexedAt)} hint={context.project.staleness.basedOn} />

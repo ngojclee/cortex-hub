@@ -1,0 +1,274 @@
+import { z } from 'zod'
+
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { Env } from '../types.js'
+import { apiCall } from '../api-call.js'
+
+type GraphNode = {
+  id?: string
+  type?: string
+  name?: string
+  filePath?: string | null
+  startLine?: number | null
+  endLine?: number | null
+  community?: string | null
+  depth?: number | null
+}
+
+type GraphEdge = {
+  source?: string
+  target?: string
+  type?: string
+  confidence?: number | null
+  reason?: string | null
+}
+
+type GraphPayload = {
+  success?: boolean
+  data?: {
+    repo?: string | null
+    query?: Record<string, unknown>
+    nodes?: GraphNode[]
+    edges?: GraphEdge[]
+    visibleCounts?: { nodes?: number; edges?: number }
+    totalCounts?: { nodes?: number | null; edges?: number | null }
+    truncated?: boolean
+    capReason?: string[]
+    hint?: string | null
+  }
+  error?: string
+}
+
+const commaListSchema = z.array(z.string()).optional()
+const directionSchema = z.enum(['upstream', 'downstream', 'both']).optional()
+
+function appendList(params: URLSearchParams, key: string, value?: string[]): void {
+  if (value && value.length > 0) params.set(key, value.join(','))
+}
+
+function appendNumber(params: URLSearchParams, key: string, value?: number): void {
+  if (typeof value === 'number' && Number.isFinite(value)) params.set(key, String(value))
+}
+
+function firstLineLocation(node: GraphNode): string {
+  const file = node.filePath ? ` ${node.filePath}` : ''
+  const line = node.startLine ? `:${node.startLine}` : ''
+  return `${file}${line}`.trim()
+}
+
+function nodeLabel(node: GraphNode): string {
+  const type = node.type ?? 'Unknown'
+  const name = node.name ?? node.id ?? 'unknown'
+  const location = firstLineLocation(node)
+  const depth = typeof node.depth === 'number' ? ` d=${node.depth}` : ''
+  return `- ${type} ${name}${location ? ` — ${location}` : ''}${depth}`
+}
+
+function edgeLabel(edge: GraphEdge): string {
+  const source = edge.source ?? 'unknown'
+  const target = edge.target ?? 'unknown'
+  const type = edge.type ?? 'RELATES'
+  const confidence = typeof edge.confidence === 'number' ? ` (${Math.round(edge.confidence * 100)}%)` : ''
+  return `- ${source} -[${type}${confidence}]-> ${target}`
+}
+
+function buildGraphSummary(title: string, payload: GraphPayload, maxNodes = 20, maxEdges = 20): string {
+  const data = payload.data
+  if (!data) return JSON.stringify(payload, null, 2)
+
+  const nodes = data.nodes ?? []
+  const edges = data.edges ?? []
+  const lines = [
+    title,
+    '',
+    `Repo: ${data.repo ?? '(not indexed)'}`,
+    `Visible: ${data.visibleCounts?.nodes ?? nodes.length} nodes, ${data.visibleCounts?.edges ?? edges.length} edges`,
+    `Total: ${data.totalCounts?.nodes ?? '?'} nodes, ${data.totalCounts?.edges ?? '?'} edges`,
+    `Truncated: ${data.truncated ? 'yes' : 'no'}`,
+  ]
+
+  if (data.capReason && data.capReason.length > 0) {
+    lines.push(`Caps: ${data.capReason.join('; ')}`)
+  }
+  if (data.hint) lines.push(`Hint: ${data.hint}`)
+
+  lines.push('', 'Nodes:')
+  lines.push(...(nodes.length > 0 ? nodes.slice(0, maxNodes).map(nodeLabel) : ['- none']))
+
+  lines.push('', 'Edges:')
+  lines.push(...(edges.length > 0 ? edges.slice(0, maxEdges).map(edgeLabel) : ['- none']))
+
+  lines.push('', 'Raw bounded graph JSON:')
+  lines.push('```json')
+  lines.push(JSON.stringify(data, null, 2))
+  lines.push('```')
+
+  return lines.join('\n')
+}
+
+export function registerGraphTools(server: McpServer, env: Env) {
+  async function callGraph(
+    projectId: string,
+    params: URLSearchParams,
+    timeoutMs = 15000,
+  ): Promise<GraphPayload> {
+    const queryString = params.toString()
+    const response = await apiCall(
+      env,
+      `/api/intel/resources/project/${encodeURIComponent(projectId)}/graph${queryString ? `?${queryString}` : ''}`,
+      { signal: AbortSignal.timeout(timeoutMs) },
+    )
+
+    const payload = await response.json() as GraphPayload
+    if (!response.ok || payload.success === false) {
+      throw new Error(payload.error ?? `Graph request failed: ${response.status}`)
+    }
+
+    return payload
+  }
+
+  server.tool(
+    'cortex_graph_search',
+    'Find candidate files and symbols from the GitNexus graph without reading raw source code. Returns a capped node/edge set for planning.',
+    {
+      projectId: z.string().describe('Project ID or slug to scope graph search'),
+      query: z.string().describe('Symbol, file, or text fragment to search in graph node names and file paths'),
+      nodeTypes: commaListSchema.describe('Optional node types, e.g. File,Class,Function,Method,Interface'),
+      limit: z.number().optional().describe('Maximum candidate nodes to return, capped server-side'),
+    },
+    async ({ projectId, query, nodeTypes, limit }) => {
+      try {
+        const params = new URLSearchParams({ search: query, depth: '1' })
+        appendList(params, 'nodeTypes', nodeTypes)
+        appendNumber(params, 'limitNodes', limit)
+
+        const payload = await callGraph(projectId, params)
+        return {
+          content: [{ type: 'text' as const, text: buildGraphSummary(`Graph search: ${query}`, payload, limit ?? 20, 12) }],
+        }
+      } catch (error) {
+        return {
+          content: [{ type: 'text' as const, text: `Graph search error: ${error instanceof Error ? error.message : 'Unknown'}` }],
+          isError: true,
+        }
+      }
+    },
+  )
+
+  server.tool(
+    'cortex_graph_slice',
+    'Return a bounded graph neighborhood around a file or symbol. Use before raw file reads to understand nearby code relationships.',
+    {
+      projectId: z.string().describe('Project ID or slug to scope graph slice'),
+      focus: z.string().describe('Focused symbol name, node id, or file path'),
+      depth: z.number().optional().describe('Traversal depth, capped at 5'),
+      direction: directionSchema.describe('Traversal direction: upstream, downstream, or both'),
+      edgeTypes: commaListSchema.describe('Optional relation types, e.g. CALLS,IMPORTS,DEFINES'),
+      nodeTypes: commaListSchema.describe('Optional node types, e.g. File,Class,Function,Method,Interface'),
+      limitNodes: z.number().optional().describe('Maximum nodes, capped server-side'),
+      limitEdges: z.number().optional().describe('Maximum edges, capped server-side'),
+    },
+    async ({ projectId, focus, depth, direction, edgeTypes, nodeTypes, limitNodes, limitEdges }) => {
+      try {
+        const params = new URLSearchParams({ focus })
+        appendNumber(params, 'depth', depth)
+        if (direction) params.set('direction', direction)
+        appendList(params, 'edgeTypes', edgeTypes)
+        appendList(params, 'nodeTypes', nodeTypes)
+        appendNumber(params, 'limitNodes', limitNodes)
+        appendNumber(params, 'limitEdges', limitEdges)
+
+        const payload = await callGraph(projectId, params)
+        return {
+          content: [{ type: 'text' as const, text: buildGraphSummary(`Graph slice: ${focus}`, payload) }],
+        }
+      } catch (error) {
+        return {
+          content: [{ type: 'text' as const, text: `Graph slice error: ${error instanceof Error ? error.message : 'Unknown'}` }],
+          isError: true,
+        }
+      }
+    },
+  )
+
+  server.tool(
+    'cortex_file_neighbors',
+    'Show imports, definitions, calls, and nearby symbols around one file path using a bounded graph slice.',
+    {
+      projectId: z.string().describe('Project ID or slug to scope lookup'),
+      filePath: z.string().describe('Relative file path within the indexed repository'),
+      direction: directionSchema.describe('Neighbor direction: upstream, downstream, or both'),
+      depth: z.number().optional().describe('Traversal depth, capped at 5'),
+    },
+    async ({ projectId, filePath, direction, depth }) => {
+      try {
+        const params = new URLSearchParams({
+          focus: filePath,
+          nodeTypes: 'File,Class,Function,Method,Interface,Route,Tool',
+          edgeTypes: 'CONTAINS,DEFINES,IMPORTS,CALLS,EXTENDS,IMPLEMENTS,HAS_METHOD',
+        })
+        if (direction) params.set('direction', direction)
+        appendNumber(params, 'depth', depth)
+
+        const payload = await callGraph(projectId, params)
+        return {
+          content: [{ type: 'text' as const, text: buildGraphSummary(`File neighbors: ${filePath}`, payload) }],
+        }
+      } catch (error) {
+        return {
+          content: [{ type: 'text' as const, text: `File neighbors error: ${error instanceof Error ? error.message : 'Unknown'}` }],
+          isError: true,
+        }
+      }
+    },
+  )
+
+  server.tool(
+    'cortex_symbol_brief',
+    'Build a compact symbol brief from a bounded graph slice, with optional raw cortex_code_context fallback for ambiguous or detailed inspection.',
+    {
+      projectId: z.string().describe('Project ID or slug to scope lookup'),
+      symbol: z.string().describe('Symbol name or graph node id'),
+      includeRaw: z.boolean().optional().describe('When true, append raw cortex_code_context output'),
+      depth: z.number().optional().describe('Traversal depth for the compact slice, default 1'),
+    },
+    async ({ projectId, symbol, includeRaw, depth }) => {
+      try {
+        const params = new URLSearchParams({
+          focus: symbol,
+          nodeTypes: 'Class,Function,Method,Interface,File,Route,Tool',
+          edgeTypes: 'CALLS,IMPORTS,EXTENDS,IMPLEMENTS,HAS_METHOD,DEFINES,STEP_IN_PROCESS',
+          direction: 'both',
+        })
+        appendNumber(params, 'depth', depth ?? 1)
+        appendNumber(params, 'limitNodes', 40)
+        appendNumber(params, 'limitEdges', 80)
+
+        const payload = await callGraph(projectId, params)
+        let text = buildGraphSummary(`Symbol brief: ${symbol}`, payload, 16, 16)
+
+        if (includeRaw) {
+          const rawRes = await apiCall(env, '/api/intel/context', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ projectId, name: symbol }),
+            signal: AbortSignal.timeout(15000),
+          })
+          const rawPayload = await rawRes.json()
+          text += '\n\nRaw cortex_code_context fallback:\n```json\n'
+          text += JSON.stringify(rawPayload, null, 2)
+          text += '\n```'
+        }
+
+        return {
+          content: [{ type: 'text' as const, text }],
+        }
+      } catch (error) {
+        return {
+          content: [{ type: 'text' as const, text: `Symbol brief error: ${error instanceof Error ? error.message : 'Unknown'}` }],
+          isError: true,
+        }
+      }
+    },
+  )
+}

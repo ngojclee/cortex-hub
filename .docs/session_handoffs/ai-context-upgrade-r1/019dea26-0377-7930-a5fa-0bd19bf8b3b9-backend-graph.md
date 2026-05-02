@@ -1,0 +1,56 @@
+# Session Handoff
+
+Project: cortex-hub
+Branch: master
+Round: ai-context-upgrade-r1
+Role: Backend Graph Worker
+Session ID: 019dea26-0377-7930-a5fa-0bd19bf8b3b9
+Planner Session: 019dd96b-52ca-7902-9a0d-efcf13a892a5
+Plan File: D:\Python\projects\cortex-hub\.docs\session_team_plan.md
+Report File: D:\Python\projects\cortex-hub\.docs\session_reports\ai-context-upgrade-r1\019dea26-0377-7930-a5fa-0bd19bf8b3b9-backend-graph-report.md
+Status: READY
+
+## Assignment
+
+Implement bounded graph API and MCP graph tools: cortex_graph_search, cortex_graph_slice, cortex_file_neighbors, cortex_symbol_brief.
+
+## Scope In
+
+apps/dashboard-api/src/routes/intel.ts; apps/hub-mcp/src/tools/graph.ts; apps/hub-mcp/src/index.ts; related tests/types.
+
+## Scope Out
+
+frontend graph UI; compaction service; .references; .omx; commits/pushes
+
+## Dependencies
+
+None
+
+## Read First
+
+- $root\AGENTS.md
+- $root\STATE.md
+- $root\.cortex\project-profile.json
+- $root\.docs\plan.md
+- $root\.docs\task.md
+- $root\.docs\guides\agent-cortex-workflow.md
+- $root\.docs\research_notes.md
+- $root\.docs\session_team_plan.md
+
+## Verification
+
+System.Collections.Hashtable.Verify
+
+Full final verify remains planner/integrator responsibility: pnpm build, pnpm typecheck, pnpm lint.
+
+## Report Contract
+
+Write report to:
+
+$reportPath
+
+Include status, summary, files changed, commands run, results, blockers, follow-up, and notes for planner.
+
+## Command
+
+Run /w24-session-worker or $w24-session-worker in this session.

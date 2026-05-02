@@ -237,6 +237,68 @@ type ProjectCleanupOperation = {
   reasons: string[]
 }
 
+type GraphDirection = 'upstream' | 'downstream' | 'both'
+
+type GraphQueryOptions = {
+  nodeTypes: string[]
+  edgeTypes: string[]
+  focus: string | null
+  search: string | null
+  community: string | null
+  depth: number
+  direction: GraphDirection
+  limitNodes: number
+  limitEdges: number
+  format: string
+}
+
+type BoundedGraphNode = {
+  id: string
+  type: string
+  name: string
+  filePath: string | null
+  startLine: number | null
+  endLine: number | null
+  label: string | null
+  heuristicLabel: string | null
+  community: string | null
+  depth: number | null
+}
+
+type BoundedGraphEdge = {
+  id: string
+  source: string
+  target: string
+  type: string
+  confidence: number | null
+  reason: string | null
+  step: number | null
+}
+
+type BoundedGraphData = {
+  repo: string
+  nodes: BoundedGraphNode[]
+  edges: BoundedGraphEdge[]
+  visibleCounts: {
+    nodes: number
+    edges: number
+  }
+  totalCounts: {
+    nodes: number | null
+    edges: number | null
+  }
+  truncated: boolean
+  capReason: string[]
+}
+
+const DEFAULT_GRAPH_NODE_TYPES = ['File', 'Class', 'Function', 'Method', 'Interface'] as const
+const DEFAULT_GRAPH_EDGE_TYPES = ['CALLS', 'IMPORTS', 'EXTENDS', 'IMPLEMENTS'] as const
+const MAX_GRAPH_NODES = 250
+const MAX_GRAPH_EDGES = 500
+const DEFAULT_GRAPH_NODES = 80
+const DEFAULT_GRAPH_EDGES = 160
+const MAX_GRAPH_DEPTH = 5
+
 const GITNEXUS_RESOURCE_TOOLS = [
   'cortex_code_search',
   'cortex_code_context',
@@ -245,12 +307,17 @@ const GITNEXUS_RESOURCE_TOOLS = [
   'cortex_cypher',
   'cortex_list_repos',
   'cortex_code_read',
+  'cortex_graph_search',
+  'cortex_graph_slice',
+  'cortex_file_neighbors',
+  'cortex_symbol_brief',
 ] as const
 
 function buildResourceUris(projectId: string): string[] {
   return [
     'cortex://projects',
     `cortex://project/${projectId}/context`,
+    `cortex://project/${projectId}/graph`,
     `cortex://project/${projectId}/clusters`,
     `cortex://project/${projectId}/processes`,
     `cortex://project/${projectId}/schema`,
@@ -1487,6 +1554,406 @@ function sortProjectResourceSummaries<T extends ReturnType<typeof buildProjectRe
   })
 }
 
+function parseGraphList(
+  value: string | undefined,
+  fallback: readonly string[],
+  normalize: (item: string) => string | null,
+): string[] {
+  if (value?.trim().toLowerCase() === 'all') return []
+
+  const rawItems = value
+    ? value.split(',')
+    : [...fallback]
+
+  return Array.from(new Set(
+    rawItems
+      .map((item) => normalize(item))
+      .filter((item): item is string => Boolean(item)),
+  ))
+}
+
+function normalizeGraphNodeType(value: string): string | null {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  return trimmed.replace(/[^A-Za-z0-9_]/g, '') || null
+}
+
+function normalizeGraphEdgeType(value: string): string | null {
+  const trimmed = value.trim().toUpperCase()
+  if (!trimmed) return null
+  return trimmed.replace(/[^A-Z0-9_]/g, '') || null
+}
+
+function parseGraphDirection(value: string | undefined): GraphDirection {
+  if (value === 'upstream' || value === 'downstream') return value
+  return 'both'
+}
+
+function clampGraphInteger(value: string | undefined, fallback: number, max: number): number {
+  const parsed = Number.parseInt(value ?? '', 10)
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback
+  return Math.min(parsed, max)
+}
+
+function buildGraphOptions(query: (name: string) => string | undefined): GraphQueryOptions {
+  return {
+    nodeTypes: parseGraphList(query('nodeTypes'), DEFAULT_GRAPH_NODE_TYPES, normalizeGraphNodeType),
+    edgeTypes: parseGraphList(query('edgeTypes'), DEFAULT_GRAPH_EDGE_TYPES, normalizeGraphEdgeType),
+    focus: normalizeStringValue(query('focus')),
+    search: normalizeStringValue(query('search')),
+    community: normalizeStringValue(query('community')),
+    depth: clampGraphInteger(query('depth'), 2, MAX_GRAPH_DEPTH),
+    direction: parseGraphDirection(query('direction')),
+    limitNodes: clampGraphInteger(query('limitNodes'), DEFAULT_GRAPH_NODES, MAX_GRAPH_NODES),
+    limitEdges: clampGraphInteger(query('limitEdges'), DEFAULT_GRAPH_EDGES, MAX_GRAPH_EDGES),
+    format: normalizeStringValue(query('format')) ?? 'json',
+  }
+}
+
+function buildCypherStringList(values: string[]): string {
+  return `[${values.map((value) => `"${escapeCypherString(value)}"`).join(', ')}]`
+}
+
+function buildGraphNodeTypeFilter(alias: string, nodeTypes: string[]): string {
+  if (nodeTypes.length === 0) return 'true'
+  return `labels(${alias})[0] IN ${buildCypherStringList(nodeTypes)}`
+}
+
+function buildGraphEdgeTypeFilter(alias: string, edgeTypes: string[]): string {
+  if (edgeTypes.length === 0) return 'true'
+  return `${alias}.type IN ${buildCypherStringList(edgeTypes)}`
+}
+
+function buildGraphTextFilter(alias: string, search: string | null): string {
+  if (!search) return 'true'
+  const safeSearch = escapeCypherString(search)
+  return `(
+    COALESCE(${alias}.id, '') CONTAINS "${safeSearch}" OR
+    COALESCE(${alias}.name, '') CONTAINS "${safeSearch}" OR
+    COALESCE(${alias}.filePath, '') CONTAINS "${safeSearch}" OR
+    COALESCE(${alias}.label, '') CONTAINS "${safeSearch}" OR
+    COALESCE(${alias}.heuristicLabel, '') CONTAINS "${safeSearch}"
+  )`
+}
+
+function buildGraphFocusFilter(alias: string, focus: string): string {
+  const safeFocus = escapeCypherString(focus)
+  return `(
+    COALESCE(${alias}.id, '') = "${safeFocus}" OR
+    COALESCE(${alias}.name, '') = "${safeFocus}" OR
+    COALESCE(${alias}.filePath, '') = "${safeFocus}" OR
+    COALESCE(${alias}.id, '') CONTAINS "${safeFocus}" OR
+    COALESCE(${alias}.name, '') CONTAINS "${safeFocus}" OR
+    COALESCE(${alias}.filePath, '') CONTAINS "${safeFocus}"
+  )`
+}
+
+function buildGraphCommunityFilter(alias: string, community: string): string {
+  const safeCommunity = escapeCypherString(community)
+  return `(
+    COALESCE(${alias}.id, '') = "${safeCommunity}" OR
+    COALESCE(${alias}.label, '') = "${safeCommunity}" OR
+    COALESCE(${alias}.heuristicLabel, '') = "${safeCommunity}" OR
+    COALESCE(${alias}.label, '') CONTAINS "${safeCommunity}" OR
+    COALESCE(${alias}.heuristicLabel, '') CONTAINS "${safeCommunity}"
+  )`
+}
+
+function buildGraphNodeReturn(alias: string, prefix = ''): string {
+  const column = (name: string) => prefix ? `${prefix}${name.charAt(0).toUpperCase()}${name.slice(1)}` : name
+  return [
+    `${alias}.id AS ${column('id')}`,
+    `labels(${alias})[0] AS ${column('type')}`,
+    `COALESCE(${alias}.name, ${alias}.label, ${alias}.heuristicLabel, ${alias}.id) AS ${column('name')}`,
+    `${alias}.filePath AS ${column('filePath')}`,
+    `${alias}.startLine AS ${column('startLine')}`,
+    `${alias}.endLine AS ${column('endLine')}`,
+    `${alias}.label AS ${column('label')}`,
+    `${alias}.heuristicLabel AS ${column('heuristicLabel')}`,
+  ].join(', ')
+}
+
+function graphNodeFromRow(
+  row: Record<string, string | number | null>,
+  prefix = '',
+  depth: number | null = null,
+): BoundedGraphNode | null {
+  const column = (name: string) => prefix ? `${prefix}${name.charAt(0).toUpperCase()}${name.slice(1)}` : name
+  const id = normalizeStringValue(row[column('id')])
+  if (!id) return null
+
+  const label = normalizeStringValue(row[column('label')])
+  const heuristicLabel = normalizeStringValue(row[column('heuristicLabel')])
+  return {
+    id,
+    type: normalizeStringValue(row[column('type')]) ?? 'Unknown',
+    name: normalizeStringValue(row[column('name')]) ?? heuristicLabel ?? label ?? id,
+    filePath: normalizeStringValue(row[column('filePath')]),
+    startLine: parseNumberLike(row[column('startLine')]),
+    endLine: parseNumberLike(row[column('endLine')]),
+    label,
+    heuristicLabel,
+    community: normalizeStringValue(row.community),
+    depth,
+  }
+}
+
+function upsertGraphNode(nodes: Map<string, BoundedGraphNode>, node: BoundedGraphNode): void {
+  const existing = nodes.get(node.id)
+  if (!existing) {
+    nodes.set(node.id, node)
+    return
+  }
+
+  const existingDepth = existing.depth ?? Number.POSITIVE_INFINITY
+  const nextDepth = node.depth ?? Number.POSITIVE_INFINITY
+  if (nextDepth < existingDepth) {
+    nodes.set(node.id, { ...existing, depth: node.depth })
+  }
+}
+
+function graphEdgeFromRow(row: Record<string, string | number | null>): BoundedGraphEdge | null {
+  const source = normalizeStringValue(row.sourceId)
+  const target = normalizeStringValue(row.targetId)
+  const type = normalizeStringValue(row.edgeType)
+  if (!source || !target || !type) return null
+
+  const step = parseNumberLike(row.edgeStep)
+  const reason = normalizeStringValue(row.edgeReason)
+  return {
+    id: [source, type, target, reason ?? '', step ?? ''].join(':'),
+    source,
+    target,
+    type,
+    confidence: parseNumberLike(row.edgeConfidence),
+    reason,
+    step,
+  }
+}
+
+function addGraphEdge(
+  nodes: Map<string, BoundedGraphNode>,
+  edges: Map<string, BoundedGraphEdge>,
+  edge: BoundedGraphEdge,
+  source: BoundedGraphNode,
+  target: BoundedGraphNode,
+  limitNodes: number,
+): boolean {
+  const needsSource = !nodes.has(source.id)
+  const needsTarget = !nodes.has(target.id)
+  const newNodeCount = Number(needsSource) + Number(needsTarget)
+  if (nodes.size + newNodeCount > limitNodes) return false
+
+  upsertGraphNode(nodes, source)
+  upsertGraphNode(nodes, target)
+  edges.set(edge.id, edge)
+  return true
+}
+
+async function fetchGraphSeedNodes(
+  projectId: string,
+  options: GraphQueryOptions,
+  limit: number,
+): Promise<{ repo: string; rows: Array<Record<string, string | number | null>> }> {
+  const filters = [
+    buildGraphNodeTypeFilter('n', options.nodeTypes),
+    buildGraphTextFilter('n', options.search),
+  ]
+  if (options.focus) filters.push(buildGraphFocusFilter('n', options.focus))
+
+  const query = options.community
+    ? `MATCH (n)-[memberRel:CodeRelation {type: 'MEMBER_OF'}]->(c:Community)
+       WHERE ${filters.join(' AND ')} AND ${buildGraphCommunityFilter('c', options.community)}
+       RETURN DISTINCT ${buildGraphNodeReturn('n')}, COALESCE(c.heuristicLabel, c.label, c.id) AS community
+       LIMIT ${limit}`
+    : `MATCH (n)
+       WHERE ${filters.join(' AND ')}
+       RETURN DISTINCT ${buildGraphNodeReturn('n')}, null AS community
+       LIMIT ${limit}`
+
+  return queryProjectCypherRows(projectId, query)
+}
+
+async function fetchGraphEdgesForFrontier(
+  projectId: string,
+  frontierIds: string[],
+  options: GraphQueryOptions,
+  limit: number,
+): Promise<{ repo: string; rows: Array<Record<string, string | number | null>> }> {
+  if (frontierIds.length === 0) return { repo: '', rows: [] }
+
+  const frontierList = buildCypherStringList(frontierIds)
+  const directionFilter = options.direction === 'upstream'
+    ? `b.id IN ${frontierList}`
+    : options.direction === 'downstream'
+      ? `a.id IN ${frontierList}`
+      : `(a.id IN ${frontierList} OR b.id IN ${frontierList})`
+
+  const query = `MATCH (a)-[r:CodeRelation]->(b)
+    WHERE ${directionFilter}
+      AND ${buildGraphEdgeTypeFilter('r', options.edgeTypes)}
+      AND ${buildGraphNodeTypeFilter('a', options.nodeTypes)}
+      AND ${buildGraphNodeTypeFilter('b', options.nodeTypes)}
+    RETURN DISTINCT ${buildGraphNodeReturn('a', 'source')}, ${buildGraphNodeReturn('b', 'target')},
+      r.type AS edgeType, r.confidence AS edgeConfidence, r.reason AS edgeReason, r.step AS edgeStep
+    LIMIT ${limit}`
+
+  return queryProjectCypherRows(projectId, query)
+}
+
+async function fetchGraphEdgesAmongNodes(
+  projectId: string,
+  nodeIds: string[],
+  options: GraphQueryOptions,
+  limit: number,
+): Promise<{ repo: string; rows: Array<Record<string, string | number | null>> }> {
+  if (nodeIds.length === 0) return { repo: '', rows: [] }
+
+  const nodeList = buildCypherStringList(nodeIds)
+  const query = `MATCH (a)-[r:CodeRelation]->(b)
+    WHERE a.id IN ${nodeList}
+      AND b.id IN ${nodeList}
+      AND ${buildGraphEdgeTypeFilter('r', options.edgeTypes)}
+    RETURN DISTINCT ${buildGraphNodeReturn('a', 'source')}, ${buildGraphNodeReturn('b', 'target')},
+      r.type AS edgeType, r.confidence AS edgeConfidence, r.reason AS edgeReason, r.step AS edgeStep
+    LIMIT ${limit}`
+
+  return queryProjectCypherRows(projectId, query)
+}
+
+async function countGraphNodes(
+  projectId: string,
+  options: GraphQueryOptions,
+): Promise<number | null> {
+  try {
+    const filters = [
+      buildGraphNodeTypeFilter('n', options.nodeTypes),
+      buildGraphTextFilter('n', options.search),
+    ]
+    const query = options.community
+      ? `MATCH (n)-[memberRel:CodeRelation {type: 'MEMBER_OF'}]->(c:Community)
+         WHERE ${filters.join(' AND ')} AND ${buildGraphCommunityFilter('c', options.community)}
+         RETURN COUNT(DISTINCT n) AS nodes`
+      : `MATCH (n)
+         WHERE ${filters.join(' AND ')}
+         RETURN COUNT(n) AS nodes`
+
+    const { rows } = await queryProjectCypherRows(projectId, query)
+    return parseNumberLike(rows[0]?.nodes)
+  } catch (error) {
+    logger.warn(`Graph node count failed for ${projectId}: ${String(error)}`)
+    return null
+  }
+}
+
+function rowsToGraphEdges(
+  rows: Array<Record<string, string | number | null>>,
+  nodes: Map<string, BoundedGraphNode>,
+  edges: Map<string, BoundedGraphEdge>,
+  options: GraphQueryOptions,
+  depth: number,
+): { addedNodeIds: string[]; skippedForNodeCap: boolean } {
+  const addedNodeIds: string[] = []
+  let skippedForNodeCap = false
+
+  for (const row of rows) {
+    if (edges.size >= options.limitEdges) break
+
+    const source = graphNodeFromRow(row, 'source', depth)
+    const target = graphNodeFromRow(row, 'target', depth)
+    const edge = graphEdgeFromRow(row)
+    if (!source || !target || !edge) continue
+
+    const beforeIds = new Set(nodes.keys())
+    if (!addGraphEdge(nodes, edges, edge, source, target, options.limitNodes)) {
+      skippedForNodeCap = true
+      continue
+    }
+
+    for (const id of [source.id, target.id]) {
+      if (!beforeIds.has(id)) addedNodeIds.push(id)
+    }
+  }
+
+  return { addedNodeIds, skippedForNodeCap }
+}
+
+async function buildBoundedGraph(
+  projectId: string,
+  options: GraphQueryOptions,
+): Promise<BoundedGraphData> {
+  const nodes = new Map<string, BoundedGraphNode>()
+  const edges = new Map<string, BoundedGraphEdge>()
+  const capReason: string[] = []
+
+  const seedLimit = options.limitNodes + 1
+  const seedResult = await fetchGraphSeedNodes(projectId, options, seedLimit)
+  for (const row of seedResult.rows.slice(0, options.limitNodes)) {
+    const node = graphNodeFromRow(row, '', 0)
+    if (node) upsertGraphNode(nodes, node)
+  }
+  if (seedResult.rows.length > options.limitNodes) {
+    capReason.push(`node cap ${options.limitNodes} reached while selecting seeds`)
+  }
+
+  if (options.focus) {
+    let frontier = Array.from(nodes.keys())
+    for (let depth = 1; depth <= options.depth && frontier.length > 0; depth += 1) {
+      if (edges.size >= options.limitEdges || nodes.size >= options.limitNodes) break
+
+      const edgeLimit = options.limitEdges - edges.size + 1
+      const edgeResult = await fetchGraphEdgesForFrontier(projectId, frontier, options, edgeLimit)
+      if (edgeResult.rows.length >= edgeLimit) {
+        capReason.push(`edge cap ${options.limitEdges} reached at depth ${depth}`)
+      }
+
+      const { addedNodeIds, skippedForNodeCap } = rowsToGraphEdges(
+        edgeResult.rows.slice(0, Math.max(edgeLimit - 1, 0)),
+        nodes,
+        edges,
+        options,
+        depth,
+      )
+      if (skippedForNodeCap) capReason.push(`node cap ${options.limitNodes} reached at depth ${depth}`)
+      frontier = Array.from(new Set(addedNodeIds))
+    }
+  } else {
+    const edgeLimit = options.limitEdges + 1
+    const edgeResult = await fetchGraphEdgesAmongNodes(projectId, Array.from(nodes.keys()), options, edgeLimit)
+    if (edgeResult.rows.length > options.limitEdges) {
+      capReason.push(`edge cap ${options.limitEdges} reached`)
+    }
+    const { skippedForNodeCap } = rowsToGraphEdges(
+      edgeResult.rows.slice(0, options.limitEdges),
+      nodes,
+      edges,
+      options,
+      1,
+    )
+    if (skippedForNodeCap) capReason.push(`node cap ${options.limitNodes} reached while linking nodes`)
+  }
+
+  const totalNodes = options.focus ? nodes.size : await countGraphNodes(projectId, options)
+  const totalEdges = options.focus || capReason.length > 0 ? null : edges.size
+  const truncated = capReason.length > 0
+
+  return {
+    repo: seedResult.repo,
+    nodes: Array.from(nodes.values()),
+    edges: Array.from(edges.values()),
+    visibleCounts: {
+      nodes: nodes.size,
+      edges: edges.size,
+    },
+    totalCounts: {
+      nodes: totalNodes,
+      edges: totalEdges,
+    },
+    truncated,
+    capReason,
+  }
+}
+
 async function queryProjectCypherRows(
   projectId: string,
   query: string,
@@ -2309,6 +2776,63 @@ intelRouter.get('/resources/project/:projectId/context', async (c) => {
     })
   } catch (error) {
     logger.error(`Project context resource failed: ${String(error)}`)
+    return c.json({ success: false, error: String(error) }, 500)
+  }
+})
+
+// ── Resource: bounded project graph slice for AI agents and Explorer UI ──
+intelRouter.get('/resources/project/:projectId/graph', async (c) => {
+  try {
+    const { projectId } = c.req.param()
+    const context = await resolveResourceContext(projectId)
+    if (!context) return c.json({ success: false, error: 'Project not found' }, 404)
+
+    const options = buildGraphOptions((name) => c.req.query(name))
+
+    if (!context.gitnexusRepo) {
+      return c.json({
+        success: true,
+        data: {
+          uri: `cortex://project/${context.project.id}/graph`,
+          project: buildProjectResourceSummary(context),
+          repo: null,
+          query: options,
+          nodes: [],
+          edges: [],
+          visibleCounts: { nodes: 0, edges: 0 },
+          totalCounts: { nodes: 0, edges: 0 },
+          truncated: false,
+          capReason: [],
+          hint: 'No GitNexus index found for this project yet.',
+        },
+      })
+    }
+
+    const graph = await buildBoundedGraph(context.project.id, options)
+    const data = {
+      uri: `cortex://project/${context.project.id}/graph`,
+      project: buildProjectResourceSummary(context),
+      query: options,
+      ...graph,
+      hint: graph.truncated
+        ? 'Result was capped. Narrow nodeTypes/edgeTypes/search/focus, or lower depth.'
+        : null,
+    }
+
+    if (options.format === 'ndjson') {
+      const records = [
+        { type: 'meta', data: { ...data, nodes: undefined, edges: undefined } },
+        ...data.nodes.map((node) => ({ type: 'node', data: node })),
+        ...data.edges.map((edge) => ({ type: 'edge', data: edge })),
+      ]
+      return c.text(records.map((record) => JSON.stringify(record)).join('\n'), 200, {
+        'Content-Type': 'application/x-ndjson; charset=utf-8',
+      })
+    }
+
+    return c.json({ success: true, data })
+  } catch (error) {
+    logger.error(`Bounded graph resource failed: ${String(error)}`)
     return c.json({ success: false, error: String(error) }, 500)
   }
 })

@@ -12,8 +12,10 @@
 
 0. **Call `cortex_session_start`** → registers session with Cortex Hub, returns project context
    ```
-   cortex_session_start({ repo: "<repo URL>", mode: "development" })
+   cortex_session_start({ repo: "<repo URL>", mode: "development", agentId: "<agent-id>" })
    ```
+   `agentId` is required by the live MCP schema. Use a stable lowercase client identifier such as `codex`, `claude-code`, `cursor`, or `antigravity`.
+   `mode` describes the work intent, not whether the deployed service is production. Use `development` for normal code changes/local repo work, `review` for review-only sessions, `onboarding` for setup, and `production` only for live production operations.
    Save the returned `sessionId` — needed for session close at end.
 1. **Read `STATE.md`** → current task & progress
 2. **Read `.cortex/project-profile.json`** → `verify` commands & fingerprint
@@ -38,6 +40,37 @@
 > These tools are the core value of Cortex Hub — skipping them defeats the purpose.
 > ℹ️ **Compliance is enforced automatically** — see [Compliance Enforcement](#compliance-enforcement) below.
 
+### Agent Cortex Workflow Ladder
+
+Use [.docs/guides/agent-cortex-workflow.md](.docs/guides/agent-cortex-workflow.md) as the canonical guide. Short form:
+
+```text
+session_start
+-> memory_search + knowledge_search
+-> project context resources
+-> graph_search / graph_slice
+-> symbol_brief / code_context
+-> code_read only selected files
+-> code_impact before edit
+-> detect_changes + verify
+-> quality_report
+-> memory_store / knowledge_store
+-> session_end
+```
+
+Until dedicated graph tools ship, use this fallback mapping:
+
+| Desired step | Current fallback |
+|--------------|------------------|
+| `graph_search` | `cortex_code_search`, then `cortex_cypher` for direct graph queries |
+| `graph_slice` | `cortex_code_tree` or focused `cortex_cypher` |
+| `symbol_brief` | `cortex_code_context`, plus `cortex_code_impact` when edit risk matters |
+| `file_neighbors` | `cortex_code_tree`, `cortex_code_context`, or `cortex_cypher` by file path |
+
+Token-saving rule: prefer returned context resources, bounded graph slices, and compact memory/knowledge snippets before reading raw source. Read raw code only for files likely to be edited or verified, and request raw memory/knowledge only when compact context hides necessary debugging detail.
+
+Store `cortex_memory_store` for branch-local discoveries, task handoffs, and session-specific debugging notes. Store `cortex_knowledge_store` for reusable decisions, endpoint/schema contracts, resolved bugs, deployment gotchas, and workflows future agents should reuse. Never store secrets, huge logs, large raw source files, obvious source facts, or unverified guesses without marking uncertainty.
+
 | When | Tool | What to Do |
 |------|------|------------|
 | **Searching code** | `cortex_code_search` | Use FIRST before `grep_search` or `find_by_name`. Queries GitNexus knowledge graph + Qdrant semantic search for actual source code snippets. Fall back to grep only if unavailable. |
@@ -56,12 +89,13 @@
 **Tool priority order for discovery (before grep/find):**
 1. `cortex_memory_search` → check if you or another agent already knows this
 2. `cortex_knowledge_search` → search the shared knowledge base
-3. `cortex_code_search` → search the indexed codebase (GitNexus AST + Qdrant semantic)
-4. `cortex_code_read` → read full source files from indexed repos
-5. `cortex_code_impact` → check blast radius before editing
-6. `cortex_detect_changes` → pre-commit risk analysis
-7. `cortex_cypher` → advanced graph queries (Cypher syntax)
-8. `grep_search` / `find_by_name` → only if Cortex tools are unavailable
+3. Project context resources returned by `cortex_session_start` / Context Fabric
+4. `cortex_code_search` or future `cortex_graph_search` → find candidate symbols/files
+5. `cortex_code_context`, `cortex_code_tree`, `cortex_cypher`, or future graph slice tools → inspect focused neighborhoods
+6. `cortex_code_read` → read selected raw source files only after the relevant files are known
+7. `cortex_code_impact` → check blast radius before editing core/shared code
+8. `cortex_detect_changes` → pre-commit risk analysis
+9. `grep_search` / `find_by_name` → only if Cortex tools are unavailable
 
 **Bug/Error Protocol (NEVER skip):**
 If you encounter a compilation error, runtime error, or failing test:

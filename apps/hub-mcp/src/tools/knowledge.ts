@@ -21,8 +21,12 @@ export function registerKnowledgeTools(server: McpServer, env: Env) {
       tags: z.array(z.string()).optional().describe('Tags for categorization (e.g., ["typescript", "patterns", "deployment"])'),
       projectId: z.string().optional().describe('Project ID to scope this knowledge to'),
       agentId: z.string().optional().describe('Contributing agent identifier'),
+      compressionMode: z
+        .enum(['technical_full', 'technical_ultra', 'wenyan_experimental'])
+        .optional()
+        .describe('Optional compaction mode when dashboard-api content compaction is enabled'),
     },
-    async ({ title, content, tags, projectId, agentId }) => {
+    async ({ title, content, tags, projectId, agentId, compressionMode }) => {
       try {
         const res = await apiCall(env, '/api/knowledge', {
           method: 'POST',
@@ -34,6 +38,7 @@ export function registerKnowledgeTools(server: McpServer, env: Env) {
             projectId,
             sourceAgentId: agentId,
             source: 'agent',
+            compressionMode,
           }),
         })
 
@@ -82,8 +87,16 @@ export function registerKnowledgeTools(server: McpServer, env: Env) {
       tags: z.array(z.string()).optional().describe('Filter by tags'),
       projectId: z.string().optional().describe('Filter by project ID'),
       limit: z.number().optional().describe('Maximum results (default: 5)'),
+      contentMode: z
+        .enum(['compact', 'raw'])
+        .optional()
+        .describe('Return compact agent snippets by default; use raw for full chunk text'),
+      includeRaw: z
+        .boolean()
+        .optional()
+        .describe('Include rawContent alongside compact snippets when available'),
     },
-    async ({ query, tags, projectId, limit }) => {
+    async ({ query, tags, projectId, limit, contentMode, includeRaw }) => {
       try {
         const res = await apiCall(env, '/api/knowledge/search', {
           method: 'POST',
@@ -93,6 +106,8 @@ export function registerKnowledgeTools(server: McpServer, env: Env) {
             tags,
             projectId,
             limit: limit ?? 5,
+            contentMode: contentMode ?? 'compact',
+            includeRaw: includeRaw ?? false,
           }),
         })
 

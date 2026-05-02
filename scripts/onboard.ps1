@@ -368,28 +368,60 @@ $agentRulesContent = @"
 <!-- cortex-hub:agent-rules -->
 ## Cortex Hub - MCP Tool Usage Guidelines
 
+### Agent Cortex Workflow Ladder
+Canonical guide: ``.docs/guides/agent-cortex-workflow.md``.
+
+````text
+session_start
+-> memory_search + knowledge_search
+-> project context resources
+-> graph_search / graph_slice
+-> symbol_brief / code_context
+-> code_read only selected files
+-> code_impact before edit
+-> detect_changes + verify
+-> quality_report
+-> memory_store / knowledge_store
+-> session_end
+````
+
+Until dedicated graph tools ship, use this fallback mapping:
+
+| Desired step | Current fallback |
+|--------------|------------------|
+| ``graph_search`` | ``cortex_code_search``, then ``cortex_cypher`` for direct graph queries |
+| ``graph_slice`` | ``cortex_code_tree`` or focused ``cortex_cypher`` |
+| ``symbol_brief`` | ``cortex_code_context``, plus ``cortex_code_impact`` when edit risk matters |
+| ``file_neighbors`` | ``cortex_code_tree``, ``cortex_code_context``, or ``cortex_cypher`` by file path |
+
+Token-saving rule: prefer returned context resources, bounded graph slices, and compact memory/knowledge snippets before reading raw source. Read raw code only for files likely to be edited or verified.
+
+Store ``cortex_memory_store`` for branch-local discoveries, task handoffs, and session-specific debugging notes. Store ``cortex_knowledge_store`` for reusable decisions, endpoint/schema contracts, resolved bugs, deployment gotchas, and workflows future agents should reuse. Never store secrets, huge logs, large raw source files, obvious source facts, or unverified guesses without marking uncertainty.
+
 ### Session Protocol
 1. **Start**: Call ``cortex_session_start`` with repo URL, agentId, mode
-2. **During**: Use Cortex tools BEFORE grep/find (priority: memory   knowledge   code_search   code_impact)
-3. **Before commit**: Run ``cortex_detect_changes`` for risk analysis
+2. **During**: Use Cortex tools BEFORE grep/find (priority: memory   knowledge   context resources   graph/code search   focused graph/context   selected code_read   impact)
+3. **Before commit/handoff**: Run ``cortex_detect_changes`` for risk analysis
 4. **End**: ``cortex_quality_report``   ``cortex_memory_store``   ``cortex_session_end``
 
 ### Tool Priority Order
 1. ``cortex_memory_search``   recall past decisions
 2. ``cortex_knowledge_search``   search shared knowledge
-3. ``cortex_code_search``   AST-aware code search
-4. ``cortex_code_impact``   blast radius before editing
-5. ``cortex_detect_changes``   pre-commit risk
-6. ``cortex_cypher``   graph queries
-7. ``cortex_list_repos``   find project IDs
-8. ``grep_search`` / ``find_by_name``   fallback only
+3. Context Fabric resources from ``cortex_session_start``   project/process/file hints
+4. ``cortex_code_search`` / future ``cortex_graph_search``   candidate symbols/files
+5. ``cortex_code_context`` / ``cortex_code_tree`` / ``cortex_cypher``   focused graph neighborhoods
+6. ``cortex_code_read``   selected raw files only
+7. ``cortex_code_impact``   blast radius before editing
+8. ``cortex_detect_changes``   pre-commit risk
+9. ``cortex_list_repos``   find project IDs
+10. ``grep_search`` / ``find_by_name``   fallback only
 
 ### Bug Protocol (MANDATORY)
 1. Search ``cortex_knowledge_search`` for the error first
 2. Fix the error
 3. If fix was non-obvious: ``cortex_knowledge_store`` to record it
 
-### Available Tools: 17
+### Available Tools
 | Tool | Purpose |
 |------|---------|
 | ``cortex_session_start`` | Start session, get context + unseen changes |
@@ -397,6 +429,8 @@ $agentRulesContent = @"
 | ``cortex_changes`` | Check for other agents' changes |
 | ``cortex_code_search`` | AST-aware semantic code search |
 | ``cortex_code_context`` | 360  symbol view (callers/callees/flows) |
+| ``cortex_code_read`` | Read selected raw source files from indexed repos |
+| ``cortex_code_tree`` | Focused file/tree context and graph-slice fallback |
 | ``cortex_code_impact`` | Blast radius analysis |
 | ``cortex_code_reindex`` | Re-index after push |
 | ``cortex_list_repos`` | List indexed repos with project mapping |

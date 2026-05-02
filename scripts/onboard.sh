@@ -1236,7 +1236,7 @@ fi
 # AGENTS.md is the PROJECT TEAM's file — we only append a reference line, never modify content.
 
 CORTEX_RULES_PATH="$CORTEX_DIR/agent-rules.md"
-CORTEX_RULES_VERSION="2"  # Bump when updating rules content
+CORTEX_RULES_VERSION="3"  # Bump when updating rules content
 CORTEX_RULES_REF='> 📋 **Cortex Hub rules:** See [.cortex/agent-rules.md](.cortex/agent-rules.md) for MCP tool usage guidelines.'
 CORTEX_REF_MARKER="<!-- cortex-hub:agent-rules -->"
 
@@ -1251,6 +1251,39 @@ cat > "$CORTEX_RULES_PATH" <<'RULESEOF'
 
 ---
 
+## Agent Cortex Workflow Ladder
+
+Canonical guide: `.docs/guides/agent-cortex-workflow.md`.
+
+```text
+session_start
+-> memory_search + knowledge_search
+-> project context resources
+-> graph_search / graph_slice
+-> symbol_brief / code_context
+-> code_read only selected files
+-> code_impact before edit
+-> detect_changes + verify
+-> quality_report
+-> memory_store / knowledge_store
+-> session_end
+```
+
+Until dedicated graph tools ship, use this fallback mapping:
+
+| Desired step | Current fallback |
+|--------------|------------------|
+| `graph_search` | `cortex_code_search`, then `cortex_cypher` for direct graph queries |
+| `graph_slice` | `cortex_code_tree` or focused `cortex_cypher` |
+| `symbol_brief` | `cortex_code_context`, plus `cortex_code_impact` when edit risk matters |
+| `file_neighbors` | `cortex_code_tree`, `cortex_code_context`, or `cortex_cypher` by file path |
+
+Token-saving rule: prefer returned context resources, bounded graph slices, and compact memory/knowledge snippets before reading raw source. Read raw code only for files likely to be edited or verified.
+
+Store `cortex_memory_store` for branch-local discoveries, task handoffs, and session-specific debugging notes. Store `cortex_knowledge_store` for reusable decisions, endpoint/schema contracts, resolved bugs, deployment gotchas, and workflows future agents should reuse. Never store secrets, huge logs, large raw source files, obvious source facts, or unverified guesses without marking uncertainty.
+
+---
+
 ## During Session — Cortex Tool Integration (MANDATORY)
 
 > ⚠️ **Agents MUST use Cortex tools throughout the session, not just at start/end.**
@@ -1259,7 +1292,11 @@ cat > "$CORTEX_RULES_PATH" <<'RULESEOF'
 | When | Tool | What to Do |
 |------|------|------------|
 | **Searching code** | `cortex_code_search` | Use FIRST before grep/find. Queries GitNexus AST graph. Fall back to grep only if unavailable. |
+| **Inspecting focused graph context** | `cortex_code_tree` / `cortex_cypher` | Use for bounded graph slices and file neighbors before broad raw reads. |
+| **Understanding a symbol** | `cortex_code_context` | Get callers, callees, imports, and process participation before editing. |
+| **Reading source files** | `cortex_code_read` | Read selected raw files only after Cortex narrows the target set. |
 | **Before editing core code** | `cortex_code_impact` | Run blast radius analysis on the symbol/file you plan to change. |
+| **Before commit** | `cortex_detect_changes` | Detect uncommitted changes and risk before committing. |
 | **Searching shared knowledge** | `cortex_knowledge_search` | Search team knowledge base for patterns, solutions, documented decisions. Supports tag/project filtering. |
 | **Recalling past context** | `cortex_memory_search` | Search agent memories for past decisions, debugging findings. |
 | **Contributing knowledge** | `cortex_knowledge_store` | Store reusable patterns, resolved issues into shared knowledge base. Include tags. |
@@ -1270,9 +1307,13 @@ cat > "$CORTEX_RULES_PATH" <<'RULESEOF'
 
 1. `cortex_memory_search` → check if you or another agent already knows this
 2. `cortex_knowledge_search` → search shared knowledge base
-3. `cortex_code_search` → search indexed codebase (GitNexus AST graph)
-4. `cortex_code_impact` → check blast radius before editing
-5. `grep_search` / `find_by_name` → fallback only
+3. Project context resources returned by `cortex_session_start` / Context Fabric
+4. `cortex_code_search` or future `cortex_graph_search` → find candidate symbols/files
+5. `cortex_code_context`, `cortex_code_tree`, `cortex_cypher`, or future graph slice tools → inspect focused neighborhoods
+6. `cortex_code_read` → read selected raw source files only after the relevant files are known
+7. `cortex_code_impact` → check blast radius before editing core/shared code
+8. `cortex_detect_changes` → pre-commit risk analysis
+9. `grep_search` / `find_by_name` → fallback only
 
 ---
 
@@ -1285,10 +1326,11 @@ cat > "$CORTEX_RULES_PATH" <<'RULESEOF'
 
 ### At Session End
 1. Run verify commands from `project-profile.json`
-2. Call `cortex_quality_report` with gate results
-3. Call `cortex_memory_store` for any new knowledge learned
-4. Update `STATE.md` with progress
-5. Commit with conventional prefix: `feat:`, `fix:`, `docs:`, `chore:`
+2. Call `cortex_detect_changes` before commit or handoff
+3. Call `cortex_quality_report` with gate results
+4. Call `cortex_memory_store` / `cortex_knowledge_store` for useful new findings
+5. Update `STATE.md` with progress
+6. Commit with conventional prefix: `feat:`, `fix:`, `docs:`, `chore:`
 RULESEOF
 
 # Replace version placeholder

@@ -27,12 +27,16 @@ export function registerMemoryTools(server: McpServer, env: Env) {
         .record(z.string(), z.unknown())
         .optional()
         .describe('Optional metadata tags'),
+      compressionMode: z
+        .enum(['technical_full', 'technical_ultra', 'wenyan_experimental'])
+        .optional()
+        .describe('Optional compaction mode when dashboard-api content compaction is enabled'),
       shared_metadata: z
         .record(z.string(), z.unknown())
         .optional()
         .describe('Canonical shared metadata: projectId, branch, filesTouched, symbolsTouched, processesAffected, clustersTouched, resourceUris'),
     },
-    async ({ content, agentId, projectId, branch, metadata, shared_metadata }) => {
+    async ({ content, agentId, projectId, branch, metadata, compressionMode, shared_metadata }) => {
       try {
         // Build scoped user_id for branch isolation
         let userId = agentId ?? 'default'
@@ -51,6 +55,7 @@ export function registerMemoryTools(server: McpServer, env: Env) {
           ...(metadata ?? {}),
           ...(projectId ? { project_id: projectId } : {}),
           ...(branch ? { branch } : {}),
+          ...(compressionMode ? { compressionMode } : {}),
           ...(normalizedSharedMetadata ? { shared_metadata: normalizedSharedMetadata } : {}),
         }
 
@@ -115,8 +120,16 @@ export function registerMemoryTools(server: McpServer, env: Env) {
       projectId: z.string().optional().describe('Project ID to search within'),
       branch: z.string().optional().describe('Git branch to search (with fallback to project-level)'),
       limit: z.number().optional().describe('Max results (default: 5)'),
+      contentMode: z
+        .enum(['compact', 'raw'])
+        .optional()
+        .describe('Return compact agent context by default; use raw only when full source memory is needed'),
+      includeRaw: z
+        .boolean()
+        .optional()
+        .describe('Include raw_content alongside compact memory when available'),
     },
-    async ({ query, agentId, projectId, branch, limit }) => {
+    async ({ query, agentId, projectId, branch, limit, contentMode, includeRaw }) => {
       try {
         const maxResults = limit ?? 5
 
@@ -144,6 +157,8 @@ export function registerMemoryTools(server: McpServer, env: Env) {
               query,
               userId,
               limit: remaining,
+              contentMode: contentMode ?? 'compact',
+              includeRaw: includeRaw ?? false,
             }),
           })
 

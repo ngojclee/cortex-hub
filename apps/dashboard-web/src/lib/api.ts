@@ -655,6 +655,140 @@ export async function getIntelProjectCrossLinks(projectId: string) {
   }>(`/api/intel/resources/project/${projectId}/cross-links`)
 }
 
+export type IntelGraphNodeType = 'File' | 'Class' | 'Function' | 'Method' | 'Interface' | 'Module' | 'Process' | 'Knowledge'
+export type IntelGraphEdgeType = 'CALLS' | 'IMPORTS' | 'EXTENDS' | 'IMPLEMENTS' | 'ACCESSES' | 'CONTAINS' | 'REFERENCES'
+
+export interface IntelGraphNode {
+  id: string
+  label: string
+  type: IntelGraphNodeType | string
+  filePath?: string | null
+  lineStart?: number | null
+  lineEnd?: number | null
+  community?: string | null
+  degree?: number | null
+  importance?: number | null
+  status?: string | null
+  summary?: string | null
+  metadata?: Record<string, unknown> | null
+}
+
+export interface IntelGraphEdge {
+  id: string
+  source: string
+  target: string
+  type: IntelGraphEdgeType | string
+  weight?: number | null
+  label?: string | null
+  metadata?: Record<string, unknown> | null
+}
+
+export interface IntelGraphSlice {
+  uri: string
+  projectId: string
+  query: {
+    nodeTypes: string[]
+    edgeTypes: string[]
+    focus: string | null
+    depth: number
+    community: string | null
+    search: string | null
+    limitNodes: number
+    limitEdges: number
+    direction?: string
+    format?: string
+  }
+  nodes: IntelGraphNode[]
+  edges: IntelGraphEdge[]
+  visibleCounts: { nodes: number; edges: number }
+  totalCounts: { nodes: number | null; edges: number | null }
+  truncated: boolean
+  capReason: string | null
+}
+
+type RawIntelGraphNode = Omit<IntelGraphNode, 'label' | 'lineStart' | 'lineEnd'> & {
+  label?: string | null
+  name?: string | null
+  lineStart?: number | null
+  lineEnd?: number | null
+  startLine?: number | null
+  endLine?: number | null
+  heuristicLabel?: string | null
+  depth?: number | null
+}
+
+type RawIntelGraphEdge = IntelGraphEdge & {
+  reason?: string | null
+  step?: number | null
+  confidence?: number | null
+}
+
+type RawIntelGraphSlice = Omit<IntelGraphSlice, 'projectId' | 'nodes' | 'edges' | 'totalCounts' | 'capReason'> & {
+  projectId?: string
+  nodes: RawIntelGraphNode[]
+  edges: RawIntelGraphEdge[]
+  totalCounts: { nodes: number | null; edges: number | null }
+  capReason?: string | string[] | null
+}
+
+function normalizeIntelGraphSlice(data: RawIntelGraphSlice, projectId: string): IntelGraphSlice {
+  return {
+    ...data,
+    projectId: data.projectId ?? projectId,
+    totalCounts: {
+      nodes: data.totalCounts?.nodes ?? null,
+      edges: data.totalCounts?.edges ?? null,
+    },
+    capReason: Array.isArray(data.capReason)
+      ? data.capReason.filter(Boolean).join('; ') || null
+      : data.capReason ?? null,
+    nodes: data.nodes.map((node) => {
+      const label = node.label ?? node.name ?? node.heuristicLabel ?? node.id
+      return {
+        ...node,
+        label,
+        lineStart: node.lineStart ?? node.startLine ?? null,
+        lineEnd: node.lineEnd ?? node.endLine ?? null,
+        summary: node.summary ?? node.heuristicLabel ?? null,
+      }
+    }),
+    edges: data.edges.map((edge) => ({
+      ...edge,
+      label: edge.label ?? edge.reason ?? edge.type,
+      metadata: edge.metadata ?? null,
+    })),
+  }
+}
+export async function getIntelProjectGraph(projectId: string, opts?: {
+  nodeTypes?: string[]
+  edgeTypes?: string[]
+  focus?: string
+  depth?: number
+  community?: string
+  search?: string
+  limitNodes?: number
+  limitEdges?: number
+}) {
+  const qs = new URLSearchParams()
+  if (opts?.nodeTypes?.length) qs.set('nodeTypes', opts.nodeTypes.join(','))
+  if (opts?.edgeTypes?.length) qs.set('edgeTypes', opts.edgeTypes.join(','))
+  if (opts?.focus) qs.set('focus', opts.focus)
+  if (opts?.depth) qs.set('depth', String(opts.depth))
+  if (opts?.community) qs.set('community', opts.community)
+  if (opts?.search) qs.set('search', opts.search)
+  if (opts?.limitNodes) qs.set('limitNodes', String(opts.limitNodes))
+  if (opts?.limitEdges) qs.set('limitEdges', String(opts.limitEdges))
+  const query = qs.toString()
+  const response = await apiFetch<{
+    success: boolean
+    data: RawIntelGraphSlice
+  }>(`/api/intel/resources/project/${projectId}/graph${query ? '?' + query : ''}`)
+
+  return {
+    ...response,
+    data: normalizeIntelGraphSlice(response.data, projectId),
+  }
+}
 export async function getIntelProjectSymbolTree(
   projectId: string,
   name: string,
@@ -1268,4 +1402,3 @@ export async function revokeSession(id: string) {
 export async function revokeAllSessions() {
   return apiFetch<{ success: boolean; revokedCount: number }>('/api/auth/sessions', { method: 'DELETE' })
 }
-

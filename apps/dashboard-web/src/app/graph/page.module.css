@@ -101,6 +101,35 @@
   color: #fbbf24;
 }
 
+
+.modeSwitch {
+  display: inline-flex;
+  gap: 4px;
+  margin-bottom: var(--space-5);
+  padding: 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+.modeButton {
+  min-width: 124px;
+  min-height: 38px;
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.modeButtonActive {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+}
 .errorBanner {
   margin-bottom: var(--space-5);
   padding: var(--space-4);

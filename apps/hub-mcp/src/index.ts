@@ -9,6 +9,7 @@ import { registerCodeResources } from './resources/code.js'
 import { registerCodePrompts } from './prompts/code.js'
 import { registerHealthTools } from './tools/health.js'
 import { registerIndexingTools } from './tools/indexing.js'
+import { registerGraphTools } from './tools/graph.js'
 import { registerKnowledgeTools } from './tools/knowledge.js'
 import { registerMemoryTools } from './tools/memory.js'
 import { registerQualityTools } from './tools/quality.js'
@@ -187,6 +188,10 @@ app.get('/', (c) => {
       'cortex_cypher',
       'cortex_detect_changes',
       'cortex_code_read',
+      'cortex_graph_search',
+      'cortex_graph_slice',
+      'cortex_file_neighbors',
+      'cortex_symbol_brief',
       'cortex_quality_report',
       'cortex_session_start',
       'cortex_session_end',
@@ -226,6 +231,7 @@ function createMcpServer(env: Env) {
   registerMemoryTools(server, env)
   registerKnowledgeTools(server, env)
   registerCodeTools(server, env)
+  registerGraphTools(server, env)
   registerIndexingTools(server, env)
   registerQualityTools(server, env)
   registerSessionTools(server, env)

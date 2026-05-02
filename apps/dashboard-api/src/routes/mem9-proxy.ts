@@ -16,6 +16,14 @@ import { normalizeSharedProjectMetadata } from '@cortex/shared-types'
 import { db } from '../db/client.js'
 import { resolveEmbeddingConfig } from '../services/embedding-config.js'
 import { ensureProjectExists } from '../db/utils.js'
+import {
+  buildContentContract,
+  type ContentContract,
+  isContentCompactionEnabled,
+  normalizeContentMode,
+  resolveCompactionMode,
+  selectContentForCaller,
+} from '../services/content-compactor.js'
 
 export const mem9ProxyRouter = new Hono()
 
@@ -156,6 +164,39 @@ function getEmbedder(): Embedder {
   return embedderInstance
 }
 
+async function syncMemoryContentPayload(
+  memoryContracts: Array<{ memoryId: string; contentContract: ContentContract }>,
+): Promise<void> {
+  if (memoryContracts.length === 0) return
+
+  const config = getMem9Config()
+  const { VectorStore } = await import('@cortex/shared-mem9')
+  const store = new VectorStore(config.vectorStore)
+  const embedder = getEmbedder()
+
+  for (const { memoryId, contentContract } of memoryContracts) {
+    const existing = await store.get(memoryId)
+    const existingPayload = existing?.payload ?? {}
+    const existingMetadata = existing?.payload['metadata'] && typeof existing.payload['metadata'] === 'object'
+      ? existing.payload['metadata'] as Record<string, unknown>
+      : {}
+
+    const vector = await embedder.embed(contentContract.embedding_text)
+    await store.update(memoryId, vector, {
+      ...existingPayload,
+      raw_content: contentContract.raw_content,
+      compact_content: contentContract.compact_content,
+      facts: contentContract.facts,
+      embedding_text: contentContract.embedding_text,
+      compression: contentContract.compression,
+      metadata: {
+        ...existingMetadata,
+        content_contract: contentContract,
+      },
+    })
+  }
+}
+
 /**
  * POST /store — Store a memory
  * Body: { messages, userId, agentId?, metadata? }
@@ -178,13 +219,59 @@ mem9ProxyRouter.post('/store', async (c) => {
       branch: metadata?.branch,
     })
 
-    const normalizedMetadata = {
+    const normalizedMetadata: Record<string, unknown> = {
       ...(metadata ?? {}),
       ...(normalizedSharedMetadata ? { shared_metadata: normalizedSharedMetadata } : {}),
     }
 
+    const contentText = Array.isArray(messages)
+      ? messages
+          .map((message: unknown) => {
+            if (!message || typeof message !== 'object') return ''
+            const content = (message as { content?: unknown }).content
+            return typeof content === 'string' ? content : ''
+          })
+          .filter(Boolean)
+          .join('\n')
+      : ''
+    const compressionMode = resolveCompactionMode(
+      normalizedMetadata['compressionMode'] ?? normalizedMetadata['compression_mode'],
+    )
+    const contentContract = buildContentContract(contentText, {
+      enabled: isContentCompactionEnabled(),
+      mode: compressionMode,
+    })
+
+    normalizedMetadata.content_contract = {
+      raw_content: contentContract.raw_content,
+      compact_content: contentContract.compact_content,
+      facts: contentContract.facts,
+      embedding_text: contentContract.embedding_text,
+      compression: contentContract.compression,
+    }
+
     const mem9 = getMem9()
     const result = await mem9.add({ messages, userId, agentId, metadata: normalizedMetadata })
+
+    const changedMemoryContracts = result.events
+      .filter((event) => event.type === 'ADD' || event.type === 'UPDATE')
+      .map((event) => {
+        const memoryText = event.newMemory ?? ''
+        return {
+          memoryId: event.memoryId,
+          contentContract: buildContentContract(memoryText, {
+            enabled: isContentCompactionEnabled(),
+            mode: compressionMode,
+          }),
+        }
+      })
+      .filter((event) => event.memoryId)
+
+    try {
+      await syncMemoryContentPayload(changedMemoryContracts)
+    } catch (payloadError) {
+      console.warn('[mem9-proxy] content payload sync warning:', payloadError)
+    }
 
     c.header('X-Cortex-Compute-Tokens', String(result.tokensUsed || 0))
     c.header('X-Cortex-Compute-Model', activeLlmModel)
@@ -193,6 +280,13 @@ mem9ProxyRouter.post('/store', async (c) => {
       success: true,
       events: result.events,
       tokensUsed: result.tokensUsed,
+      content: {
+        raw_content: contentContract.raw_content,
+        compact_content: contentContract.compact_content,
+        facts: contentContract.facts,
+        embedding_text: contentContract.embedding_text,
+        compression: contentContract.compression,
+      },
     })
   } catch (error) {
     console.error('[mem9-proxy] store error:', error)
@@ -207,7 +301,7 @@ mem9ProxyRouter.post('/store', async (c) => {
 mem9ProxyRouter.post('/search', async (c) => {
   try {
     const body = await c.req.json()
-    const { query, userId, agentId, limit } = body
+    const { query, userId, agentId, limit, includeRaw } = body
 
     if (!query || !userId) {
       return c.json({ error: 'query and userId are required' }, 400)
@@ -219,8 +313,34 @@ mem9ProxyRouter.post('/search', async (c) => {
     c.header('X-Cortex-Compute-Tokens', String(result.tokensUsed || 0))
     c.header('X-Cortex-Compute-Model', activeLlmModel)
 
+    const contentMode = normalizeContentMode(body.contentMode ?? body.content_mode)
+    const memories = result.memories.map((memory) => {
+      const metadata = memory.metadata ?? {}
+      const contentContract = metadata['content_contract'] && typeof metadata['content_contract'] === 'object'
+        ? metadata['content_contract'] as Record<string, unknown>
+        : undefined
+
+      if (!contentContract) return memory
+
+      return {
+        ...memory,
+        rawMemory: includeRaw ? contentContract['raw_content'] : undefined,
+        memory: String(
+          selectContentForCaller(contentContract, {
+            includeRaw: Boolean(includeRaw),
+            contentMode,
+            fallbackKey: 'memory',
+          }).memory ?? memory.memory,
+        ),
+        contentMode: includeRaw || contentMode === 'raw' ? 'raw' : 'compact',
+        compactMemory: contentContract['compact_content'],
+        facts: contentContract['facts'],
+        compression: contentContract['compression'],
+      }
+    })
+
     return c.json({
-      memories: result.memories,
+      memories,
       tokensUsed: result.tokensUsed,
     })
   } catch (error) {
@@ -295,6 +415,8 @@ mem9ProxyRouter.get('/list', async (c) => {
     const { VectorStore } = await import('@cortex/shared-mem9')
     const store = new VectorStore(config.vectorStore)
 
+    const includeRaw = c.req.query('includeRaw') === 'true'
+    const contentMode = normalizeContentMode(c.req.query('contentMode') ?? c.req.query('content_mode'))
     const points = await store.list(filter, limit)
     
     // Sort by createdAt descending implicitly since payload has it
@@ -304,7 +426,31 @@ mem9ProxyRouter.get('/list', async (c) => {
       return tb.localeCompare(ta)
     })
 
-    return c.json({ memories: points, total: points.length })
+    return c.json({
+      memories: points.map((point) => {
+        const metadata = point.payload['metadata'] && typeof point.payload['metadata'] === 'object'
+          ? point.payload['metadata'] as Record<string, unknown>
+          : undefined
+        const contentContract = metadata?.['content_contract'] && typeof metadata['content_contract'] === 'object'
+          ? metadata['content_contract'] as Record<string, unknown>
+          : undefined
+
+        if (!contentContract) return point
+
+        return {
+          ...point,
+          payload: {
+            ...point.payload,
+            ...selectContentForCaller(contentContract, {
+              includeRaw,
+              contentMode,
+              fallbackKey: 'memory',
+            }),
+          },
+        }
+      }),
+      total: points.length,
+    })
   } catch (error) {
     console.error('[mem9-proxy] list error:', error)
     return c.json({ error: String(error) }, 500)

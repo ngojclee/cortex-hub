@@ -14,6 +14,13 @@ import { createLogger } from '@cortex/shared-utils'
 import { resolveEmbeddingConfig } from '../services/embedding-config.js'
 import { ensureProjectExists, normalizeProjectReference } from '../db/utils.js'
 import { requireAdminAccess } from './admin-helpers.js'
+import {
+  buildContentContract,
+  isContentCompactionEnabled,
+  normalizeContentMode,
+  resolveCompactionMode,
+  selectContentForCaller,
+} from '../services/content-compactor.js'
 
 const logger = createLogger('knowledge')
 
@@ -139,6 +146,8 @@ knowledgeRouter.post('/', async (c) => {
       project_id?: string
       sourceAgentId?: string
       source?: string
+      compressionMode?: string
+      compression_mode?: string
     }
 
     if (!title || !content) {
@@ -147,7 +156,11 @@ knowledgeRouter.post('/', async (c) => {
 
     const docId = `kdoc-${randomUUID().slice(0, 8)}`
     const tagList = tags ?? []
-    const contentPreview = content.slice(0, 500)
+    const documentContract = buildContentContract(content, {
+      enabled: isContentCompactionEnabled(),
+      mode: resolveCompactionMode(body.compressionMode ?? body.compression_mode),
+    })
+    const contentPreview = documentContract.compact_content.slice(0, 500)
 
     // Normalize project_id: resolve proj-* to slug, and lowercase, and auto-register project
     let normalizedProjectId = (body.projectId ?? body.project_id) ?? null
@@ -184,15 +197,24 @@ knowledgeRouter.post('/', async (c) => {
     for (let i = 0; i < chunks.length; i++) {
       const chunkId = randomUUID()
       const chunkContent = chunks[i]!
+      const chunkContract = buildContentContract(chunkContent, {
+        enabled: isContentCompactionEnabled(),
+        mode: resolveCompactionMode(body.compressionMode ?? body.compression_mode),
+      })
 
       try {
-        const vector = await embedder.embed(chunkContent)
+        const vector = await embedder.embed(chunkContract.embedding_text)
         await vectorStore.upsert(chunkId, vector, {
           document_id: docId,
           chunk_index: i,
           tags: tagList,
           project_id: normalizedProjectId ?? '',
-          content: chunkContent.slice(0, 2000),
+          content: chunkContract.compact_content.slice(0, 2000),
+          raw_content: chunkContract.raw_content,
+          compact_content: chunkContract.compact_content,
+          facts: chunkContract.facts,
+          embedding_text: chunkContract.embedding_text,
+          compression: chunkContract.compression,
           title,
         })
 
@@ -416,6 +438,10 @@ knowledgeRouter.post('/search', async (c) => {
       projectId?: string
       project_id?: string
       limit?: number
+      includeRaw?: boolean
+      include_raw?: boolean
+      contentMode?: string
+      content_mode?: string
     }
 
     if (!query) return c.json({ error: 'query is required' }, 400)
@@ -436,6 +462,8 @@ knowledgeRouter.post('/search', async (c) => {
     }
 
     const searchLimit = limit ?? 10
+    const includeRaw = Boolean(body.includeRaw ?? body.include_raw)
+    const contentMode = normalizeContentMode(body.contentMode ?? body.content_mode)
 
     const res = await fetch(`${QDRANT_URL}/collections/${COLLECTION}/points/search`, {
       method: 'POST',
@@ -463,10 +491,20 @@ knowledgeRouter.post('/search', async (c) => {
     const results = (data.result ?? []).map((hit) => {
       const docId = hit.payload?.document_id as string | undefined
       if (docId) docIds.add(docId)
+      const selectedContent = selectContentForCaller(hit.payload ?? {}, {
+        includeRaw,
+        contentMode,
+        fallbackKey: 'content',
+      })
       return {
         score: hit.score,
         chunkId: hit.id,
-        content: hit.payload?.content,
+        content: selectedContent.content,
+        rawContent: includeRaw ? selectedContent.raw_content : undefined,
+        compactContent: selectedContent.compact_content,
+        contentMode: selectedContent.contentMode,
+        facts: selectedContent.facts,
+        compression: selectedContent.compression,
         documentId: docId,
         title: hit.payload?.title,
         chunkIndex: hit.payload?.chunk_index,

@@ -23,6 +23,7 @@
 - [x] Project cleanup flow now supports preview/apply for umbrella/placeholder normalization, including clearing stale `indexed_at` / `indexed_symbols` hints.
 - [x] Auth/session hardening: fixed dashboard login revoke 500 by allowing `auth_requests.status='revoked'` with a migration for existing SQLite DBs, and fixed MCP Bearer auth routing for `/api/sessions`, `/api/metrics`, and `/api/webhooks` so `cortex_session_start` no longer falls through to dashboard session validation.
 - [x] Internal header hardening: percent-encode Unicode-bearing MCP headers before service-to-service fetches and decode them in dashboard-api so API key labels or client metadata with non-ASCII characters do not crash Node fetch with `ByteString` errors.
+- [x] AI context upgrade round: added Agent Cortex Workflow Ladder docs/rules, bounded graph API + MCP graph tools, `/graph` Explorer mode with Sigma/graphology, and flag-gated raw+compact memory/knowledge contract. Verification: build/typecheck/lint/test pass locally; compaction remains disabled by default pending live benchmark.
 - [x] Build ✅ | Typecheck ✅ | Lint ✅ | Quality: A (100/100)
 
 ## Architecture — 2-Service Model

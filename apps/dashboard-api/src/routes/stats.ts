@@ -1,11 +1,47 @@
 import { Hono } from 'hono'
+import { request } from 'node:http'
 import { db } from '../db/client.js'
 import { normalizeSharedProjectMetadata } from '@cortex/shared-types'
 
 export const statsRouter = new Hono()
 
 const QDRANT_URL = () => process.env['QDRANT_URL'] || 'http://qdrant:6333'
+const RESTARTABLE_DOCKER_SERVICES = [
+  'cortex-llm-proxy',
+  'cortex-qdrant',
+  'cortex-gitnexus',
+] as const
 
+function restartDockerContainer(containerName: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const req = request({
+      socketPath: '/var/run/docker.sock',
+      method: 'POST',
+      path: `/containers/${encodeURIComponent(containerName)}/restart?t=10`,
+      timeout: 30_000,
+    }, (res) => {
+      let body = ''
+      res.setEncoding('utf8')
+      res.on('data', (chunk) => { body += chunk })
+      res.on('end', () => {
+        if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+          resolve()
+          return
+        }
+
+        reject(new Error(
+          `Docker restart failed (${res.statusCode ?? 'unknown'}): ${body || res.statusMessage || 'no response body'}`,
+        ))
+      })
+    })
+
+    req.on('timeout', () => {
+      req.destroy(new Error('Docker restart timed out'))
+    })
+    req.on('error', reject)
+    req.end()
+  })
+}
 
 // ── Dashboard Stats (real data) ──
 statsRouter.get('/overview', async (c) => {
@@ -327,24 +363,20 @@ statsRouter.post('/budget', async (c) => {
 // ── Admin: Restart Docker service ──
 statsRouter.post('/admin/restart/:service', async (c) => {
   const service = c.req.param('service')
-  const allowed = ['cortex-llm-proxy', 'cortex-qdrant']
+  const allowed: string[] = [...RESTARTABLE_DOCKER_SERVICES]
 
   if (!allowed.includes(service)) {
     return c.json({ error: `Cannot restart "${service}". Allowed: ${allowed.join(', ')}` }, 400)
   }
 
   try {
-    const { exec } = await import('child_process')
-    const { promisify } = await import('util')
-    const execAsync = promisify(exec)
-
-    await execAsync(`docker restart ${service}`, { timeout: 30000 })
+    await restartDockerContainer(service)
     return c.json({ success: true, service, message: `${service} restarted` })
   } catch (err) {
-    return c.json({ error: `Failed to restart ${service}`, details: String(err) }, 500)
+    const details = err instanceof Error ? err.message : String(err)
+    return c.json({ error: `Failed to restart ${service}: ${details}`, details }, 500)
   }
 })
-
 // ── Telemetry: Log MCP Tool Queries ──
 statsRouter.post('/query-log', async (c) => {
   try {

@@ -16,6 +16,7 @@ const navItems = [
   { href: '/keys', label: 'API Keys', icon: '⚿' },
   { href: '/providers', label: 'LLM Providers', icon: '⬡' },
   { href: '/usage', label: 'Usage', icon: '📊' },
+  { href: '/ops', label: 'Ops', icon: '⌁' },
   { href: '/quality', label: 'Quality', icon: '✦' },
   { href: '/sessions', label: 'Sessions', icon: '⇄' },
   { href: '/settings', label: 'Settings', icon: '⚙' },

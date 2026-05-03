@@ -1427,12 +1427,32 @@ export interface SystemMetrics {
     name: string
     status: string
     cpu: string
+    cpuPercent: number
     memory: string
     memoryRaw: number
     memoryLimit: number
     memoryPercent: number
     uptime: string
     image: string
+  }>
+  indexJobs: Array<{
+    id: string
+    projectId: string
+    projectName: string
+    branch: string
+    status: string
+    progress: number
+    totalFiles: number
+    symbolsFound: number
+    mem9Status: string | null
+    mem9Chunks: number
+    docsKnowledgeStatus: string | null
+    docsKnowledgeCount: number
+    startedAt: string | null
+    completedAt: string | null
+    createdAt: string
+    error: string | null
+    active: boolean
   }>
 }
 

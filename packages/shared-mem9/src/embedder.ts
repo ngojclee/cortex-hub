@@ -140,7 +140,23 @@ export class Embedder {
     const base = baseUrl.replace(/\/+$/, '')
     const candidates = [`${base}/embeddings`]
     if (!/\/v1$/i.test(base)) candidates.push(`${base}/v1/embeddings`)
+    candidates.push(`${base.replace(/\/v1$/i, '')}/embed`)
     return [...new Set(candidates)]
+  }
+
+  private parseEmbeddingResponse(data: unknown): number[] | undefined {
+    if (data && typeof data === 'object') {
+      const obj = data as Record<string, unknown>
+      const openAIEmbedding = (obj['data'] as Array<{ embedding?: number[] }> | undefined)?.[0]?.embedding
+      if (openAIEmbedding?.length) return openAIEmbedding
+
+      const directEmbedding = obj['embedding']
+      if (Array.isArray(directEmbedding) && typeof directEmbedding[0] === 'number') return directEmbedding as number[]
+      if (Array.isArray(directEmbedding) && Array.isArray(directEmbedding[0])) return directEmbedding[0] as number[]
+    }
+    if (Array.isArray(data) && typeof data[0] === 'number') return data as number[]
+    if (Array.isArray(data) && Array.isArray(data[0])) return data[0] as number[]
+    return undefined
   }
 
   /* ── Gemini native API ───────────────────────────────── */
@@ -187,14 +203,12 @@ export class Embedder {
       })
 
       if (res.ok) {
-        const data = (await res.json()) as {
-          data: Array<{ embedding: number[] }>
-        }
-        const first = data.data[0]
-        if (!first) {
+        const data = await res.json()
+        const vector = this.parseEmbeddingResponse(data)
+        if (!vector?.length) {
           throw new Error('OpenAI embedding returned empty data array')
         }
-        return first.embedding
+        return vector
       }
 
       lastStatus = res.status

@@ -425,6 +425,9 @@ function AddProviderDialog({
   const [selectedChatModel, setSelectedChatModel] = useState('')
   const [selectedEmbedModel, setSelectedEmbedModel] = useState('')
 
+  const resolvedEmbedModel = selectedEmbedModel || (selectedType.embeddingOnly ? manualEmbedModel.trim() : '')
+  const canSaveManualEmbedding = selectedType.embeddingOnly && name.trim() && apiBase.trim() && manualEmbedModel.trim()
+
   const handleTypeChange = (typeId: string) => {
     const typeDef = PROVIDER_TYPES.find((t) => t.id === typeId)
     if (!typeDef) return
@@ -481,11 +484,12 @@ function AddProviderDialog({
     setStep('saving')
     try {
       const capabilities = selectedChatModel ? ['chat'] : []
-      if (selectedEmbedModel) capabilities.push('embedding')
+      if (resolvedEmbedModel) capabilities.push('embedding')
       if (capabilities.length === 0 && selectedType.embeddingOnly) capabilities.push('embedding')
       const modelList = [
         ...(testResult?.chatModels ?? []),
         ...(testResult?.embedModels ?? []),
+        ...(resolvedEmbedModel ? [resolvedEmbedModel] : []),
       ]
 
       const res = await fetch(`${config.api.base}/api/accounts`, {
@@ -495,7 +499,7 @@ function AddProviderDialog({
           name,
           type: selectedType.id,
           authType: selectedType.authType,
-          apiBase,
+          apiBase: apiBase.trim(),
           apiKey: selectedType.authType === 'oauth' ? null : apiKey.trim(),
           capabilities,
           models: [...new Set(modelList)],
@@ -687,6 +691,16 @@ function AddProviderDialog({
 
             <div className={styles.dialogActions}>
               <button className="btn btn-secondary btn-sm" onClick={onClose}>Cancel</button>
+              {selectedType.embeddingOnly && (
+                <button
+                  className="btn btn-secondary btn-sm"
+                  disabled={!canSaveManualEmbedding || step === 'testing'}
+                  onClick={handleSave}
+                  title="Save this provider without requiring the live probe to pass"
+                >
+                  Save without test
+                </button>
+              )}
               <button
                 className="btn btn-primary btn-sm"
                 disabled={!name.trim() || step === 'testing' || requiresApiKey && !apiKey.trim() || selectedType.embeddingOnly && !manualEmbedModel.trim()}

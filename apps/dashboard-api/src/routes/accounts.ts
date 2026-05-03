@@ -71,7 +71,23 @@ function embeddingEndpointCandidates(apiBase: string): string[] {
   const base = apiBase.replace(/\/+$/, '')
   const candidates = [`${base}/embeddings`]
   if (!/\/v1$/i.test(base)) candidates.push(`${base}/v1/embeddings`)
+  candidates.push(`${base.replace(/\/v1$/i, '')}/embed`)
   return [...new Set(candidates)]
+}
+
+function parseEmbeddingResponse(data: unknown): number[] | undefined {
+  if (data && typeof data === 'object') {
+    const obj = data as Record<string, unknown>
+    const openAIEmbedding = (obj['data'] as Array<{ embedding?: number[] }> | undefined)?.[0]?.embedding
+    if (openAIEmbedding?.length) return openAIEmbedding
+
+    const directEmbedding = obj['embedding']
+    if (Array.isArray(directEmbedding) && typeof directEmbedding[0] === 'number') return directEmbedding as number[]
+    if (Array.isArray(directEmbedding) && Array.isArray(directEmbedding[0])) return directEmbedding[0] as number[]
+  }
+  if (Array.isArray(data) && typeof data[0] === 'number') return data as number[]
+  if (Array.isArray(data) && Array.isArray(data[0])) return data[0] as number[]
+  return undefined
 }
 
 async function probeOpenAIEmbedding(apiBase: string, apiKey: string | undefined, model: string) {
@@ -88,8 +104,8 @@ async function probeOpenAIEmbedding(apiBase: string, apiKey: string | undefined,
     })
 
     if (res.ok) {
-      const data = (await res.json()) as { data?: Array<{ embedding?: number[] }> }
-      const vector = data.data?.[0]?.embedding
+      const data = await res.json()
+      const vector = parseEmbeddingResponse(data)
       if (!vector?.length) throw new Error(`Embedding endpoint returned no vector: ${url}`)
       return { endpoint: url, vectorDimensions: vector.length }
     }

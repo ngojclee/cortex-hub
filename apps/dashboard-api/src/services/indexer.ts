@@ -482,8 +482,18 @@ export async function startIndexing(projectId: string, jobId: string, branch: st
 
     // ── Step 5: Auto-trigger mem9 embedding (fire-and-forget) ──
     try {
+      const activeMem9Job = db.prepare(
+        `SELECT id FROM index_jobs WHERE mem9_status = 'embedding' AND id != ? ORDER BY created_at ASC LIMIT 1`
+      ).get(jobId) as { id: string } | undefined
+
+      if (activeMem9Job) {
+        updateJob(jobId, { mem9_status: 'pending' })
+        appendLog(jobId, `mem9 auto-start skipped: embedding already running in ${activeMem9Job.id}`)
+        return
+      }
+
       updateJob(jobId, { mem9_status: 'embedding' })
-      appendLog(jobId, '🧠 Auto-starting mem9 embedding...')
+      appendLog(jobId, 'Auto-starting mem9 embedding...')
 
       embedProject(projectId, branch, jobId, (_progress, chunks) => {
         db.prepare('UPDATE index_jobs SET mem9_chunks = ? WHERE id = ?').run(chunks, jobId)

@@ -142,6 +142,25 @@ function capReasonLabel(value: string[] | undefined): string {
   return value && value.length > 0 ? value.join('; ') : 'none'
 }
 
+type GitNexusHealthPayload = {
+  status?: string
+  statusCode?: number
+  error?: string
+}
+
+async function assertRefreshAllowed(env: Env, refresh?: boolean): Promise<void> {
+  if (!refresh) return
+
+  const response = await apiCall(env, '/api/intel/health', {
+    signal: AbortSignal.timeout(3000),
+  })
+  const payload = await response.json().catch(() => ({})) as GitNexusHealthPayload
+  const status = typeof payload.status === 'string' ? payload.status : response.ok ? 'healthy' : 'unhealthy'
+  if (!response.ok || status !== 'healthy') {
+    throw new Error(`Live graph refresh blocked because GitNexus is ${status}. Use refresh=false/snapshot-only until health recovers.`)
+  }
+}
+
 function nodeTypeHint(payload: GraphPayload): string | null {
   const nodes = payload.data?.nodes ?? []
   if (nodes.length === 0) return null
@@ -227,6 +246,7 @@ export function registerGraphTools(server: McpServer, env: Env) {
     },
     async ({ projectId, query, nodeTypes, limit, refresh }) => {
       try {
+        await assertRefreshAllowed(env, refresh)
         const params = new URLSearchParams({ search: query, depth: '1' })
         setSnapshotFirstParams(params, refresh)
         appendNodeTypes(params, nodeTypes)
@@ -262,6 +282,7 @@ export function registerGraphTools(server: McpServer, env: Env) {
     },
     async ({ projectId, focus, depth, direction, edgeTypes, nodeTypes, limitNodes, limitEdges, refresh }) => {
       try {
+        await assertRefreshAllowed(env, refresh)
         const params = new URLSearchParams({ focus })
         setSnapshotFirstParams(params, refresh)
         appendNumber(params, 'depth', depth ?? 1)
@@ -296,6 +317,7 @@ export function registerGraphTools(server: McpServer, env: Env) {
     },
     async ({ projectId, filePath, direction, depth, refresh }) => {
       try {
+        await assertRefreshAllowed(env, refresh)
         const params = new URLSearchParams({
           focus: filePath,
           nodeTypes: 'all',
@@ -332,6 +354,7 @@ export function registerGraphTools(server: McpServer, env: Env) {
     },
     async ({ projectId, symbol, includeRaw, depth, refresh }) => {
       try {
+        await assertRefreshAllowed(env, refresh)
         const params = new URLSearchParams({
           focus: symbol,
           nodeTypes: 'all',

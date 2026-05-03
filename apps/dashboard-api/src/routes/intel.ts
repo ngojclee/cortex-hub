@@ -298,7 +298,10 @@ type BoundedGraphData = {
 
 const DEFAULT_GRAPH_NODE_TYPES = ['File', 'Class', 'Function', 'Method', 'Interface'] as const
 const DEFAULT_GRAPH_EDGE_TYPES = ['CALLS', 'IMPORTS', 'EXTENDS', 'IMPLEMENTS'] as const
-const GRAPH_REFRESH_COOLDOWN_MS = 60_000
+const GRAPH_REFRESH_COOLDOWN_MS = (() => {
+  const raw = Number.parseInt(process.env.GRAPH_REFRESH_COOLDOWN_MS ?? '', 10)
+  return Number.isFinite(raw) && raw > 0 ? raw : 180_000
+})()
 const MAX_GRAPH_NODES = 250
 const MAX_GRAPH_EDGES = 500
 const DEFAULT_GRAPH_NODES = 80
@@ -1630,6 +1633,34 @@ function buildGraphRefreshCooldownHint(): string {
   return `GitNexus graph refresh is cooling down for ${seconds}s after a failed live query. Serving cached or empty data to protect CPU.${graphRefreshCooldownReason ? ` Last error: ${graphRefreshCooldownReason}` : ''}`
 }
 
+type GitNexusHealthCheck = {
+  healthy: boolean
+  status: string
+  statusCode?: number
+  payload?: Record<string, unknown>
+  error?: string
+}
+
+async function checkGitNexusHealth(timeoutMs = 2_500): Promise<GitNexusHealthCheck> {
+  try {
+    const res = await fetch(`${GITNEXUS_URL()}/health`, {
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+    const payload = await res.json().catch(() => ({})) as Record<string, unknown>
+    const status = typeof payload.status === 'string'
+      ? payload.status.toLowerCase()
+      : res.ok ? 'healthy' : 'unhealthy'
+    return {
+      healthy: res.ok && ['healthy', 'ok'].includes(status),
+      status,
+      statusCode: res.status,
+      payload,
+    }
+  } catch (error) {
+    return { healthy: false, status: 'unreachable', error: String(error) }
+  }
+}
+
 async function getOrBuildGraphSnapshot(
   projectId: string,
   repoName: string,
@@ -1638,6 +1669,10 @@ async function getOrBuildGraphSnapshot(
 ): Promise<BoundedGraphData> {
   const existing = graphRefreshInFlight.get(snapshotKey)
   if (existing) return existing
+
+  if (graphRefreshInFlight.size > 0) {
+    throw new Error('Graph refresh concurrency limit reached. Retry after the current refresh finishes.')
+  }
 
   const task = buildBoundedGraph(projectId, repoName, options)
   graphRefreshInFlight.set(snapshotKey, task)
@@ -2915,6 +2950,8 @@ intelRouter.get('/resources/project/:projectId/graph', async (c) => {
       })
     }
 
+    const gitnexusRepo = context.gitnexusRepo
+
     if (!refresh && snapshotRead.record) {
       const graph = {
         ...snapshotRead.record.data,
@@ -2943,7 +2980,7 @@ intelRouter.get('/resources/project/:projectId/graph', async (c) => {
         source: 'empty',
         refresh,
       })
-      const graph = emptyGraphData(context.gitnexusRepo.name, snapshot)
+      const graph = emptyGraphData(gitnexusRepo.name, snapshot)
       return c.json({
         success: true,
         data: {
@@ -2956,14 +2993,14 @@ intelRouter.get('/resources/project/:projectId/graph', async (c) => {
       })
     }
 
-    if (graphRefreshCooldownRemainingMs() > 0) {
+    const returnGraphFallback = (hint: string, status: 200 | 409 = snapshotRead.record ? 200 : 409) => {
       const snapshot = buildGraphSnapshotMeta(snapshotRead, {
         source: snapshotRead.record ? 'snapshot' : 'empty',
         refresh,
       })
       const fallbackGraph = snapshotRead.record
         ? { ...snapshotRead.record.data, snapshot }
-        : emptyGraphData(context.gitnexusRepo.name, snapshot)
+        : emptyGraphData(gitnexusRepo.name, snapshot)
 
       return c.json({
         success: true,
@@ -2972,14 +3009,24 @@ intelRouter.get('/resources/project/:projectId/graph', async (c) => {
           project: buildProjectResourceSummary(context),
           query: options,
           ...fallbackGraph,
-          hint: buildGraphRefreshCooldownHint(),
+          hint,
         },
-      }, snapshotRead.record ? 200 : 409)
+      }, status)
+    }
+
+    if (graphRefreshCooldownRemainingMs() > 0) {
+      return returnGraphFallback(buildGraphRefreshCooldownHint())
+    }
+
+    const gitnexusHealth = await checkGitNexusHealth()
+    if (!gitnexusHealth.healthy) {
+      markGraphRefreshCooldown(`GitNexus health preflight failed: ${gitnexusHealth.status}${gitnexusHealth.statusCode ? ` ${gitnexusHealth.statusCode}` : ''}${gitnexusHealth.error ? ` ${gitnexusHealth.error}` : ''}`)
+      return returnGraphFallback('GitNexus is unhealthy, so live graph refresh was skipped. Serving cached or empty data to protect CPU.')
     }
 
     let liveGraph: BoundedGraphData
     try {
-      liveGraph = await getOrBuildGraphSnapshot(context.project.id, context.gitnexusRepo.name, options, snapshotRead.meta.snapshotKey)
+      liveGraph = await getOrBuildGraphSnapshot(context.project.id, gitnexusRepo.name, options, snapshotRead.meta.snapshotKey)
     } catch (error) {
       markGraphRefreshCooldown(error)
       throw error
@@ -3953,21 +4000,9 @@ function findFilesByName(dir: string, basename: string, maxResults: number): str
 
 // ── Health: check GitNexus service status ──
 intelRouter.get('/health', async (c) => {
-  try {
-    const res = await fetch(`${GITNEXUS_URL()}/health`, {
-      signal: AbortSignal.timeout(5000),
-    })
-
-    if (!res.ok) {
-      return c.json({ status: 'unhealthy', statusCode: res.status }, 503)
-    }
-
-    const data = await res.json()
-    return c.json({ status: 'healthy', ...data })
-  } catch (error) {
-    return c.json(
-      { status: 'unreachable', error: String(error) },
-      503,
-    )
+  const health = await checkGitNexusHealth(5_000)
+  if (!health.healthy) {
+    return c.json({ status: health.status, statusCode: health.statusCode, error: health.error }, 503)
   }
+  return c.json({ status: 'healthy', ...health.payload })
 })

@@ -52,6 +52,18 @@ indexingRouter.post('/:id/index', async (c) => {
       return c.json({ error: 'An indexing job is already running', jobId: activeJob.id }, 409)
     }
 
+    const globalActiveJob = db.prepare(
+      `SELECT id, project_id FROM index_jobs WHERE status IN ('pending', 'cloning', 'analyzing', 'ingesting') ORDER BY created_at ASC LIMIT 1`
+    ).get() as { id: string; project_id: string } | undefined
+
+    if (globalActiveJob) {
+      return c.json({
+        error: 'Indexing concurrency limit reached. Retry after the current GitNexus job finishes.',
+        jobId: globalActiveJob.id,
+        projectId: globalActiveJob.project_id,
+      }, 409)
+    }
+
     // Parse branch from body
     let branch = 'main'
     let triggeredBy = 'manual'
@@ -383,6 +395,18 @@ indexingRouter.post('/:id/index/mem9', async (c) => {
     // Check if mem9 is already running
     if (latestJob.mem9_status === 'embedding') {
       return c.json({ error: 'Mem9 embedding is already running for this branch.' }, 409)
+    }
+
+    const globalMem9Job = db.prepare(
+      `SELECT id, project_id FROM index_jobs WHERE mem9_status = 'embedding' ORDER BY created_at ASC LIMIT 1`
+    ).get() as { id: string; project_id: string } | undefined
+
+    if (globalMem9Job) {
+      return c.json({
+        error: 'Mem9 embedding concurrency limit reached. Retry after the current embedding job finishes.',
+        jobId: globalMem9Job.id,
+        projectId: globalMem9Job.project_id,
+      }, 409)
     }
 
     const jobId = latestJob.id

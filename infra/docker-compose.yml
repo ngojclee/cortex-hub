@@ -43,6 +43,8 @@ services:
     image: ghcr.io/ngojclee/cortex-gitnexus:latest
     container_name: cortex-gitnexus
     restart: unless-stopped
+    cpus: "${GITNEXUS_CPUS:-2.0}"
+    mem_limit: "${GITNEXUS_MEM_LIMIT:-3g}"
     volumes:
       - ${STACK_DATA_ROOT:-/home/Docker/cortex-hub}/gitnexus-data:/root/.gitnexus
       - ${STACK_DATA_ROOT:-/home/Docker/cortex-hub}/api-data:/app/data
@@ -52,6 +54,17 @@ services:
     environment:
       TZ: ${TZ:-Europe/Paris}
       PORT: 4848
+      NODE_OPTIONS: "--max-old-space-size=2048"
+      GITNEXUS_STARTUP_INDEXING: "${GITNEXUS_STARTUP_INDEXING:-true}"
+      GITNEXUS_STARTUP_INDEXING_DELAY_SECONDS: "${GITNEXUS_STARTUP_INDEXING_DELAY_SECONDS:-15}"
+      GITNEXUS_AUTO_DISCOVER: "${GITNEXUS_AUTO_DISCOVER:-true}"
+      GITNEXUS_AUTO_DISCOVER_MAX_REPOS: "${GITNEXUS_AUTO_DISCOVER_MAX_REPOS:-0}"
+      GITNEXUS_ANALYZE_COOLDOWN_SECONDS: "${GITNEXUS_ANALYZE_COOLDOWN_SECONDS:-90}"
+      GITNEXUS_ANALYZE_TIMEOUT_SECONDS: "${GITNEXUS_ANALYZE_TIMEOUT_SECONDS:-900}"
+      GITNEXUS_ANALYZE_ARGS: "--force"
+      GITNEXUS_ANALYZE_NICE: "${GITNEXUS_ANALYZE_NICE:-15}"
+      GITNEXUS_ANALYZE_IONICE_CLASS: "${GITNEXUS_ANALYZE_IONICE_CLASS:-2}"
+      GITNEXUS_ANALYZE_IONICE_LEVEL: "${GITNEXUS_ANALYZE_IONICE_LEVEL:-7}"
 
   # ── Dashboard API + Web UI ──
   cortex-api:

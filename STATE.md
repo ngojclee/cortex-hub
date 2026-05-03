@@ -93,6 +93,7 @@
 
 ## Recent Decisions
 
+- **GitNexus low-load profile:** GitNexus eval-server now starts immediately and startup indexing runs in a delayed background pass. The stack caps GitNexus at 2 CPU / 3GB by default, uses a 2GB Node heap, and analyzes repos sequentially with lock, timeout, nice/ionice, and cooldown. See `.docs/guides/gitnexus-low-load-runbook.md`.
 - **Multi-repo routing:** `callGitNexusWithFallback()` tries slug → URL-derived → projectId → no-filter as cascading fallback when routing to GitNexus eval-server. All intel routes (search, impact, context, cypher, detect-changes) use this helper.
 - **GitNexus auto-discovery:** Updated `gitnexus-entrypoint.sh` to scan `/app/data/repos/` for cloned repos and run `gitnexus analyze` on any not already registered in `~/.gitnexus/registry.json`.
 - **Identity resolution:** `mcp-remote` drops Authorization header → workaround: apiCall() injects `X-API-Key-Owner` header from `env.API_KEY_OWNER`. Dashboard-api uses this as authoritative identity in quality reports + sessions.

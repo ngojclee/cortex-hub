@@ -144,8 +144,23 @@ function capReasonLabel(value: string[] | undefined): string {
 
 type GitNexusHealthPayload = {
   status?: string
+  rawStatus?: string
   statusCode?: number
   error?: string
+}
+
+type CanonicalGitNexusHealthStatus = 'healthy' | 'degraded' | 'unhealthy' | 'unreachable'
+
+function normalizeGitNexusHealthStatus(
+  rawStatus: string | undefined,
+  responseOk: boolean,
+): CanonicalGitNexusHealthStatus {
+  const normalized = rawStatus?.toLowerCase()
+  if (!responseOk) return normalized === 'unreachable' ? 'unreachable' : 'unhealthy'
+  if (!normalized || normalized === 'healthy' || normalized === 'ok') return 'healthy'
+  if (normalized === 'degraded') return 'degraded'
+  if (normalized === 'unreachable') return 'unreachable'
+  return 'unhealthy'
 }
 
 async function assertRefreshAllowed(env: Env, refresh?: boolean): Promise<void> {
@@ -155,8 +170,13 @@ async function assertRefreshAllowed(env: Env, refresh?: boolean): Promise<void> 
     signal: AbortSignal.timeout(3000),
   })
   const payload = await response.json().catch(() => ({})) as GitNexusHealthPayload
-  const status = typeof payload.status === 'string' ? payload.status : response.ok ? 'healthy' : 'unhealthy'
-  if (!response.ok || status !== 'healthy') {
+  const rawStatus = typeof payload.status === 'string'
+    ? payload.status
+    : typeof payload.rawStatus === 'string'
+      ? payload.rawStatus
+      : undefined
+  const status = normalizeGitNexusHealthStatus(rawStatus, response.ok)
+  if (status !== 'healthy') {
     throw new Error(`Live graph refresh blocked because GitNexus is ${status}. Use refresh=false/snapshot-only until health recovers.`)
   }
 }

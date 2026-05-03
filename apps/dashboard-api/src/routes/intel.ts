@@ -1633,12 +1633,27 @@ function buildGraphRefreshCooldownHint(): string {
   return `GitNexus graph refresh is cooling down for ${seconds}s after a failed live query. Serving cached or empty data to protect CPU.${graphRefreshCooldownReason ? ` Last error: ${graphRefreshCooldownReason}` : ''}`
 }
 
+type GitNexusHealthStatus = 'healthy' | 'degraded' | 'unhealthy' | 'unreachable'
+
 type GitNexusHealthCheck = {
   healthy: boolean
-  status: string
+  status: GitNexusHealthStatus
+  rawStatus?: string
   statusCode?: number
   payload?: Record<string, unknown>
   error?: string
+}
+
+function normalizeGitNexusHealthStatus(
+  rawStatus: string | undefined,
+  responseOk: boolean,
+): GitNexusHealthStatus {
+  const normalized = rawStatus?.toLowerCase()
+  if (!responseOk) return normalized === 'unreachable' ? 'unreachable' : 'unhealthy'
+  if (!normalized || normalized === 'healthy' || normalized === 'ok') return 'healthy'
+  if (normalized === 'degraded') return 'degraded'
+  if (normalized === 'unreachable') return 'unreachable'
+  return 'unhealthy'
 }
 
 async function checkGitNexusHealth(timeoutMs = 2_500): Promise<GitNexusHealthCheck> {
@@ -1647,17 +1662,17 @@ async function checkGitNexusHealth(timeoutMs = 2_500): Promise<GitNexusHealthChe
       signal: AbortSignal.timeout(timeoutMs),
     })
     const payload = await res.json().catch(() => ({})) as Record<string, unknown>
-    const status = typeof payload.status === 'string'
-      ? payload.status.toLowerCase()
-      : res.ok ? 'healthy' : 'unhealthy'
+    const rawStatus = typeof payload.status === 'string' ? payload.status.toLowerCase() : undefined
+    const status = normalizeGitNexusHealthStatus(rawStatus, res.ok)
     return {
-      healthy: res.ok && ['healthy', 'ok'].includes(status),
+      healthy: status === 'healthy',
       status,
+      rawStatus,
       statusCode: res.status,
       payload,
     }
   } catch (error) {
-    return { healthy: false, status: 'unreachable', error: String(error) }
+    return { healthy: false, status: 'unreachable', rawStatus: 'unreachable', error: String(error) }
   }
 }
 
@@ -4002,7 +4017,13 @@ function findFilesByName(dir: string, basename: string, maxResults: number): str
 intelRouter.get('/health', async (c) => {
   const health = await checkGitNexusHealth(5_000)
   if (!health.healthy) {
-    return c.json({ status: health.status, statusCode: health.statusCode, error: health.error }, 503)
+    return c.json({ status: health.status, rawStatus: health.rawStatus, statusCode: health.statusCode, error: health.error }, 503)
   }
-  return c.json({ status: 'healthy', ...health.payload })
+  const payload = health.payload ?? {}
+  return c.json({
+    ...payload,
+    status: 'healthy',
+    rawStatus: health.rawStatus ?? health.status,
+    statusCode: health.statusCode,
+  })
 })

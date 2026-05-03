@@ -21,8 +21,8 @@ RUN sed -i "s/server\.listen(port, '127\.0\.0\.1'/server.listen(port, '0.0.0.0'/
     sed -i "s/listening on http:\/\/127\.0\.0\.1/listening on http:\/\/0.0.0.0/g" \
       /usr/lib/node_modules/gitnexus/dist/cli/eval-server.js
 
-# Patch analyze to use 3GB heap instead of 8GB (fit within Docker memory limit)
-RUN sed -i 's/const HEAP_MB = 8192/const HEAP_MB = 3072/g' \
+# Patch analyze to use 2GB heap instead of 8GB (fit within small LXC memory limits)
+RUN sed -i 's/const HEAP_MB = 8192/const HEAP_MB = 2048/g' \
       /usr/lib/node_modules/gitnexus/dist/cli/analyze.js
 
 WORKDIR /app/data

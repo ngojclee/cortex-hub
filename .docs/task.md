@@ -150,3 +150,10 @@
 - [ ] Adapt MCP graph tools to return snapshot/stale/truncation metadata
 - [ ] Make `/graph` UI default-light with search/click-to-expand behavior
 - [ ] QA integration: run verify and live/perf smoke checklist after T1-T4 reports
+### GitNexus Low-Load Sequential Indexing (Active)
+- [x] Start GitNexus eval-server immediately while startup indexing runs in a delayed background pass
+- [x] Add low-load GitNexus controls: CPU/memory limits, 2GB Node heap, lock, timeout, nice/ionice, cooldown, sequential auto-discovery
+- [x] Keep GitNexus startup analyze embedding-free; Cortex/mem9 owns embedding generation
+- [x] Add runbook: [.docs/guides/gitnexus-low-load-runbook.md](guides/gitnexus-low-load-runbook.md)
+- [ ] Deploy updated GitNexus image/stack to live host and watch one sequential indexing pass
+- [ ] After deploy, use Cortex MCP only to refresh missing graph snapshots with small caps

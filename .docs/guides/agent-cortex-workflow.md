@@ -22,11 +22,17 @@ session_start
 
 ## MCP Lane
 
-Use the public MCP endpoint for agents:
+Use the private LAN/NetBird MCP endpoint for normal agent work:
+
+- `http://10.21.1.108:4000/mcp`
+
+Use the public MCP endpoint only as a controlled fallback for remote access:
 
 - `https://cortexhub.lengoc.me/mcp`
 
-Do not call `https://cortexhub.lengoc.me/api/*` directly from agents. `/api/*` is the internal dashboard/API lane and may be protected by Cloudflare Access or API-key middleware. A direct `/api/*` 401 is expected and does not mean MCP auth is broken.
+Do not call `/api/*` directly from agents. `/api/*` is the internal dashboard/API lane and may be protected by Cloudflare Access, dashboard session auth, or API-key middleware. A direct `/api/*` 401 is expected and does not mean MCP auth is broken.
+
+Keep admin-capable MCP tokens separate from routine agent tokens. Use admin tokens only over LAN/NetBird for cleanup, registry repair, and project metadata maintenance.
 
 ## Current MCP Coverage
 

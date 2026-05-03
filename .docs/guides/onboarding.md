@@ -22,7 +22,9 @@ AI Agent → MCP Server (Bearer token) → Dashboard API → Backend Services
 
 ### 1. Open Cortex Hub Dashboard
 
-Navigate to **https://cortexhub.lengoc.me**
+Navigate to the private LAN/NetBird dashboard first: **http://10.21.1.108:4000**
+
+Use **https://cortexhub.lengoc.me** only as a controlled public fallback.
 
 The **Setup Wizard** launches automatically on first visit — configure your LLM provider (OAuth or API key).
 
@@ -62,7 +64,7 @@ bash scripts/bootstrap.sh
 ```
 
 The script will prompt for:
-- **MCP URL** (default: `https://cortexhub.lengoc.me/mcp`)
+- **MCP URL** (default private: `http://10.21.1.108:4000/mcp`; public fallback: `https://cortexhub.lengoc.me/mcp`)
 - **API Key** (get from your Hub admin or Dashboard → API Keys)
 
 ### 2. Onboard Your AI Agent
@@ -80,7 +82,7 @@ This auto-detects your IDE (Claude Code, Cursor, Windsurf, VS Code) and:
 ### 3. Verify Connection
 
 ```bash
-curl -s -X POST 'https://cortexhub.lengoc.me/mcp' \
+curl -s -X POST 'http://10.21.1.108:4000/mcp' \
   -H 'Content-Type: application/json' \
   -H 'Authorization: Bearer YOUR_KEY' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | head -100
@@ -96,7 +98,7 @@ For **Claude Code** (`~/.claude/settings.json`):
   "mcpServers": {
     "cortex-hub": {
       "command": "npx",
-      "args": ["-y", "mcp-remote", "https://cortexhub.lengoc.me/mcp", "--header", "Authorization: Bearer YOUR_KEY"]
+      "args": ["-y", "mcp-remote", "http://10.21.1.108:4000/mcp", "--header", "Authorization: Bearer YOUR_KEY"]
     }
   }
 }
@@ -110,9 +112,10 @@ For other tools, `onboard.sh` handles this automatically.
 
 | Service | URL | Port |
 |---------|-----|------|
-| Dashboard | https://cortexhub.lengoc.me | 4000 |
-| API | https://cortexhub.lengoc.me | 4000 |
-| MCP Server | https://cortexhub.lengoc.me/mcp | 4000 |
+| Dashboard | http://10.21.1.108:4000 | 4000 |
+| Public fallback | https://cortexhub.lengoc.me | 4000 |
+| API | http://10.21.1.108:4000 | 4000 |
+| MCP Server | http://10.21.1.108:4000/mcp | 4000 |
 | LLM Proxy (internal) | http://llm-proxy:8317 | 8317 |
 | GitNexus (internal) | http://gitnexus:4848 | 4848 |
 
@@ -124,4 +127,4 @@ For other tools, `onboard.sh` handles this automatically.
 | `401 Unauthorized` | API key invalid or expired — regenerate at Dashboard → API Keys |
 | OAuth login fails | Check CLIProxy logs: `docker logs cortex-llm-proxy` |
 | MCP tools not available | Verify onboard.sh completed — check agent MCP config |
-| Post-push webhook not firing | Set `CORTEX_API_URL` env var, or use default (`https://cortexhub.lengoc.me`) |
+| Post-push webhook not firing | Set `CORTEX_API_URL` env var, preferably to the LAN/NetBird URL (`http://10.21.1.108:4000`) |

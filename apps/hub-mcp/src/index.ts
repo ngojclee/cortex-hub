@@ -67,13 +67,13 @@ function getRequestOrigin(req: Request): string {
     return `${proto}://${forwardedHost}`
   }
 
-  // Fallback: use PUBLIC_URL env var when deployed behind a reverse proxy
+  // Fallback: use explicit access URL env vars when deployed behind a reverse proxy
   // (e.g., Cloudflare Tunnel → dashboard-api → cortex-mcp) where
   // x-forwarded-* headers may not reach this container.
-  const publicUrl = process.env['PUBLIC_URL']
-  if (publicUrl) {
+  const configuredUrl = process.env['CORTEX_ACCESS_URL'] ?? process.env['PUBLIC_URL']
+  if (configuredUrl) {
     try {
-      return new URL(publicUrl).origin
+      return new URL(configuredUrl).origin
     } catch {
       /* invalid URL, ignore */
     }
@@ -97,6 +97,7 @@ app.use('*', async (c, next) => {
     'CLIENT_HOST',
     'CLIENT_IP',
     'CLIENT_USER_AGENT',
+    'CORTEX_ACCESS_URL',
   ]
   for (const key of envKeys) {
     if (!c.env[key] && process.env[key]) {

@@ -42,9 +42,11 @@
 
 ### MCP Lane
 
-Agents must connect through the public MCP endpoint only: `https://cortexhub.lengoc.me/mcp`.
+Agents should connect through the private LAN/NetBird MCP endpoint by default: `http://10.21.1.108:4000/mcp`.
 
-Do not call `https://cortexhub.lengoc.me/api/*` directly from agent sessions. `/api/*` is the dashboard/internal API lane and may be blocked by Cloudflare Access or API-key middleware; a direct `/api/*` 401 is expected and does not mean MCP auth is broken.
+The public MCP endpoint `https://cortexhub.lengoc.me/mcp` is a fallback for controlled remote access only. Do not use public admin-capable tokens for routine agent sessions.
+
+Do not call `/api/*` directly from agent sessions. `/api/*` is the dashboard/internal API lane and may be protected by Cloudflare Access, dashboard session auth, or API-key middleware; a direct `/api/*` 401 is expected and does not mean MCP auth is broken.
 ### Agent Cortex Workflow Ladder
 
 Use [.docs/guides/agent-cortex-workflow.md](.docs/guides/agent-cortex-workflow.md) as the canonical guide. Short form:
@@ -151,9 +153,9 @@ Cortex Hub is a self-hosted, MCP-compliant platform that unifies code intelligen
 ### Endpoints
 | Service | URL |
 |---------|-----|
-| Dashboard | cortexhub.lengoc.me |
-| API | cortexhub.lengoc.me |
-| MCP | cortexhub.lengoc.me/mcp |
+| Dashboard | 10.21.1.108:4000 (LAN/NetBird), cortexhub.lengoc.me (public fallback) |
+| API | 10.21.1.108:4000 (internal/dashboard lane) |
+| MCP | 10.21.1.108:4000/mcp (primary), cortexhub.lengoc.me/mcp (fallback) |
 
 ---
 

@@ -75,7 +75,11 @@ services:
       CLIPROXY_AUTH_DIR: /app/cliproxy-auth
       CLIPROXY_MANAGEMENT_KEY: ${CLIPROXY_MANAGEMENT_KEY:-cortex2026}
       GITNEXUS_URL: http://gitnexus:4848
-      DASHBOARD_URL: ${DASHBOARD_URL:-https://cortexhub.lengoc.me}
+      CORTEX_ACCESS_URL: ${CORTEX_ACCESS_URL:-http://10.21.1.108:4000}
+      CORTEX_PUBLIC_URL: ${CORTEX_PUBLIC_URL:-https://cortexhub.lengoc.me}
+      DASHBOARD_URL: ${DASHBOARD_URL:-${CORTEX_ACCESS_URL:-http://10.21.1.108:4000}}
+      NEXT_PUBLIC_CORTEX_ACCESS_URL: ${CORTEX_ACCESS_URL:-http://10.21.1.108:4000}
+      NEXT_PUBLIC_CORTEX_PUBLIC_URL: ${CORTEX_PUBLIC_URL:-https://cortexhub.lengoc.me}
       MCP_INTERNAL_URL: http://cortex-mcp:8317
       AUTH_ENABLED: ${AUTH_ENABLED:-false}
       AUTH_SESSION_TTL_HOURS: ${AUTH_SESSION_TTL_HOURS:-168}
@@ -105,7 +109,8 @@ services:
       MCP_SERVER_NAME: cortex-hub
       MCP_SERVER_VERSION: "0.3.0.0"
       MCP_AUTH_REQUIRED: "true"
-      PUBLIC_URL: ${DASHBOARD_URL:-https://cortexhub.lengoc.me}
+      CORTEX_ACCESS_URL: ${CORTEX_ACCESS_URL:-http://10.21.1.108:4000}
+      PUBLIC_URL: ${CORTEX_PUBLIC_URL:-https://cortexhub.lengoc.me}
     depends_on:
       - cortex-api
       - qdrant

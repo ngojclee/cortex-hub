@@ -151,12 +151,12 @@ export default function DashboardPage() {
   })
 
   const svcMap = healthData?.services as Record<string, string> | undefined
-  const publicMcpEndpoint = 'https://cortexhub.lengoc.me/mcp'
-  const lanMcpEndpoint = config.mcp.endpoint
+  const primaryMcpEndpoint = config.mcp.accessEndpoint
+  const publicMcpEndpoint = config.mcp.publicEndpoint
   const mcpConfigSnippet = `{
   "mcpServers": {
     "cortex-hub": {
-      "url": "${config.mcp.endpoint}",
+      "url": "${primaryMcpEndpoint}",
       "headers": {
         "Authorization": "Bearer <your-api-key>"
       }
@@ -378,16 +378,16 @@ export default function DashboardPage() {
         <h2 className={styles.sectionTitle}>Quick Connect</h2>
         <div className={`card ${styles.connectCard}`}>
           <p className={styles.connectText}>
-            Add Cortex Hub to your AI agent MCP config. Use the public domain for remote agents, or the LAN endpoint when the agent runs on your private network.
+            Add Cortex Hub to your AI agent MCP config. Use the private LAN/NetBird endpoint by default, and keep the public domain only as a controlled fallback.
           </p>
           <div className={styles.endpointGrid}>
             <div className={styles.endpointItem}>
-              <span className={styles.endpointLabel}>Public domain</span>
-              <code>{publicMcpEndpoint}</code>
+              <span className={styles.endpointLabel}>Primary private</span>
+              <code>{primaryMcpEndpoint}</code>
             </div>
             <div className={styles.endpointItem}>
-              <span className={styles.endpointLabel}>Current/LAN</span>
-              <code>{lanMcpEndpoint}</code>
+              <span className={styles.endpointLabel}>Public fallback</span>
+              <code>{publicMcpEndpoint}</code>
             </div>
           </div>
           <pre className={styles.codeBlock}>

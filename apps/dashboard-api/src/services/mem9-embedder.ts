@@ -173,6 +173,15 @@ function buildEmbeddingChain(): { config: EmbedderConfig; chain: ModelSlot[] } {
   return { config: resolved.config, chain: chainSlots }
 }
 
+function resolveMem9GatewayUrl(): string | undefined {
+  const raw = process.env.MEM9_EMBEDDING_GATEWAY_URL ?? process.env.LLM_GATEWAY_URL
+  const value = raw?.trim()
+  if (!value) return undefined
+
+  const disabledValues = new Set(['0', 'false', 'off', 'none', 'direct'])
+  return disabledValues.has(value.toLowerCase()) ? undefined : value
+}
+
 // ── Main Embedding Pipeline ──
 
 export async function embedProject(
@@ -262,11 +271,11 @@ async function embedProjectInternal(
 
   // 3. Build embedder with fallback chain, routed through LLM gateway
   const { config: embedConfig, chain } = buildEmbeddingChain()
-  const GATEWAY_URL = process.env.LLM_GATEWAY_URL ?? 'http://localhost:4000/api/llm'
+  const gatewayUrl = resolveMem9GatewayUrl()
   const embedder = new Embedder(embedConfig, chain, {
     maxRetries: 2,
     retryDelayMs: 2000,
-    gatewayUrl: GATEWAY_URL,
+    ...(gatewayUrl ? { gatewayUrl } : {}),
   })
 
   // 4. Setup Qdrant collection

@@ -140,7 +140,7 @@ function isGeminiProvider(slot: ProviderSlot): boolean {
 
 async function embedViaGemini(
   text: string, apiKey: string, model: string, baseUrl: string
-): Promise<{ vector: number[]; tokens: number }> {
+): Promise<{ vector: number[]; tokens: number; endpoint?: string }> {
   const base = baseUrl.includes('generativelanguage.googleapis.com')
     ? baseUrl.replace(/\/$/, '')
     : 'https://generativelanguage.googleapis.com/v1beta'
@@ -159,39 +159,54 @@ async function embedViaGemini(
   }
 
   const data = (await res.json()) as { embedding: { values: number[] } }
-  return { vector: data.embedding.values, tokens: Math.ceil(text.length / 4) }
+  return { vector: data.embedding.values, tokens: Math.ceil(text.length / 4), endpoint: url }
+}
+
+function openAIEmbeddingEndpointCandidates(baseUrl: string): string[] {
+  const base = baseUrl.replace(/\/+$/, '')
+  const candidates = [`${base}/embeddings`]
+  if (!/\/v1$/i.test(base)) candidates.push(`${base}/v1/embeddings`)
+  return [...new Set(candidates)]
 }
 
 async function embedViaOpenAI(
   text: string, apiKey: string, model: string, baseUrl: string
-): Promise<{ vector: number[]; tokens: number }> {
-  const url = `${baseUrl.replace(/\/$/, '')}/embeddings`
-
+): Promise<{ vector: number[]; tokens: number; endpoint?: string }> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ model, input: text }),
-    signal: AbortSignal.timeout(30000),
-  })
+  const errors: string[] = []
+  let lastStatus = 0
 
-  if (!res.ok) {
+  for (const url of openAIEmbeddingEndpointCandidates(baseUrl)) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ model, input: text }),
+      signal: AbortSignal.timeout(30000),
+    })
+
+    if (res.ok) {
+      const data = (await res.json()) as {
+        data: Array<{ embedding: number[] }>
+        usage?: { prompt_tokens?: number; total_tokens?: number }
+      }
+      const first = data.data[0]
+      if (!first) throw new Error('Empty embedding response')
+      return {
+        vector: first.embedding,
+        tokens: data.usage?.total_tokens ?? Math.ceil(text.length / 4),
+        endpoint: url,
+      }
+    }
+
+    lastStatus = res.status
     const err = await res.text().catch(() => '')
-    throw Object.assign(new Error(`OpenAI embed ${res.status}: ${err.slice(0, 200)}`), { status: res.status })
+    errors.push(`${url} -> ${res.status}: ${err.slice(0, 160)}`)
+    if (res.status !== 404) break
   }
 
-  const data = (await res.json()) as {
-    data: Array<{ embedding: number[] }>
-    usage?: { prompt_tokens?: number; total_tokens?: number }
-  }
-  const first = data.data[0]
-  if (!first) throw new Error('Empty embedding response')
-  return {
-    vector: first.embedding,
-    tokens: data.usage?.total_tokens ?? Math.ceil(text.length / 4),
-  }
+  throw Object.assign(new Error(`OpenAI embed ${lastStatus}: ${errors.join(' | ')}`), { status: lastStatus })
 }
 
 async function chatViaGemini(
@@ -642,6 +657,7 @@ llmRouter.post('/routing/test/:purpose', async (c) => {
       model: slot.model,
       latency: Date.now() - startTime,
       vectorDimensions: result.vector.length,
+      testedEndpoint: result.endpoint ?? null,
       usage: {
         promptTokens: result.tokens,
         totalTokens: result.tokens,

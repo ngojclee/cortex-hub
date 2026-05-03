@@ -25,10 +25,82 @@ interface RoutingRow {
   updated_at: string
 }
 
+interface OpenAIModelTestResult {
+  success: boolean
+  latency: number
+  chatModels?: string[]
+  embedModels?: string[]
+  codeModels?: string[]
+  totalModels?: number
+  vectorDimensions?: number
+  testedEndpoint?: string
+  error?: string
+}
+
 const CLIPROXY_URL = () =>
   process.env.LLM_PROXY_URL || process.env.CLIPROXY_URL || 'http://llm-proxy:8317'
 const MANAGEMENT_KEY = () =>
   process.env.CLIPROXY_MANAGEMENT_KEY || process.env.MANAGEMENT_PASSWORD || 'cortex2026'
+
+const EMBED_MODEL_KEYWORDS = ['embed', 'embedding', 'bge', 'e5', 'nomic', 'gte', 'jina']
+
+function parseJsonArray(value: string | null | undefined): string[] {
+  if (!value) return []
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function isEmbeddingModel(model: string): boolean {
+  const value = model.toLowerCase()
+  return EMBED_MODEL_KEYWORDS.some((keyword) => value.includes(keyword))
+}
+
+function categorizeOpenAIModels(models: string[]) {
+  const codeKeywords = ['codex', 'code']
+  const embedModels = models.filter(isEmbeddingModel)
+  const chatModels = models.filter((model) => !isEmbeddingModel(model))
+  const codeModels = models.filter((model) => codeKeywords.some((keyword) => model.toLowerCase().includes(keyword)))
+  return { chatModels, embedModels, codeModels }
+}
+
+function embeddingEndpointCandidates(apiBase: string): string[] {
+  const base = apiBase.replace(/\/+$/, '')
+  const candidates = [`${base}/embeddings`]
+  if (!/\/v1$/i.test(base)) candidates.push(`${base}/v1/embeddings`)
+  return [...new Set(candidates)]
+}
+
+async function probeOpenAIEmbedding(apiBase: string, apiKey: string | undefined, model: string) {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+
+  const errors: string[] = []
+  for (const url of embeddingEndpointCandidates(apiBase)) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ model, input: 'Cortex embedding provider live test.' }),
+      signal: AbortSignal.timeout(15000),
+    })
+
+    if (res.ok) {
+      const data = (await res.json()) as { data?: Array<{ embedding?: number[] }> }
+      const vector = data.data?.[0]?.embedding
+      if (!vector?.length) throw new Error(`Embedding endpoint returned no vector: ${url}`)
+      return { endpoint: url, vectorDimensions: vector.length }
+    }
+
+    const text = await res.text().catch(() => '')
+    errors.push(`${url} -> ${res.status}: ${text.slice(0, 160)}`)
+    if (res.status !== 404) break
+  }
+
+  throw new Error(`Embedding probe failed for ${model}. ${errors.join(' | ')}`)
+}
 
 // ── Auto-seed existing providers on first load ──
 let seeded = false
@@ -121,8 +193,10 @@ accountsRouter.post('/', async (c) => {
     }
 
     const id = `pa-${randomUUID().slice(0, 8)}`
-    const caps = JSON.stringify(capabilities ?? ['chat'])
-    const models = JSON.stringify(body.models ?? [])
+    const capabilityList: string[] = Array.isArray(capabilities) ? capabilities : ['chat']
+    const caps = JSON.stringify(capabilityList)
+    const modelList: string[] = Array.isArray(body.models) ? body.models : []
+    const models = JSON.stringify(modelList)
 
     db.prepare(
       `INSERT INTO provider_accounts (id, name, type, auth_type, api_base, api_key, capabilities, models) 
@@ -130,8 +204,7 @@ accountsRouter.post('/', async (c) => {
     ).run(id, name, type, authType || 'api_key', apiBase, apiKey || null, caps, models)
 
     // Auto-configure embedding routing if this provider has embedding models
-    const modelList: string[] = body.models ?? []
-    const embedModel = modelList.find((m: string) => m.includes('embed'))
+    const embedModel = modelList.find(isEmbeddingModel) ?? (capabilityList.includes('embedding') ? modelList[0] : undefined)
     if (embedModel) {
       const existingRouting = db.prepare("SELECT purpose FROM model_routing WHERE purpose = 'embedding'").get()
       if (!existingRouting) {
@@ -218,7 +291,7 @@ accountsRouter.post('/:id/test', async (c) => {
 // ── Direct test with API key (before saving) ──
 accountsRouter.post('/test-key', async (c) => {
   try {
-    const { type, apiBase, apiKey } = await c.req.json()
+    const { type, apiBase, apiKey, models, embedModel, capabilities } = await c.req.json()
     const startTime = Date.now()
 
     if (type === 'gemini') {
@@ -249,7 +322,8 @@ accountsRouter.post('/test-key', async (c) => {
         totalModels: chatModels.length + embedModels.length,
       })
     } else {
-      // OpenAI-compatible
+      // OpenAI-compatible. Some embedding-only servers (TEI, local proxies) do not expose /models,
+      // so fall back to a real /embeddings probe when the user supplied a model manually.
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
 
@@ -257,27 +331,48 @@ accountsRouter.post('/test-key', async (c) => {
       const res = await fetch(`${baseUrl}/models`, { headers, signal: AbortSignal.timeout(10000) })
       const latency = Date.now() - startTime
 
+      const manualModels: string[] = Array.isArray(models)
+        ? models.filter((model: unknown): model is string => typeof model === 'string' && model.trim().length > 0)
+        : []
+      const manualEmbedModel = typeof embedModel === 'string' && embedModel.trim()
+        ? embedModel.trim()
+        : manualModels.find(isEmbeddingModel) ?? manualModels[0]
+      const wantsEmbedding = Array.isArray(capabilities) && capabilities.includes('embedding')
+
       if (!res.ok) {
         const err = await res.text()
-        return c.json({ success: false, latency, error: `API error (${res.status}): ${err.substring(0, 200)}` })
+        if (manualEmbedModel || wantsEmbedding) {
+          try {
+            const probe = await probeOpenAIEmbedding(baseUrl, apiKey || undefined, manualEmbedModel || 'BAAI/bge-m3')
+            const model = manualEmbedModel || 'BAAI/bge-m3'
+            return c.json({
+              success: true,
+              latency: Date.now() - startTime,
+              chatModels: [],
+              embedModels: [model],
+              codeModels: [],
+              totalModels: 1,
+              vectorDimensions: probe.vectorDimensions,
+              testedEndpoint: probe.endpoint,
+            } satisfies OpenAIModelTestResult)
+          } catch (probeErr) {
+            return c.json({
+              success: false,
+              latency: Date.now() - startTime,
+              error: `${String(probeErr)}. /models also returned ${res.status}: ${err.substring(0, 160)}`,
+            })
+          }
+        }
+        return c.json({
+          success: false,
+          latency,
+          error: `API error (${res.status}): ${err.substring(0, 200)}. If this is TEI or another embedding-only server, enter the embedding model manually and test /embeddings.`,
+        })
       }
 
       const data = (await res.json()) as { data?: { id: string; owned_by?: string }[] }
-      const allModels = data.data ?? []
-
-      // Categorize models
-      const embedKeywords = ['embed', 'text-embedding']
-      const codeKeywords = ['codex', 'code']
-
-      const chatModels = allModels
-        .filter((m) => !embedKeywords.some((k) => m.id.includes(k)))
-        .map((m) => m.id)
-      const embedModels = allModels
-        .filter((m) => embedKeywords.some((k) => m.id.includes(k)))
-        .map((m) => m.id)
-      const codeModels = allModels
-        .filter((m) => codeKeywords.some((k) => m.id.includes(k)))
-        .map((m) => m.id)
+      const allModels = [...new Set([...(data.data ?? []).map((m) => m.id), ...manualModels])]
+      const { chatModels, embedModels, codeModels } = categorizeOpenAIModels(allModels)
 
       return c.json({
         success: true,
@@ -453,21 +548,39 @@ async function testOpenAICompatProvider(row: ProviderAccountRow, id: string, sta
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (row.api_key) headers['Authorization'] = `Bearer ${row.api_key}`
 
+  const knownModels = parseJsonArray(row.models)
+  const capabilities = parseJsonArray(row.capabilities)
+  const knownEmbedModel = knownModels.find(isEmbeddingModel) ?? (capabilities.includes('embedding') ? knownModels[0] : undefined)
+
   // For OAuth providers, no Authorization needed (CLIProxy handles it)
   const res = await fetch(`${row.api_base}/models`, { headers, signal: AbortSignal.timeout(10000) })
   const latency = Date.now() - startTime
 
   if (!res.ok) {
     const err = await res.text()
+    if (knownEmbedModel) {
+      try {
+        const probe = await probeOpenAIEmbedding(row.api_base, row.api_key ?? undefined, knownEmbedModel)
+        db.prepare("UPDATE provider_accounts SET status = 'enabled', updated_at = datetime('now') WHERE id = ?").run(id)
+        return c.json({
+          success: true,
+          latency: Date.now() - startTime,
+          chatModels: [],
+          embedModels: [knownEmbedModel],
+          totalModels: knownModels.length || 1,
+          vectorDimensions: probe.vectorDimensions,
+          testedEndpoint: probe.endpoint,
+        } satisfies OpenAIModelTestResult)
+      } catch (probeErr) {
+        return c.json({ success: false, latency: Date.now() - startTime, error: `${String(probeErr)}. /models also returned ${res.status}: ${err.substring(0, 160)}` })
+      }
+    }
     return c.json({ success: false, latency, error: `API error (${res.status}): ${err.substring(0, 200)}` })
   }
 
   const data = (await res.json()) as { data?: { id: string }[] }
-  const allModels = (data.data ?? []).map((m) => m.id)
-
-  const embedKeywords = ['embed', 'text-embedding']
-  const chatModels = allModels.filter((m) => !embedKeywords.some((k) => m.includes(k)))
-  const embedModels = allModels.filter((m) => embedKeywords.some((k) => m.includes(k)))
+  const allModels = [...new Set([...(data.data ?? []).map((m) => m.id), ...knownModels])]
+  const { chatModels, embedModels } = categorizeOpenAIModels(allModels)
 
   db.prepare("UPDATE provider_accounts SET models = ?, status = 'enabled', updated_at = datetime('now') WHERE id = ?")
     .run(JSON.stringify(allModels), id)

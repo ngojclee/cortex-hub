@@ -39,6 +39,8 @@ interface TestKeyResult {
   embedModels?: string[]
   codeModels?: string[]
   totalModels?: number
+  vectorDimensions?: number
+  testedEndpoint?: string
   error?: string
 }
 
@@ -52,6 +54,7 @@ interface RoutingTestResult {
   latency?: number
   reply?: string
   vectorDimensions?: number
+  testedEndpoint?: string | null
   usage?: {
     promptTokens?: number
     completionTokens?: number
@@ -70,6 +73,9 @@ interface ProviderTypeDef {
   defaultBase: string
   oauthProvider?: string  // for OAuth types: CLIProxy provider name
   description?: string
+  apiKeyOptional?: boolean
+  embeddingOnly?: boolean
+  defaultEmbedModel?: string
 }
 
 const PROVIDER_TYPES: ProviderTypeDef[] = [
@@ -108,6 +114,17 @@ const PROVIDER_TYPES: ProviderTypeDef[] = [
     icon: '🔗',
     authType: 'api_key',
     defaultBase: 'https://api.openai.com/v1',
+  },
+  {
+    id: 'tei_embedding',
+    label: 'TEI / Local Embedding',
+    icon: '🧠',
+    authType: 'api_key',
+    defaultBase: 'http://localhost:8080/v1',
+    description: 'Embedding-only OpenAI-compatible server. /v1/models is optional; live test uses /embeddings.',
+    apiKeyOptional: true,
+    embeddingOnly: true,
+    defaultEmbedModel: 'BAAI/bge-m3',
   },
   {
     id: 'gemini',
@@ -164,11 +181,14 @@ const PROVIDER_TYPES: ProviderTypeDef[] = [
     icon: '🦙',
     authType: 'api_key',
     defaultBase: 'http://localhost:11434/v1',
+    apiKeyOptional: true,
   },
 ]
 
 const TYPE_ICONS: Record<string, string> = Object.fromEntries(PROVIDER_TYPES.map((t) => [t.id, t.icon]))
 const TYPE_LABELS: Record<string, string> = Object.fromEntries(PROVIDER_TYPES.map((t) => [t.id, t.label]))
+const EMBED_MODEL_KEYWORDS = ['embed', 'embedding', 'bge', 'e5', 'nomic', 'gte', 'jina']
+const isEmbeddingModelName = (model: string) => EMBED_MODEL_KEYWORDS.some((keyword) => model.toLowerCase().includes(keyword))
 
 // ── Fetcher ──
 async function fetchAccounts(page = 1, search = ''): Promise<AccountsResponse> {
@@ -324,8 +344,8 @@ function ActiveConfigPanel({
               {enabledAccounts.map((acc) => {
                 const models: string[] = Array.isArray(acc.models) ? acc.models : []
                 const relevantModels = key === 'embedding'
-                  ? models.filter((m) => m.includes('embed'))
-                  : models.filter((m) => !m.includes('embed'))
+                  ? models.filter(isEmbeddingModelName)
+                  : models.filter((m) => !isEmbeddingModelName(m))
                 if (relevantModels.length === 0 && models.length > 0) {
                   // Show all models if no match — user can pick whatever
                   return models.map((m) => (
@@ -366,6 +386,9 @@ function ActiveConfigPanel({
                 {result.success && key === 'embedding' && typeof result.vectorDimensions === 'number' && (
                   <div className={styles.testResultMeta}>Vector size: {result.vectorDimensions} dims</div>
                 )}
+                {result.success && result.testedEndpoint && (
+                  <div className={styles.testResultMeta}>Endpoint: {result.testedEndpoint}</div>
+                )}
                 {!result.success && result.error && (
                   <div className={styles.testResultMeta}>{result.error}</div>
                 )}
@@ -394,6 +417,7 @@ function AddProviderDialog({
   const [name, setName] = useState(defaultType.label)
   const [apiBase, setApiBase] = useState(defaultType.defaultBase)
   const [apiKey, setApiKey] = useState('')
+  const [manualEmbedModel, setManualEmbedModel] = useState(defaultType.defaultEmbedModel ?? '')
   const [testResult, setTestResult] = useState<TestKeyResult | null>(null)
   const [testError, setTestError] = useState('')
 
@@ -410,6 +434,7 @@ function AddProviderDialog({
     setTestResult(null)
     setTestError('')
     setApiKey('')
+    setManualEmbedModel(typeDef.defaultEmbedModel ?? '')
   }
 
   // Test the key or OAuth connection
@@ -419,6 +444,9 @@ function AddProviderDialog({
     setTestResult(null)
     try {
       const testType = selectedType.id === 'gemini' ? 'gemini' : 'openai_compat'
+      const manualModels = selectedType.embeddingOnly && manualEmbedModel.trim()
+        ? [manualEmbedModel.trim()]
+        : []
       const res = await fetch(`${config.api.base}/api/accounts/test-key`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -426,6 +454,9 @@ function AddProviderDialog({
           type: testType,
           apiBase,
           apiKey: selectedType.authType === 'oauth' ? '' : apiKey,
+          capabilities: selectedType.embeddingOnly ? ['embedding'] : ['chat'],
+          embedModel: selectedType.embeddingOnly ? manualEmbedModel.trim() : undefined,
+          models: manualModels,
         }),
         signal: AbortSignal.timeout(15000),
       })
@@ -449,8 +480,13 @@ function AddProviderDialog({
   const handleSave = async () => {
     setStep('saving')
     try {
-      const capabilities = ['chat']
+      const capabilities = selectedChatModel ? ['chat'] : []
       if (selectedEmbedModel) capabilities.push('embedding')
+      if (capabilities.length === 0 && selectedType.embeddingOnly) capabilities.push('embedding')
+      const modelList = [
+        ...(testResult?.chatModels ?? []),
+        ...(testResult?.embedModels ?? []),
+      ]
 
       const res = await fetch(`${config.api.base}/api/accounts`, {
         method: 'POST',
@@ -460,9 +496,9 @@ function AddProviderDialog({
           type: selectedType.id,
           authType: selectedType.authType,
           apiBase,
-          apiKey: selectedType.authType === 'oauth' ? null : apiKey,
+          apiKey: selectedType.authType === 'oauth' ? null : apiKey.trim(),
           capabilities,
-          models: [...(testResult?.chatModels ?? []), ...(testResult?.embedModels ?? [])],
+          models: [...new Set(modelList)],
         }),
         signal: AbortSignal.timeout(10000),
       })
@@ -524,6 +560,7 @@ function AddProviderDialog({
   }, [oauthUrl])
 
   const isOAuth = selectedType.authType === 'oauth'
+  const requiresApiKey = !isOAuth && !selectedType.apiKeyOptional
 
   return (
     <div className={styles.dialogOverlay} onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -614,16 +651,31 @@ function AddProviderDialog({
                   />
                 </div>
                 <div className={styles.dialogField}>
-                  <label className={styles.dialogLabel}>API Key</label>
+                  <label className={styles.dialogLabel}>API Key{selectedType.apiKeyOptional ? ' (optional)' : ''}</label>
                   <input
                     className={styles.dialogInput}
                     type="password"
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
-                    placeholder={selectedType.id === 'gemini' ? 'AIza...' : 'sk-...'}
+                    placeholder={selectedType.apiKeyOptional ? 'Leave blank for local/no-auth server' : selectedType.id === 'gemini' ? 'AIza...' : 'sk-...'}
                     disabled={step === 'testing'}
                   />
                 </div>
+                {selectedType.embeddingOnly && (
+                  <div className={styles.dialogField}>
+                    <label className={styles.dialogLabel}>Embedding Model *</label>
+                    <input
+                      className={styles.dialogInput}
+                      value={manualEmbedModel}
+                      onChange={(e) => setManualEmbedModel(e.target.value)}
+                      placeholder="BAAI/bge-m3"
+                      disabled={step === 'testing'}
+                    />
+                    <p className={styles.dialogHelp}>
+                      TEI often has no <code>/v1/models</code>. Cortex will test this model with <code>/v1/embeddings</code> directly.
+                    </p>
+                  </div>
+                )}
               </>
             )}
 
@@ -637,7 +689,7 @@ function AddProviderDialog({
               <button className="btn btn-secondary btn-sm" onClick={onClose}>Cancel</button>
               <button
                 className="btn btn-primary btn-sm"
-                disabled={!name.trim() || step === 'testing' || (!isOAuth && !apiKey.trim())}
+                disabled={!name.trim() || step === 'testing' || requiresApiKey && !apiKey.trim() || selectedType.embeddingOnly && !manualEmbedModel.trim()}
                 onClick={handleTestKey}
               >
                 {step === 'testing' ? '⏳ Testing...' : '🧪 Test Connection'}
@@ -651,7 +703,11 @@ function AddProviderDialog({
           <>
             <div style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', fontSize: '0.8rem', color: '#22c55e', marginBottom: '1rem' }}>
               ✅ Connected — {testResult.totalModels} models found ({testResult.latency}ms)
+              {typeof testResult.vectorDimensions === 'number' ? ` • ${testResult.vectorDimensions} dims` : ''}
             </div>
+            {testResult.testedEndpoint && (
+              <p className={styles.dialogHelp}>Tested endpoint: <code>{testResult.testedEndpoint}</code></p>
+            )}
 
             {testResult.chatModels && testResult.chatModels.length > 0 && (
               <div className={styles.dialogField}>
@@ -687,6 +743,12 @@ function AddProviderDialog({
             {(!testResult.embedModels || testResult.embedModels.length === 0) && (
               <p style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
                 No embedding models available for this provider
+              </p>
+            )}
+
+            {selectedType.embeddingOnly && (
+              <p className={styles.dialogHelp}>
+                Saved provider calls your endpoint directly. If you point this at CLIProxy, CLIProxy itself must expose <code>/v1/embeddings</code> for the selected model.
               </p>
             )}
 

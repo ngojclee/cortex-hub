@@ -135,6 +135,14 @@ export class Embedder {
     return match ? Number(match[1]) : 0
   }
 
+  private openAIEmbeddingEndpointCandidates(baseUrl?: string): string[] {
+    if (!baseUrl) return ['https://api.openai.com/v1/embeddings']
+    const base = baseUrl.replace(/\/+$/, '')
+    const candidates = [`${base}/embeddings`]
+    if (!/\/v1$/i.test(base)) candidates.push(`${base}/v1/embeddings`)
+    return [...new Set(candidates)]
+  }
+
   /* ── Gemini native API ───────────────────────────────── */
 
   private async embedGemini(text: string, apiKey: string, model: string): Promise<number[]> {
@@ -165,31 +173,36 @@ export class Embedder {
     model: string,
     baseUrl?: string,
   ): Promise<number[]> {
-    const url = baseUrl
-      ? `${baseUrl.replace(/\/$/, '')}/embeddings`
-      : 'https://api.openai.com/v1/embeddings'
-
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
     if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
 
-    const res = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ model, input: text }),
-    })
+    const errors: string[] = []
+    let lastStatus = 0
 
-    if (!res.ok) {
+    for (const url of this.openAIEmbeddingEndpointCandidates(baseUrl)) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ model, input: text }),
+      })
+
+      if (res.ok) {
+        const data = (await res.json()) as {
+          data: Array<{ embedding: number[] }>
+        }
+        const first = data.data[0]
+        if (!first) {
+          throw new Error('OpenAI embedding returned empty data array')
+        }
+        return first.embedding
+      }
+
+      lastStatus = res.status
       const err = await res.text()
-      throw new Error(`OpenAI embedding failed (${res.status}): ${err}`)
+      errors.push(`${url} -> ${res.status}: ${err.slice(0, 160)}`)
+      if (res.status !== 404) break
     }
 
-    const data = (await res.json()) as {
-      data: Array<{ embedding: number[] }>
-    }
-    const first = data.data[0]
-    if (!first) {
-      throw new Error('OpenAI embedding returned empty data array')
-    }
-    return first.embedding
+    throw new Error(`OpenAI embedding failed (${lastStatus}): ${errors.join(' | ')}`)
   }
 }

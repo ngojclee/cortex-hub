@@ -28,6 +28,7 @@ const MAX_READ_SIZE = 512 * 1024
 async function callGitNexus(
   tool: string,
   params: Record<string, unknown>,
+  timeoutMs = 30_000,
 ): Promise<unknown> {
   const url = `${GITNEXUS_URL()}/tool/${tool}`
   logger.info(`GitNexus ${tool}: ${JSON.stringify(params)}`)
@@ -36,7 +37,7 @@ async function callGitNexus(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
-    signal: AbortSignal.timeout(30000),
+    signal: AbortSignal.timeout(timeoutMs),
   })
 
   const text = await res.text()
@@ -253,6 +254,8 @@ type GraphQueryOptions = {
   format: string
 }
 
+type GraphQueryLoadClass = 'focused' | 'filtered' | 'broad'
+
 type BoundedGraphNode = {
   id: string
   type: string
@@ -295,11 +298,16 @@ type BoundedGraphData = {
 
 const DEFAULT_GRAPH_NODE_TYPES = ['File', 'Class', 'Function', 'Method', 'Interface'] as const
 const DEFAULT_GRAPH_EDGE_TYPES = ['CALLS', 'IMPORTS', 'EXTENDS', 'IMPLEMENTS'] as const
+const GRAPH_REFRESH_COOLDOWN_MS = 60_000
 const MAX_GRAPH_NODES = 250
 const MAX_GRAPH_EDGES = 500
 const DEFAULT_GRAPH_NODES = 80
 const DEFAULT_GRAPH_EDGES = 160
 const MAX_GRAPH_DEPTH = 5
+
+let graphRefreshCooldownUntil = 0
+let graphRefreshCooldownReason: string | null = null
+const graphRefreshInFlight = new Map<string, Promise<BoundedGraphData>>()
 
 const GITNEXUS_RESOURCE_TOOLS = [
   'cortex_code_search',
@@ -1577,11 +1585,11 @@ function parseGraphList(
   fallback: readonly string[],
   normalize: (item: string) => string | null,
 ): string[] {
-  if (value?.trim().toLowerCase() === 'all') return []
-
   const rawItems = value
     ? value.split(',')
     : [...fallback]
+
+  if (rawItems.some((item) => item.trim().toLowerCase() === 'all')) return []
 
   return Array.from(new Set(
     rawItems
@@ -1600,6 +1608,44 @@ function normalizeGraphEdgeType(value: string): string | null {
   const trimmed = value.trim().toUpperCase()
   if (!trimmed) return null
   return trimmed.replace(/[^A-Z0-9_]/g, '') || null
+}
+
+function classifyGraphQueryLoad(options: GraphQueryOptions): GraphQueryLoadClass {
+  if (options.focus) return 'focused'
+  if (options.search || options.community || options.nodeTypes.length > 0) return 'filtered'
+  return 'broad'
+}
+
+function graphRefreshCooldownRemainingMs(): number {
+  return Math.max(0, graphRefreshCooldownUntil - Date.now())
+}
+
+function markGraphRefreshCooldown(error: unknown): void {
+  graphRefreshCooldownUntil = Date.now() + GRAPH_REFRESH_COOLDOWN_MS
+  graphRefreshCooldownReason = String(error)
+}
+
+function buildGraphRefreshCooldownHint(): string {
+  const seconds = Math.ceil(graphRefreshCooldownRemainingMs() / 1000)
+  return `GitNexus graph refresh is cooling down for ${seconds}s after a failed live query. Serving cached or empty data to protect CPU.${graphRefreshCooldownReason ? ` Last error: ${graphRefreshCooldownReason}` : ''}`
+}
+
+async function getOrBuildGraphSnapshot(
+  projectId: string,
+  repoName: string,
+  options: GraphQueryOptions,
+  snapshotKey: string,
+): Promise<BoundedGraphData> {
+  const existing = graphRefreshInFlight.get(snapshotKey)
+  if (existing) return existing
+
+  const task = buildBoundedGraph(projectId, repoName, options)
+  graphRefreshInFlight.set(snapshotKey, task)
+  try {
+    return await task
+  } finally {
+    graphRefreshInFlight.delete(snapshotKey)
+  }
 }
 
 function parseGraphDirection(value: string | undefined): GraphDirection {
@@ -1788,6 +1834,7 @@ function addGraphEdge(
 
 async function fetchGraphSeedNodes(
   projectId: string,
+  repoName: string,
   options: GraphQueryOptions,
   limit: number,
 ): Promise<{ repo: string; rows: Array<Record<string, string | number | null>> }> {
@@ -1807,11 +1854,12 @@ async function fetchGraphSeedNodes(
        RETURN DISTINCT ${buildGraphNodeReturn('n')}, null AS community
        LIMIT ${limit}`
 
-  return queryProjectCypherRows(projectId, query)
+  return queryProjectCypherRows(projectId, query, {}, repoName)
 }
 
 async function fetchGraphEdgesForFrontier(
   projectId: string,
+  repoName: string,
   frontierIds: string[],
   options: GraphQueryOptions,
   limit: number,
@@ -1834,11 +1882,12 @@ async function fetchGraphEdgesForFrontier(
       r.type AS edgeType, r.confidence AS edgeConfidence, r.reason AS edgeReason, r.step AS edgeStep
     LIMIT ${limit}`
 
-  return queryProjectCypherRows(projectId, query)
+  return queryProjectCypherRows(projectId, query, {}, repoName)
 }
 
 async function fetchGraphEdgesAmongNodes(
   projectId: string,
+  repoName: string,
   nodeIds: string[],
   options: GraphQueryOptions,
   limit: number,
@@ -1854,11 +1903,12 @@ async function fetchGraphEdgesAmongNodes(
       r.type AS edgeType, r.confidence AS edgeConfidence, r.reason AS edgeReason, r.step AS edgeStep
     LIMIT ${limit}`
 
-  return queryProjectCypherRows(projectId, query)
+  return queryProjectCypherRows(projectId, query, {}, repoName)
 }
 
 async function countGraphNodes(
   projectId: string,
+  repoName: string,
   options: GraphQueryOptions,
 ): Promise<number | null> {
   try {
@@ -1874,7 +1924,7 @@ async function countGraphNodes(
          WHERE ${filters.join(' AND ')}
          RETURN COUNT(n) AS nodes`
 
-    const { rows } = await queryProjectCypherRows(projectId, query)
+    const { rows } = await queryProjectCypherRows(projectId, query, {}, repoName)
     return parseNumberLike(rows[0]?.nodes)
   } catch (error) {
     logger.warn(`Graph node count failed for ${projectId}: ${String(error)}`)
@@ -1916,6 +1966,7 @@ function rowsToGraphEdges(
 
 async function buildBoundedGraph(
   projectId: string,
+  repoName: string,
   options: GraphQueryOptions,
 ): Promise<BoundedGraphData> {
   const nodes = new Map<string, BoundedGraphNode>()
@@ -1923,7 +1974,7 @@ async function buildBoundedGraph(
   const capReason: string[] = []
 
   const seedLimit = options.limitNodes + 1
-  const seedResult = await fetchGraphSeedNodes(projectId, options, seedLimit)
+  const seedResult = await fetchGraphSeedNodes(projectId, repoName, options, seedLimit)
   for (const row of seedResult.rows.slice(0, options.limitNodes)) {
     const node = graphNodeFromRow(row, '', 0)
     if (node) upsertGraphNode(nodes, node)
@@ -1938,7 +1989,7 @@ async function buildBoundedGraph(
       if (edges.size >= options.limitEdges || nodes.size >= options.limitNodes) break
 
       const edgeLimit = options.limitEdges - edges.size + 1
-      const edgeResult = await fetchGraphEdgesForFrontier(projectId, frontier, options, edgeLimit)
+      const edgeResult = await fetchGraphEdgesForFrontier(projectId, repoName, frontier, options, edgeLimit)
       if (edgeResult.rows.length >= edgeLimit) {
         capReason.push(`edge cap ${options.limitEdges} reached at depth ${depth}`)
       }
@@ -1955,7 +2006,7 @@ async function buildBoundedGraph(
     }
   } else {
     const edgeLimit = options.limitEdges + 1
-    const edgeResult = await fetchGraphEdgesAmongNodes(projectId, Array.from(nodes.keys()), options, edgeLimit)
+    const edgeResult = await fetchGraphEdgesAmongNodes(projectId, repoName, Array.from(nodes.keys()), options, edgeLimit)
     if (edgeResult.rows.length > options.limitEdges) {
       capReason.push(`edge cap ${options.limitEdges} reached`)
     }
@@ -1969,8 +2020,14 @@ async function buildBoundedGraph(
     if (skippedForNodeCap) capReason.push(`node cap ${options.limitNodes} reached while linking nodes`)
   }
 
-  const totalNodes = options.focus ? nodes.size : await countGraphNodes(projectId, options)
-  const totalEdges = options.focus || capReason.length > 0 ? null : edges.size
+  const loadClass = classifyGraphQueryLoad(options)
+  const shouldCountNodes = options.focus || loadClass === 'filtered'
+  if (!shouldCountNodes && nodes.size >= options.limitNodes) {
+    capReason.push('broad all-node query skips total count to protect GitNexus CPU')
+  }
+
+  const totalNodes = options.focus ? nodes.size : shouldCountNodes ? await countGraphNodes(projectId, repoName, options) : null
+  const totalEdges = options.focus || capReason.length > 0 || loadClass === 'broad' ? null : edges.size
   const truncated = capReason.length > 0
 
   return {
@@ -1993,8 +2050,15 @@ async function buildBoundedGraph(
 async function queryProjectCypherRows(
   projectId: string,
   query: string,
-  params: Record<string, unknown> = {}
+  params: Record<string, unknown> = {},
+  repoName?: string,
+  timeoutMs = 30_000,
 ): Promise<{ repo: string; rows: Array<Record<string, string | number | null>> }> {
+  if (repoName) {
+    const result = await callGitNexus('cypher', { query, ...params, repo: repoName }, timeoutMs)
+    return { repo: repoName, rows: parseCypherRows(result) }
+  }
+
   const { repo, result } = await callGitNexusStrictWithFallback('cypher', { query, ...params }, projectId)
   return { repo, rows: parseCypherRows(result) }
 }
@@ -2892,7 +2956,34 @@ intelRouter.get('/resources/project/:projectId/graph', async (c) => {
       })
     }
 
-    const liveGraph = await buildBoundedGraph(context.project.id, options)
+    if (graphRefreshCooldownRemainingMs() > 0) {
+      const snapshot = buildGraphSnapshotMeta(snapshotRead, {
+        source: snapshotRead.record ? 'snapshot' : 'empty',
+        refresh,
+      })
+      const fallbackGraph = snapshotRead.record
+        ? { ...snapshotRead.record.data, snapshot }
+        : emptyGraphData(context.gitnexusRepo.name, snapshot)
+
+      return c.json({
+        success: true,
+        data: {
+          uri: `cortex://project/${context.project.id}/graph`,
+          project: buildProjectResourceSummary(context),
+          query: options,
+          ...fallbackGraph,
+          hint: buildGraphRefreshCooldownHint(),
+        },
+      }, snapshotRead.record ? 200 : 409)
+    }
+
+    let liveGraph: BoundedGraphData
+    try {
+      liveGraph = await getOrBuildGraphSnapshot(context.project.id, context.gitnexusRepo.name, options, snapshotRead.meta.snapshotKey)
+    } catch (error) {
+      markGraphRefreshCooldown(error)
+      throw error
+    }
     const snapshotRecord = writeGraphSnapshot(context.project.id, options, liveGraph)
     const freshSnapshotRead = readGraphSnapshot<BoundedGraphData>(context.project.id, options, refresh)
     const graph = {

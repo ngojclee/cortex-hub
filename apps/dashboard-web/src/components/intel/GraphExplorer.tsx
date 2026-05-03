@@ -10,9 +10,9 @@ import {
 } from '@/lib/api'
 import styles from './GraphExplorer.module.css'
 
-const NODE_TYPE_OPTIONS = ['File', 'Class', 'Function', 'Method', 'Interface', 'Module']
+const NODE_TYPE_OPTIONS = ['all', 'File', 'Class', 'Function', 'Method', 'Interface', 'Module']
 const EDGE_TYPE_OPTIONS = ['CALLS', 'IMPORTS', 'EXTENDS', 'IMPLEMENTS', 'ACCESSES']
-const DEFAULT_NODE_TYPES = ['File', 'Class', 'Function', 'Method', 'Interface']
+const DEFAULT_NODE_TYPES = ['all']
 const DEFAULT_EDGE_TYPES = ['CALLS', 'IMPORTS', 'EXTENDS', 'IMPLEMENTS']
 const DEPTH_OPTIONS = [1, 2, 3, 5]
 const DEFAULT_SLICE_NODES = 40
@@ -118,6 +118,13 @@ function toggleList(list: string[], value: string) {
   return list.includes(value) ? list.filter((item) => item !== value) : [...list, value]
 }
 
+function toggleNodeTypeList(list: string[], value: string) {
+  if (value === 'all') return ['all']
+  const base = list.filter((item) => item !== 'all')
+  const next = toggleList(base, value)
+  return next.length > 0 ? next : ['all']
+}
+
 function colorForType(type: string) {
   const normalized = type.toLowerCase()
   if (normalized.includes('file') || normalized.includes('module')) return '#60a5fa'
@@ -206,7 +213,7 @@ function buildMockGraphSlice(
   ]
 
   const search = opts.search.trim().toLowerCase()
-  const nodeTypeSet = new Set(opts.nodeTypes)
+  const nodeTypeSet = new Set(opts.nodeTypes.includes('all') ? [] : opts.nodeTypes)
   const edgeTypeSet = new Set(opts.edgeTypes)
   const filteredNodes = baseNodes.filter((node) => {
     const typeMatches = nodeTypeSet.size === 0 || nodeTypeSet.has(node.type)
@@ -541,7 +548,11 @@ export default function GraphExplorer({ projectId, projectName, indexStatus }: G
   }
 
   async function refreshSnapshot() {
-    setRefreshArmed(true)
+    if (!refreshArmed) {
+      setRefreshArmed(true)
+      return
+    }
+
     try {
       const refreshed = await getIntelProjectGraph(projectId, {
         nodeTypes,
@@ -603,7 +614,11 @@ export default function GraphExplorer({ projectId, projectName, indexStatus }: G
             <div className={styles.filterLabel}>Node Types</div>
             {NODE_TYPE_OPTIONS.map((type) => (
               <label key={type} className={styles.checkRow}>
-                <input type="checkbox" checked={nodeTypes.includes(type)} onChange={() => setNodeTypes((current) => toggleList(current, type))} />
+                <input
+                  type="checkbox"
+                  checked={nodeTypes.includes(type)}
+                  onChange={() => setNodeTypes((current) => toggleNodeTypeList(current, type))}
+                />
                 <span>{type}</span>
               </label>
             ))}
@@ -651,7 +666,7 @@ export default function GraphExplorer({ projectId, projectName, indexStatus }: G
               <button className="btn btn-secondary btn-sm" onClick={() => setCanvasCommand('zoom-out')}>Zoom Out</button>
               <button className="btn btn-secondary btn-sm" onClick={() => setCanvasCommand('fit')}>Fit</button>
               <button className="btn btn-secondary btn-sm" onClick={() => setLayoutSeed((current) => current + 1)}>Rerun Layout</button>
-              <button className="btn btn-secondary btn-sm" onClick={refreshSnapshot} disabled={isLoading || refreshArmed}>Refresh Snapshot</button>
+              <button className="btn btn-secondary btn-sm" onClick={refreshSnapshot} disabled={isLoading}>{refreshArmed ? 'Confirm Refresh' : 'Refresh Snapshot'}</button>
               <button className="btn btn-secondary btn-sm" disabled>Stop</button>
             </div>
           </div>

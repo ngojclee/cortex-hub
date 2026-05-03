@@ -146,7 +146,7 @@ export default function SettingsPage() {
   const endpointLinks = [
     { label: 'Dashboard', url: dashboardUrl },
     { label: 'API', url: config.api.base },
-    { label: 'MCP', url: config.mcp.base },
+    { label: 'MCP', url: config.mcp.endpoint },
     { label: 'LLM Proxy', url: config.services.cliproxy },
   ]
   const mcpConfigSnippet = `{

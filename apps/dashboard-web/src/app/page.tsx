@@ -151,6 +151,8 @@ export default function DashboardPage() {
   })
 
   const svcMap = healthData?.services as Record<string, string> | undefined
+  const publicMcpEndpoint = 'https://cortexhub.lengoc.me/mcp'
+  const lanMcpEndpoint = config.mcp.endpoint
   const mcpConfigSnippet = `{
   "mcpServers": {
     "cortex-hub": {
@@ -376,11 +378,24 @@ export default function DashboardPage() {
         <h2 className={styles.sectionTitle}>Quick Connect</h2>
         <div className={`card ${styles.connectCard}`}>
           <p className={styles.connectText}>
-            Add Cortex Hub to your AI agent&apos;s MCP config:
+            Add Cortex Hub to your AI agent MCP config. Use the public domain for remote agents, or the LAN endpoint when the agent runs on your private network.
           </p>
+          <div className={styles.endpointGrid}>
+            <div className={styles.endpointItem}>
+              <span className={styles.endpointLabel}>Public domain</span>
+              <code>{publicMcpEndpoint}</code>
+            </div>
+            <div className={styles.endpointItem}>
+              <span className={styles.endpointLabel}>Current/LAN</span>
+              <code>{lanMcpEndpoint}</code>
+            </div>
+          </div>
           <pre className={styles.codeBlock}>
 {mcpConfigSnippet}
           </pre>
+          <p className={styles.connectNote}>
+            MCP clients connect to <code>/mcp</code>. Dashboard/API routes stay on <code>/api</code> and are not the agent connection endpoint.
+          </p>
           <a href="/keys" className="btn btn-primary btn-sm" style={{ marginTop: 'var(--space-4)', display: 'inline-flex' }}>
             Generate API Key →
           </a>

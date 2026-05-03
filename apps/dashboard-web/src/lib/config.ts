@@ -12,7 +12,7 @@ const localApiBase = hasWindow
   : 'http://localhost:4000'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? (isLocalHost ? localApiBase : browserOrigin || 'http://localhost:4000')
-const MCP_BASE = process.env.NEXT_PUBLIC_MCP_URL ?? (hasWindow ? inferPortUrl(8318) : 'http://localhost:8318')
+const MCP_BASE = process.env.NEXT_PUBLIC_MCP_URL ?? API_BASE
 const CLIPROXY_BASE = process.env.NEXT_PUBLIC_CLIPROXY_URL ?? (hasWindow ? inferPortUrl(8317) : 'http://localhost:8317')
 const QDRANT_BASE = process.env.NEXT_PUBLIC_QDRANT_URL ?? (hasWindow ? inferPortUrl(6333) : 'http://localhost:6333')
 

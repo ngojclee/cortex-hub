@@ -22,7 +22,7 @@ AI Agent → MCP Server (Bearer token) → Dashboard API → Backend Services
 
 ### 1. Open Cortex Hub Dashboard
 
-Navigate to **https://hub.jackle.dev**
+Navigate to **https://cortexhub.lengoc.me**
 
 The **Setup Wizard** launches automatically on first visit — configure your LLM provider (OAuth or API key).
 
@@ -62,7 +62,7 @@ bash scripts/bootstrap.sh
 ```
 
 The script will prompt for:
-- **MCP URL** (default: `https://cortex-mcp.jackle.dev/mcp`)
+- **MCP URL** (default: `https://cortexhub.lengoc.me/mcp`)
 - **API Key** (get from your Hub admin or Dashboard → API Keys)
 
 ### 2. Onboard Your AI Agent
@@ -80,7 +80,7 @@ This auto-detects your IDE (Claude Code, Cursor, Windsurf, VS Code) and:
 ### 3. Verify Connection
 
 ```bash
-curl -s -X POST 'https://cortex-mcp.jackle.dev/mcp' \
+curl -s -X POST 'https://cortexhub.lengoc.me/mcp' \
   -H 'Content-Type: application/json' \
   -H 'Authorization: Bearer YOUR_KEY' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | head -100
@@ -96,7 +96,7 @@ For **Claude Code** (`~/.claude/settings.json`):
   "mcpServers": {
     "cortex-hub": {
       "command": "npx",
-      "args": ["-y", "mcp-remote", "https://cortex-mcp.jackle.dev/mcp", "--header", "Authorization: Bearer YOUR_KEY"]
+      "args": ["-y", "mcp-remote", "https://cortexhub.lengoc.me/mcp", "--header", "Authorization: Bearer YOUR_KEY"]
     }
   }
 }
@@ -110,10 +110,10 @@ For other tools, `onboard.sh` handles this automatically.
 
 | Service | URL | Port |
 |---------|-----|------|
-| Dashboard | https://hub.jackle.dev | 3000 |
-| API | https://cortex-api.jackle.dev | 4000 |
-| MCP Server | https://cortex-mcp.jackle.dev | 8318 |
-| LLM Proxy | https://cortex-llm.jackle.dev | 8317 |
+| Dashboard | https://cortexhub.lengoc.me | 4000 |
+| API | https://cortexhub.lengoc.me | 4000 |
+| MCP Server | https://cortexhub.lengoc.me/mcp | 4000 |
+| LLM Proxy (internal) | http://llm-proxy:8317 | 8317 |
 | GitNexus (internal) | http://gitnexus:4848 | 4848 |
 
 ## Troubleshooting
@@ -124,4 +124,4 @@ For other tools, `onboard.sh` handles this automatically.
 | `401 Unauthorized` | API key invalid or expired — regenerate at Dashboard → API Keys |
 | OAuth login fails | Check CLIProxy logs: `docker logs cortex-llm-proxy` |
 | MCP tools not available | Verify onboard.sh completed — check agent MCP config |
-| Post-push webhook not firing | Set `CORTEX_API_URL` env var, or use default (cortex-api.jackle.dev) |
+| Post-push webhook not firing | Set `CORTEX_API_URL` env var, or use default (`https://cortexhub.lengoc.me`) |

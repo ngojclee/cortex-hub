@@ -23,5 +23,6 @@ export interface Env {
   CLIENT_IP?: string
   CLIENT_USER_AGENT?: string
   CORTEX_ACCESS_URL?: string
+  CORTEX_ACCESS_PORT?: string
 }
 

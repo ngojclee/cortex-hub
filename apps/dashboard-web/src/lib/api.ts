@@ -329,6 +329,12 @@ export async function getSessions(limit = 50) {
 // ── Settings ──
 export interface SettingsData {
   environment: string
+  access?: {
+    base: string
+    mcpEndpoint: string
+    publicBase: string
+    publicMcpEndpoint: string
+  }
   services: Record<string, string>
   database: string
   version: string

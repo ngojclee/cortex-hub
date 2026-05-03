@@ -26,6 +26,17 @@ Navigate to the private LAN/NetBird dashboard first: **http://10.21.1.108:4000**
 
 Use **https://cortexhub.lengoc.me** only as a controlled public fallback.
 
+For Docker/Portainer, the access variables accept either a full URL or a bare host. This is enough for the common LAN + fallback setup:
+
+```env
+CORTEX_ACCESS_URL=10.21.1.108
+DASHBOARD_URL=cortexhub.lengoc.me
+CORTEX_PUBLIC_URL=cortexhub.lengoc.me
+API_PORT=4000
+```
+
+Cortex normalizes those values to `http://10.21.1.108:4000` for private MCP/API access and `https://cortexhub.lengoc.me` for dashboard callbacks/public fallback. Set `DASHBOARD_URL` to the public domain only when login callbacks should point there; otherwise it can be left empty and Cortex will use the private access URL.
+
 The **Setup Wizard** launches automatically on first visit — configure your LLM provider (OAuth or API key).
 
 ### 2. Create Organization & Projects
@@ -113,7 +124,7 @@ For other tools, `onboard.sh` handles this automatically.
 | Service | URL | Port |
 |---------|-----|------|
 | Dashboard | http://10.21.1.108:4000 | 4000 |
-| Public fallback | https://cortexhub.lengoc.me | 4000 |
+| Public fallback | https://cortexhub.lengoc.me | 443 |
 | API | http://10.21.1.108:4000 | 4000 |
 | MCP Server | http://10.21.1.108:4000/mcp | 4000 |
 | LLM Proxy (internal) | http://llm-proxy:8317 | 8317 |

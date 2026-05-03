@@ -7,6 +7,7 @@ import {
   checkHealth,
   getDashboardOverview,
   getActivityFeed,
+  getSettings,
   getSystemMetrics,
   type ActivityEvent,
   type SystemMetrics,
@@ -149,10 +150,11 @@ export default function DashboardPage() {
   const { data: systemData } = useSWR('system-metrics', getSystemMetrics, {
     refreshInterval: 5000,
   })
+  const { data: settingsData } = useSWR('settings', getSettings)
 
   const svcMap = healthData?.services as Record<string, string> | undefined
-  const primaryMcpEndpoint = config.mcp.accessEndpoint
-  const publicMcpEndpoint = config.mcp.publicEndpoint
+  const primaryMcpEndpoint = settingsData?.access?.mcpEndpoint ?? config.mcp.accessEndpoint
+  const publicMcpEndpoint = settingsData?.access?.publicMcpEndpoint ?? config.mcp.publicEndpoint
   const mcpConfigSnippet = `{
   "mcpServers": {
     "cortex-hub": {

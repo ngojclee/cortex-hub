@@ -26,6 +26,7 @@
 - [x] AI context upgrade round: added Agent Cortex Workflow Ladder docs/rules, bounded graph API + MCP graph tools, `/graph` Explorer mode with Sigma/graphology, and flag-gated raw+compact memory/knowledge contract. Verification: build/typecheck/lint/test pass locally; compaction remains disabled by default pending live benchmark.
 - [x] Build ✅ | Typecheck ✅ | Lint ✅ | Quality: A (100/100)
 - [x] MCP-only recovery hardening: agents use `/mcp` only, graph MCP tools default to `nodeTypes=["all"]` to survive GitNexus label drift, and mem9 embed errors now classify provider quota/rate-limit as `provider_quota_exceeded` with early stop/backoff.
+- [x] Access URL normalization: Docker/Portainer can use bare host envs (`CORTEX_ACCESS_URL=10.21.1.108`, `DASHBOARD_URL=cortexhub.lengoc.me`, `CORTEX_PUBLIC_URL=cortexhub.lengoc.me`); runtime normalizes LAN to `http://host:4000` and public domains to `https://host`, and Quick Connect reads normalized runtime endpoints.
 
 ## Architecture — 2-Service Model
 

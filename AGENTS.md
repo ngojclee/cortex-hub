@@ -46,6 +46,8 @@ Agents should connect through the private LAN/NetBird MCP endpoint by default: `
 
 The public MCP endpoint `https://cortexhub.lengoc.me/mcp` is a fallback for controlled remote access only. Do not use public admin-capable tokens for routine agent sessions.
 
+Docker/Portainer access variables may be bare hosts. `CORTEX_ACCESS_URL=10.21.1.108` with `API_PORT=4000` resolves to `http://10.21.1.108:4000`; `CORTEX_PUBLIC_URL=cortexhub.lengoc.me` resolves to `https://cortexhub.lengoc.me`. `DASHBOARD_URL=cortexhub.lengoc.me` is valid when login callbacks should use the public domain; leave it empty to use the private access URL as canonical.
+
 Do not call `/api/*` directly from agent sessions. `/api/*` is the dashboard/internal API lane and may be protected by Cloudflare Access, dashboard session auth, or API-key middleware; a direct `/api/*` 401 is expected and does not mean MCP auth is broken.
 ### Agent Cortex Workflow Ladder
 

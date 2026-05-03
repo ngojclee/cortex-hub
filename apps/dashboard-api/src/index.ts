@@ -13,7 +13,7 @@ try {
 }
 import { cors } from 'hono/cors'
 import { logger as honoLogger } from 'hono/logger'
-import { createLogger } from '@cortex/shared-utils'
+import { createLogger, normalizeCortexBaseUrl } from '@cortex/shared-utils'
 import { setupRouter } from './routes/setup.js'
 import { keysRouter } from './routes/keys.js'
 import { llmRouter } from './routes/llm.js'
@@ -33,6 +33,9 @@ import { dashboardAuth } from './middleware/auth.js'
 
 const app = new Hono()
 const logger = createLogger('dashboard-api')
+const cortexAccessPort = () => process.env['CORTEX_ACCESS_PORT'] ?? process.env['API_PORT'] ?? process.env['PORT'] ?? '4000'
+const normalizeDashboardUrl = (value: string | null | undefined) =>
+  normalizeCortexBaseUrl(value, { defaultPort: cortexAccessPort(), stripMcpPath: true })
 
 const corsOrigins = (() => {
   const origins = new Set<string>([
@@ -42,12 +45,14 @@ const corsOrigins = (() => {
     'http://127.0.0.1:4000',
   ])
 
-  const dashboardUrl = process.env['DASHBOARD_URL']
-  if (dashboardUrl) {
-    try {
-      origins.add(new URL(dashboardUrl).origin)
-    } catch {
-      logger.warn(`Invalid DASHBOARD_URL for CORS: ${dashboardUrl}`)
+  for (const key of ['DASHBOARD_URL', 'CORTEX_ACCESS_URL', 'CORTEX_PUBLIC_URL']) {
+    const rawUrl = process.env[key]
+    if (!rawUrl) continue
+    const normalized = normalizeDashboardUrl(rawUrl)
+    if (normalized) {
+      origins.add(new URL(normalized).origin)
+    } else {
+      logger.warn(`Invalid ${key} for CORS: ${rawUrl}`)
     }
   }
 

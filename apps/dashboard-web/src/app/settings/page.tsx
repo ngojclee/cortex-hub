@@ -135,7 +135,9 @@ export default function SettingsPage() {
     { containerName: 'cortex-qdrant', label: 'Qdrant Vector DB', icon: '🔮' },
     { containerName: 'cortex-gitnexus', label: 'GitNexus (Code Intelligence)', icon: '🧬' },
   ]
-  const dashboardUrl = typeof window !== 'undefined' ? window.location.origin : config.api.base
+  const dashboardUrl = data?.access?.base ?? (typeof window !== 'undefined' ? window.location.origin : config.api.base)
+  const primaryMcpEndpoint = data?.access?.mcpEndpoint ?? config.mcp.accessEndpoint
+  const publicMcpEndpoint = data?.access?.publicMcpEndpoint ?? config.mcp.publicEndpoint
   const repositoryUrl = 'https://github.com/ngojclee/cortex-hub'
   const docsUrl = `${repositoryUrl}/blob/master/.docs/guides/onboarding.md`
   const displayVersion = healthData?.version ?? data?.version ?? '...'
@@ -146,13 +148,14 @@ export default function SettingsPage() {
   const endpointLinks = [
     { label: 'Dashboard', url: dashboardUrl },
     { label: 'API', url: config.api.base },
-    { label: 'MCP', url: config.mcp.endpoint },
+    { label: 'MCP', url: primaryMcpEndpoint },
+    { label: 'Public MCP', url: publicMcpEndpoint },
     { label: 'LLM Proxy', url: config.services.cliproxy },
   ]
   const mcpConfigSnippet = `{
   "mcpServers": {
     "cortex-hub": {
-      "url": "${config.mcp.endpoint}",
+      "url": "${primaryMcpEndpoint}",
       "headers": {
         "Authorization": "Bearer <your-api-key>"
       }

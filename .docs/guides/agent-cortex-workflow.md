@@ -30,6 +30,8 @@ Use the public MCP endpoint only as a controlled fallback for remote access:
 
 - `https://cortexhub.lengoc.me/mcp`
 
+Runtime access variables may be bare hosts. `CORTEX_ACCESS_URL=10.21.1.108` with `API_PORT=4000` resolves to `http://10.21.1.108:4000`; `CORTEX_PUBLIC_URL=cortexhub.lengoc.me` resolves to `https://cortexhub.lengoc.me`. `DASHBOARD_URL=cortexhub.lengoc.me` is valid when login callbacks should use the public domain; leave it empty to use the private access URL as canonical.
+
 Do not call `/api/*` directly from agents. `/api/*` is the internal dashboard/API lane and may be protected by Cloudflare Access, dashboard session auth, or API-key middleware. A direct `/api/*` 401 is expected and does not mean MCP auth is broken.
 
 Keep admin-capable MCP tokens separate from routine agent tokens. Use admin tokens only over LAN/NetBird for cleanup, registry repair, and project metadata maintenance.

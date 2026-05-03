@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { randomUUID } from 'crypto'
 import { db } from '../db/client.js'
-import { createLogger } from '@cortex/shared-utils'
+import { createLogger, normalizeCortexBaseUrl } from '@cortex/shared-utils'
 
 const logger = createLogger('auth')
 
@@ -10,7 +10,11 @@ export const authRouter = new Hono()
 // ── Env helpers ──
 const TELEGRAM_BOT_TOKEN = () => process.env['TELEGRAM_BOT_TOKEN'] || ''
 const TELEGRAM_CHAT_ID = () => process.env['TELEGRAM_CHAT_ID'] || ''
-const DASHBOARD_URL = () => process.env['DASHBOARD_URL'] || 'http://localhost:4000'
+const DASHBOARD_URL = () =>
+  normalizeCortexBaseUrl(process.env['DASHBOARD_URL'] || process.env['CORTEX_ACCESS_URL'], {
+    defaultPort: process.env['CORTEX_ACCESS_PORT'] ?? process.env['API_PORT'] ?? process.env['PORT'] ?? '4000',
+    stripMcpPath: true,
+  }) || 'http://localhost:4000'
 const AUTH_ENABLED = () => (process.env['AUTH_ENABLED'] || 'false').toLowerCase() === 'true'
 const AUTH_SESSION_TTL_HOURS = () => Number(process.env['AUTH_SESSION_TTL_HOURS'] || '168') // 7 days default
 

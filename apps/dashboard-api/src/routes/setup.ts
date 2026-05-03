@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { readFileSync } from 'node:fs'
 import { db } from '../db/client.js'
+import { cortexMcpEndpoint, normalizeCortexBaseUrl } from '@cortex/shared-utils'
 
 export const setupRouter = new Hono()
 
@@ -11,8 +12,13 @@ const MANAGEMENT_KEY = () =>
   process.env.CLIPROXY_MANAGEMENT_KEY || process.env.MANAGEMENT_PASSWORD || 'cortex2026'
 const QDRANT_URL = () =>
   process.env.QDRANT_URL || 'http://localhost:6333'
+const CORTEX_ACCESS_PORT = () =>
+  process.env.CORTEX_ACCESS_PORT || process.env.API_PORT || process.env.PORT || '4000'
+const CORTEX_URL = (value?: string | null) =>
+  normalizeCortexBaseUrl(value, { defaultPort: CORTEX_ACCESS_PORT(), stripMcpPath: true })
 const DASHBOARD_URL = (requestUrl?: string) => {
-  if (process.env.DASHBOARD_URL) return process.env.DASHBOARD_URL
+  const configuredUrl = CORTEX_URL(process.env.DASHBOARD_URL || process.env.CORTEX_ACCESS_URL)
+  if (configuredUrl) return configuredUrl
   if (requestUrl) {
     try {
       return new URL(requestUrl).origin
@@ -238,14 +244,23 @@ setupRouter.get('/test', async (c) => {
 
 // ── Settings ──
 setupRouter.get('/settings', (c) => {
+  const accessBase = CORTEX_URL(process.env.CORTEX_ACCESS_URL || process.env.DASHBOARD_URL) || `http://localhost:${process.env.PORT || 4000}`
+  const publicBase = CORTEX_URL(process.env.CORTEX_PUBLIC_URL || process.env.PUBLIC_URL || process.env.DASHBOARD_URL) || 'https://cortexhub.lengoc.me'
+
   return c.json({
     environment: process.env.NODE_ENV || 'development',
+    access: {
+      base: accessBase,
+      mcpEndpoint: cortexMcpEndpoint(accessBase),
+      publicBase,
+      publicMcpEndpoint: cortexMcpEndpoint(publicBase),
+    },
     services: {
       cliproxy: CLIPROXY_URL(),
       qdrant: QDRANT_URL(),
       gitnexus: process.env.GITNEXUS_URL || 'http://gitnexus:4848',
       mem9: 'in-process (Gemini + CLIProxy)',
-      dashboardApi: `http://localhost:${process.env.PORT || 4000}`,
+      dashboardApi: accessBase,
     },
     geminiApiKey: hasGeminiProviderKey() ? 'configured' : 'not set',
     database: process.env.DATABASE_PATH || 'data/cortex.db',

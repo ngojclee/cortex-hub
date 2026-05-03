@@ -3,6 +3,7 @@ import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
+import { normalizeCortexBaseUrl } from '@cortex/shared-utils'
 
 import { registerCodeTools } from './tools/code.js'
 import { registerCodeResources } from './resources/code.js'
@@ -70,14 +71,11 @@ function getRequestOrigin(req: Request): string {
   // Fallback: use explicit access URL env vars when deployed behind a reverse proxy
   // (e.g., Cloudflare Tunnel → dashboard-api → cortex-mcp) where
   // x-forwarded-* headers may not reach this container.
-  const configuredUrl = process.env['CORTEX_ACCESS_URL'] ?? process.env['PUBLIC_URL']
-  if (configuredUrl) {
-    try {
-      return new URL(configuredUrl).origin
-    } catch {
-      /* invalid URL, ignore */
-    }
-  }
+  const configuredUrl = normalizeCortexBaseUrl(process.env['CORTEX_ACCESS_URL'] ?? process.env['PUBLIC_URL'], {
+    defaultPort: process.env['CORTEX_ACCESS_PORT'] ?? process.env['API_PORT'] ?? '4000',
+    stripMcpPath: true,
+  })
+  if (configuredUrl) return new URL(configuredUrl).origin
 
   return new URL(req.url).origin
 }
@@ -98,6 +96,7 @@ app.use('*', async (c, next) => {
     'CLIENT_IP',
     'CLIENT_USER_AGENT',
     'CORTEX_ACCESS_URL',
+    'CORTEX_ACCESS_PORT',
   ]
   for (const key of envKeys) {
     if (!c.env[key] && process.env[key]) {

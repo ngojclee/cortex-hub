@@ -56,6 +56,7 @@ type GraphPayload = {
 }
 
 const commaListSchema = z.array(z.string()).optional()
+const GRAPH_ALL_NODE_TYPES = ['all']
 const directionSchema = z.enum(['upstream', 'downstream', 'both']).optional()
 const refreshSchema = z.boolean().optional()
 
@@ -70,6 +71,10 @@ const DEFAULT_BRIEF_EDGES = 80
 
 function appendList(params: URLSearchParams, key: string, value?: string[]): void {
   if (value && value.length > 0) params.set(key, value.join(','))
+}
+
+function appendNodeTypes(params: URLSearchParams, value?: string[]): void {
+  appendList(params, 'nodeTypes', value && value.length > 0 ? value : GRAPH_ALL_NODE_TYPES)
 }
 
 function appendNumber(params: URLSearchParams, key: string, value?: number): void {
@@ -137,6 +142,16 @@ function capReasonLabel(value: string[] | undefined): string {
   return value && value.length > 0 ? value.join('; ') : 'none'
 }
 
+function nodeTypeHint(payload: GraphPayload): string | null {
+  const nodes = payload.data?.nodes ?? []
+  if (nodes.length === 0) return null
+
+  const unknownCount = nodes.filter((node) => !node.type || node.type === 'Unknown').length
+  if (unknownCount === 0) return null
+
+  return `Graph contains ${unknownCount}/${nodes.length} node(s) with unknown GitNexus labels. MCP graph tools default to nodeTypes=["all"] so useful nodes are not hidden by label drift.`
+}
+
 function buildGraphSummary(title: string, payload: GraphPayload, maxNodes = 20, maxEdges = 20): string {
   const data = payload.data
   if (!data) return JSON.stringify(payload, null, 2)
@@ -162,6 +177,8 @@ function buildGraphSummary(title: string, payload: GraphPayload, maxNodes = 20, 
     lines.push(`SnapshotAgeMs: ${meta.snapshotAgeMs}`)
   }
   if (data.hint) lines.push(`Hint: ${data.hint}`)
+  const graphHint = nodeTypeHint(payload)
+  if (graphHint) lines.push(`NodeTypeHint: ${graphHint}`)
 
   lines.push('', 'Nodes:')
   lines.push(...(nodes.length > 0 ? nodes.slice(0, maxNodes).map(nodeLabel) : ['- none']))
@@ -204,7 +221,7 @@ export function registerGraphTools(server: McpServer, env: Env) {
     {
       projectId: z.string().describe('Project ID or slug to scope graph search'),
       query: z.string().describe('Symbol, file, or text fragment to search in graph node names and file paths'),
-      nodeTypes: commaListSchema.describe('Optional node types, e.g. File,Class,Function,Method,Interface'),
+      nodeTypes: commaListSchema.describe('Optional node types. Defaults to all to tolerate GitNexus label drift; pass File,Class,Function,Method,Interface to narrow.'),
       limit: z.number().optional().describe('Maximum candidate nodes to return, capped server-side'),
       refresh: refreshSchema.describe('Explicitly refresh from GitNexus instead of snapshot/cache when supported; default false'),
     },
@@ -212,7 +229,7 @@ export function registerGraphTools(server: McpServer, env: Env) {
       try {
         const params = new URLSearchParams({ search: query, depth: '1' })
         setSnapshotFirstParams(params, refresh)
-        appendList(params, 'nodeTypes', nodeTypes)
+        appendNodeTypes(params, nodeTypes)
         appendBoundedNumber(params, 'limitNodes', limit, DEFAULT_SEARCH_NODES, 50)
         appendBoundedNumber(params, 'limitEdges', undefined, DEFAULT_SEARCH_EDGES, 100)
 
@@ -238,7 +255,7 @@ export function registerGraphTools(server: McpServer, env: Env) {
       depth: z.number().optional().describe('Traversal depth, capped at 5'),
       direction: directionSchema.describe('Traversal direction: upstream, downstream, or both'),
       edgeTypes: commaListSchema.describe('Optional relation types, e.g. CALLS,IMPORTS,DEFINES'),
-      nodeTypes: commaListSchema.describe('Optional node types, e.g. File,Class,Function,Method,Interface'),
+      nodeTypes: commaListSchema.describe('Optional node types. Defaults to all to tolerate GitNexus label drift; pass File,Class,Function,Method,Interface to narrow.'),
       limitNodes: z.number().optional().describe('Maximum nodes, capped server-side'),
       limitEdges: z.number().optional().describe('Maximum edges, capped server-side'),
       refresh: refreshSchema.describe('Explicitly refresh from GitNexus instead of snapshot/cache when supported; default false'),
@@ -250,7 +267,7 @@ export function registerGraphTools(server: McpServer, env: Env) {
         appendNumber(params, 'depth', depth ?? 1)
         if (direction) params.set('direction', direction)
         appendList(params, 'edgeTypes', edgeTypes)
-        appendList(params, 'nodeTypes', nodeTypes)
+        appendNodeTypes(params, nodeTypes)
         appendBoundedNumber(params, 'limitNodes', limitNodes, DEFAULT_SLICE_NODES, 120)
         appendBoundedNumber(params, 'limitEdges', limitEdges, DEFAULT_SLICE_EDGES, 240)
 
@@ -281,7 +298,7 @@ export function registerGraphTools(server: McpServer, env: Env) {
       try {
         const params = new URLSearchParams({
           focus: filePath,
-          nodeTypes: 'File,Class,Function,Method,Interface,Route,Tool',
+          nodeTypes: 'all',
           edgeTypes: 'CONTAINS,DEFINES,IMPORTS,CALLS,EXTENDS,IMPLEMENTS,HAS_METHOD',
         })
         setSnapshotFirstParams(params, refresh)
@@ -317,7 +334,7 @@ export function registerGraphTools(server: McpServer, env: Env) {
       try {
         const params = new URLSearchParams({
           focus: symbol,
-          nodeTypes: 'Class,Function,Method,Interface,File,Route,Tool',
+          nodeTypes: 'all',
           edgeTypes: 'CALLS,IMPORTS,EXTENDS,IMPLEMENTS,HAS_METHOD,DEFINES,STEP_IN_PROCESS',
           direction: 'both',
         })

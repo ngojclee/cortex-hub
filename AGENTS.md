@@ -40,6 +40,11 @@
 > These tools are the core value of Cortex Hub — skipping them defeats the purpose.
 > ℹ️ **Compliance is enforced automatically** — see [Compliance Enforcement](#compliance-enforcement) below.
 
+### MCP Lane
+
+Agents must connect through the public MCP endpoint only: `https://cortexhub.lengoc.me/mcp`.
+
+Do not call `https://cortexhub.lengoc.me/api/*` directly from agent sessions. `/api/*` is the dashboard/internal API lane and may be blocked by Cloudflare Access or API-key middleware; a direct `/api/*` 401 is expected and does not mean MCP auth is broken.
 ### Agent Cortex Workflow Ladder
 
 Use [.docs/guides/agent-cortex-workflow.md](.docs/guides/agent-cortex-workflow.md) as the canonical guide. Short form:
@@ -58,7 +63,7 @@ session_start
 -> session_end
 ```
 
-Until dedicated graph tools ship, use this fallback mapping:
+Dedicated graph tools now exist. If an older session cannot see them after config changes, restart the MCP client; then use this fallback mapping:
 
 | Desired step | Current fallback |
 |--------------|------------------|
@@ -68,6 +73,7 @@ Until dedicated graph tools ship, use this fallback mapping:
 | `file_neighbors` | `cortex_code_tree`, `cortex_code_context`, or `cortex_cypher` by file path |
 
 Token-saving rule: prefer returned context resources, bounded graph slices, and compact memory/knowledge snippets before reading raw source. Read raw code only for files likely to be edited or verified, and request raw memory/knowledge only when compact context hides necessary debugging detail.
+Graph rule: MCP graph tools default to `nodeTypes=["all"]` so GitNexus label drift (`Unknown`/blank labels) does not hide useful nodes. Narrow node types only when needed. If `cortex_health` reports `gitnexus` unhealthy/503, recover GitNexus before retrying refresh graph.
 
 Store `cortex_memory_store` for branch-local discoveries, task handoffs, and session-specific debugging notes. Store `cortex_knowledge_store` for reusable decisions, endpoint/schema contracts, resolved bugs, deployment gotchas, and workflows future agents should reuse. Never store secrets, huge logs, large raw source files, obvious source facts, or unverified guesses without marking uncertainty.
 
@@ -98,6 +104,7 @@ Store `cortex_memory_store` for branch-local discoveries, task handoffs, and ses
 9. `grep_search` / `find_by_name` → only if Cortex tools are unavailable
 
 **Bug/Error Protocol (NEVER skip):**
+If mem9 returns `provider_quota_exceeded`, 429, `quota`, `rate limit`, or `resource_exhausted`, treat it as provider quota/rate limiting, not MCP auth failure. Switch provider, wait quota reset, or retry sequentially after provider recovery.
 If you encounter a compilation error, runtime error, or failing test:
 1. First search `cortex_knowledge_search` or `cortex_memory_search` for the error message.
 2. Fix the error.
@@ -264,3 +271,17 @@ Every code session MUST end with verification from `project-profile.json`:
 
 <!-- cortex-hub:agent-rules -->
 > 📋 **Cortex Hub rules:** See [.cortex/agent-rules.md](.cortex/agent-rules.md) for MCP tool usage guidelines.
+
+<!-- CORTEX_MEM:START -->
+## Cortex Mem
+
+When the user asks to use Cortex, remember/sync context, audit Cortex data, or continue work across agents, use the Cortex Mem workflow.
+
+- Codex skill: `C:\Users\ngocl\.codex\skills\cortex-mem\SKILL.md`
+- Claude skill: `C:\Users\ngocl\.claude\skills\cortex-mem\SKILL.md`
+- Shared agent rule: `C:\Users\ngocl\.agents\rules\cortex-mem.md`
+
+Workflow: `cortex_session_start` → memory/knowledge search → project resources/graph/code context → scoped work → verify → quality report → memory/knowledge store → session end.
+
+Never store secrets, tokens, `.env` values, cookies, private keys, or unredacted credentials in Cortex.
+<!-- CORTEX_MEM:END -->

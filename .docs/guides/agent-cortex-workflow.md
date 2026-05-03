@@ -20,6 +20,14 @@ session_start
 -> session_end
 ```
 
+## MCP Lane
+
+Use the public MCP endpoint for agents:
+
+- `https://cortexhub.lengoc.me/mcp`
+
+Do not call `https://cortexhub.lengoc.me/api/*` directly from agents. `/api/*` is the internal dashboard/API lane and may be protected by Cloudflare Access or API-key middleware. A direct `/api/*` 401 is expected and does not mean MCP auth is broken.
+
 ## Current MCP Coverage
 
 Available now:
@@ -33,6 +41,10 @@ Available now:
 - `cortex_code_read`
 - `cortex_code_tree`
 - `cortex_cypher`
+- `cortex_graph_search`
+- `cortex_graph_slice`
+- `cortex_file_neighbors`
+- `cortex_symbol_brief`
 - `cortex_code_impact`
 - `cortex_detect_changes`
 - `cortex_quality_report`
@@ -40,14 +52,7 @@ Available now:
 - `cortex_knowledge_store`
 - `cortex_session_end`
 
-Planned dedicated graph tools:
-
-- `cortex_graph_search`
-- `cortex_graph_slice`
-- `cortex_file_neighbors`
-- `cortex_symbol_brief`
-
-Until those exist, use this fallback mapping:
+Graph fallback mapping when dedicated graph tools are unavailable in an older session:
 
 | Desired step | Current fallback |
 |--------------|------------------|
@@ -72,9 +77,22 @@ Use Cortex before local grep/find when the task touches project behavior:
 1. `cortex_memory_search` for past agent/session findings.
 2. `cortex_knowledge_search` for shared decisions, known bugs, and runbooks.
 3. Project context resources for current architecture slices.
-4. `cortex_code_search` or future `cortex_graph_search` for candidate symbols/files.
-5. `cortex_code_context`, `cortex_code_tree`, `cortex_cypher`, or future graph slice tools for focused neighborhoods.
+4. `cortex_graph_search` or `cortex_code_search` for candidate symbols/files.
+5. `cortex_graph_slice`, `cortex_symbol_brief`, `cortex_file_neighbors`, `cortex_code_context`, `cortex_code_tree`, or `cortex_cypher` for focused neighborhoods.
 6. `cortex_code_read` or local file read only after the relevant files are known.
+
+## Graph Rules
+
+- Use graph snapshot-first and keep limits small.
+- MCP graph tools default to `nodeTypes=["all"]` to tolerate GitNexus label drift where nodes may be labelled `Unknown` or blank.
+- Pass specific node types only when intentionally narrowing, for example `File,Class,Function,Method,Interface`.
+- Use `refresh=true` only when the snapshot is missing/stale or the user explicitly asks to update Cortex data.
+- If `cortex_health` reports `gitnexus` unhealthy/503, recover GitNexus first instead of repeatedly refreshing graph.
+- Knowledge-only projects, workspace roots, and projects without GitNexus registration cannot produce useful graph data until project metadata/indexing is fixed.
+
+## Mem9 Provider Quota
+
+A `provider_quota_exceeded`, 429, `quota`, `rate limit`, or `resource_exhausted` error means the selected embedding provider is out of quota or rate-limited. It is not an MCP auth problem. Switch provider, wait quota reset, or retry sequentially after provider recovery.
 
 ## Token Saving Rules
 
@@ -157,7 +175,7 @@ Do not store:
 ## Before Editing
 
 1. Identify the target symbol/file.
-2. Run `cortex_code_context` or future `cortex_symbol_brief`.
+2. Run `cortex_symbol_brief` or `cortex_code_context`.
 3. Run `cortex_code_impact` for core code, shared APIs, auth, routing, DB, or infra.
 4. Read only the selected raw files.
 5. Edit.

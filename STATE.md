@@ -25,6 +25,7 @@
 - [x] Internal header hardening: percent-encode Unicode-bearing MCP headers before service-to-service fetches and decode them in dashboard-api so API key labels or client metadata with non-ASCII characters do not crash Node fetch with `ByteString` errors.
 - [x] AI context upgrade round: added Agent Cortex Workflow Ladder docs/rules, bounded graph API + MCP graph tools, `/graph` Explorer mode with Sigma/graphology, and flag-gated raw+compact memory/knowledge contract. Verification: build/typecheck/lint/test pass locally; compaction remains disabled by default pending live benchmark.
 - [x] Build ✅ | Typecheck ✅ | Lint ✅ | Quality: A (100/100)
+- [x] MCP-only recovery hardening: agents use `/mcp` only, graph MCP tools default to `nodeTypes=["all"]` to survive GitNexus label drift, and mem9 embed errors now classify provider quota/rate-limit as `provider_quota_exceeded` with early stop/backoff.
 
 ## Architecture — 2-Service Model
 

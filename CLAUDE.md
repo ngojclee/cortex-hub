@@ -138,3 +138,17 @@ Your tool usage is **automatically tracked and scored**:
 
 > 💡 These are infrastructure-level — they work on ANY MCP client, not just Claude hooks.
 <!-- cortex-hub:auto-mcp -->
+
+<!-- CORTEX_MEM:START -->
+## Cortex Mem
+
+When the user asks to use Cortex, remember/sync context, audit Cortex data, or continue work across agents, use the Cortex Mem workflow.
+
+- Codex skill: `C:\Users\ngocl\.codex\skills\cortex-mem\SKILL.md`
+- Claude skill: `C:\Users\ngocl\.claude\skills\cortex-mem\SKILL.md`
+- Shared agent rule: `C:\Users\ngocl\.agents\rules\cortex-mem.md`
+
+Workflow: `cortex_session_start` → memory/knowledge search → project resources/graph/code context → scoped work → verify → quality report → memory/knowledge store → session end.
+
+Never store secrets, tokens, `.env` values, cookies, private keys, or unredacted credentials in Cortex.
+<!-- CORTEX_MEM:END -->

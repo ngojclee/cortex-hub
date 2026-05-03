@@ -115,3 +115,17 @@ Your tool usage is **automatically tracked and scored**. Two mechanisms enforce 
 If you see fewer than 17 tools from `cortex-hub` MCP server, the connection may be stale.
 **Action:** Immediately inform the user: "MCP tools are incomplete. Please refresh the cortex-hub MCP server connection."
 <!-- cortex-hub:auto-mcp -->
+
+<!-- CORTEX_MEM:START -->
+## Cortex Mem
+
+When the user asks to use Cortex, remember/sync context, audit Cortex data, or continue work across agents, use the Cortex Mem workflow.
+
+- Codex skill: `C:\Users\ngocl\.codex\skills\cortex-mem\SKILL.md`
+- Claude skill: `C:\Users\ngocl\.claude\skills\cortex-mem\SKILL.md`
+- Shared agent rule: `C:\Users\ngocl\.agents\rules\cortex-mem.md`
+
+Workflow: `cortex_session_start` → memory/knowledge search → project resources/graph/code context → scoped work → verify → quality report → memory/knowledge store → session end.
+
+Never store secrets, tokens, `.env` values, cookies, private keys, or unredacted credentials in Cortex.
+<!-- CORTEX_MEM:END -->

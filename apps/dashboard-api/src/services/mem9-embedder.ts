@@ -182,6 +182,27 @@ function resolveMem9GatewayUrl(): string | undefined {
   return disabledValues.has(value.toLowerCase()) ? undefined : value
 }
 
+function isProviderQuotaError(error: unknown): boolean {
+  const message = String(error).toLowerCase()
+  return (
+    message.includes('429') ||
+    message.includes('quota') ||
+    message.includes('rate limit') ||
+    message.includes('rate_limit') ||
+    message.includes('resource_exhausted')
+  )
+}
+
+function formatEmbeddingError(error: unknown): string {
+  const prefix = isProviderQuotaError(error) ? 'provider_quota_exceeded: ' : ''
+  return `${prefix}${String(error).slice(0, 200)}`
+}
+
+function embeddingBatchDelayMs(): number {
+  const parsed = Number.parseInt(process.env.MEM9_EMBEDDING_BATCH_DELAY_MS ?? '', 10)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 1000
+}
+
 // ── Main Embedding Pipeline ──
 
 export async function embedProject(
@@ -291,7 +312,7 @@ async function embedProjectInternal(
     vectorSize = testVec.length
     logger.info(`[${jobId}] Vector dimensions: ${vectorSize}`)
   } catch (err) {
-    const msg = `Embedding test failed: ${String(err).slice(0, 200)}`
+    const msg = `Embedding test failed: ${formatEmbeddingError(err)}`
     logger.error(`[${jobId}] ${msg}`)
     return { status: 'error', chunks: 0, errors: [msg] }
   }
@@ -301,9 +322,11 @@ async function embedProjectInternal(
   // 5. Embed and store in batches
   let successCount = 0
   const BATCH_SIZE = 5
+  const batchDelayMs = embeddingBatchDelayMs()
   const totalBatches = Math.ceil(allChunks.length / BATCH_SIZE)
+  let quotaBlocked = false
 
-  for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
+  for (let batchIdx = 0; batchIdx < totalBatches && !quotaBlocked; batchIdx++) {
     const batch = allChunks.slice(batchIdx * BATCH_SIZE, (batchIdx + 1) * BATCH_SIZE)
 
     const embedPromises = batch.map(async (chunk) => {
@@ -322,7 +345,9 @@ async function embedProjectInternal(
 
         successCount++
       } catch (err) {
-        errors.push(`${chunk.filePath}#${chunk.chunkIndex}: ${String(err).slice(0, 100)}`)
+        const message = formatEmbeddingError(err)
+        errors.push(`${chunk.filePath}#${chunk.chunkIndex}: ${message.slice(0, 160)}`)
+        if (isProviderQuotaError(err)) quotaBlocked = true
       }
     })
 
@@ -332,9 +357,14 @@ async function embedProjectInternal(
     const progress = Math.round(((batchIdx + 1) / totalBatches) * 100)
     onProgress?.(progress, successCount)
 
+    if (quotaBlocked) {
+      logger.warn(`[${jobId}] mem9 embedding stopped early because provider quota/rate-limit was reached`)
+      break
+    }
+
     // Small delay between batches to avoid rate limiting
-    if (batchIdx < totalBatches - 1) {
-      await new Promise<void>((r) => setTimeout(r, 200))
+    if (batchIdx < totalBatches - 1 && batchDelayMs > 0) {
+      await new Promise<void>((r) => setTimeout(r, batchDelayMs))
     }
   }
 
@@ -349,7 +379,7 @@ async function embedProjectInternal(
   }
 
   return {
-    status: errors.length > 0 && successCount === 0 ? 'error' : 'done',
+    status: quotaBlocked || (errors.length > 0 && successCount === 0) ? 'error' : 'done',
     chunks: successCount,
     errors,
   }

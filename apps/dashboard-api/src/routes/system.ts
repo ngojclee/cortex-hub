@@ -2,9 +2,11 @@ import { Hono } from 'hono'
 import os from 'node:os'
 import { execFileSync } from 'node:child_process'
 import { request } from 'node:http'
+import { createLogger } from '@cortex/shared-utils'
 import { db } from '../db/client.js'
 
 export const systemRouter = new Hono()
+const logger = createLogger('system')
 
 interface ContainerInfo {
   name: string
@@ -53,6 +55,45 @@ interface RuntimeLogEntry {
   stream: string
   message: string
   timestamp: string | null
+}
+
+interface DockerContainerJson {
+  Id?: string
+  Names?: string[]
+  Image?: string
+  State?: string
+  Status?: string
+}
+
+interface DockerStatsJson {
+  cpu_stats?: {
+    cpu_usage?: {
+      total_usage?: number
+      percpu_usage?: number[]
+    }
+    system_cpu_usage?: number
+    online_cpus?: number
+  }
+  precpu_stats?: {
+    cpu_usage?: {
+      total_usage?: number
+    }
+    system_cpu_usage?: number
+  }
+  memory_stats?: {
+    usage?: number
+    limit?: number
+    stats?: Record<string, number | undefined>
+  }
+}
+
+interface ContainerSample {
+  cpu: string
+  cpuPercent: number
+  memory: string
+  memoryRaw: number
+  memoryLimit: number
+  memoryPercent: number
 }
 
 const LOGGABLE_DOCKER_SERVICES = [
@@ -133,7 +174,7 @@ const CONTAINER_STATS_TTL_MS = (() => {
 const CONTAINER_NAME_FILTER = (process.env.CONTAINER_STATS_NAME_FILTER ?? 'cortex-').trim()
 let containerStatsCache: { ts: number; data: ContainerInfo[] } | null = null
 
-function getContainerStats(): ContainerInfo[] {
+async function getContainerStats(): Promise<ContainerInfo[]> {
   if (
     containerStatsCache &&
     CONTAINER_STATS_TTL_MS > 0 &&
@@ -143,6 +184,107 @@ function getContainerStats(): ContainerInfo[] {
   }
 
   try {
+    const stats = await getContainerStatsFromDockerSocket()
+    containerStatsCache = { ts: Date.now(), data: stats }
+    return stats
+  } catch (error) {
+    logger.warn(`Docker socket container stats failed, trying docker CLI fallback: ${String(error)}`)
+  }
+
+  const stats = getContainerStatsFromDockerCli()
+  containerStatsCache = { ts: Date.now(), data: stats }
+  return stats
+}
+
+async function getContainerStatsFromDockerSocket(): Promise<ContainerInfo[]> {
+  const params = new URLSearchParams({ all: '1' })
+  if (CONTAINER_NAME_FILTER) {
+    params.set('filters', JSON.stringify({ name: [CONTAINER_NAME_FILTER] }))
+  }
+
+  const output = await readDockerSocket(`/containers/json?${params.toString()}`)
+  const containers = JSON.parse(output) as DockerContainerJson[]
+  if (!Array.isArray(containers)) return []
+
+  const stats = await Promise.all(containers.map(async (container) => {
+    const name = getDockerContainerName(container)
+    const state = container.State ?? 'unknown'
+    const id = container.Id ?? name
+    let sample: ContainerSample | null = null
+
+    if (state === 'running') {
+      sample = await getDockerSocketContainerSample(id).catch(() => null)
+    }
+
+    return {
+      name,
+      status: state,
+      cpu: sample?.cpu ?? '0%',
+      cpuPercent: sample?.cpuPercent ?? 0,
+      memory: sample?.memory ?? '—',
+      memoryRaw: sample?.memoryRaw ?? 0,
+      memoryLimit: sample?.memoryLimit ?? 0,
+      memoryPercent: sample?.memoryPercent ?? 0,
+      uptime: container.Status ?? '',
+      image: formatContainerImage(container.Image ?? ''),
+    }
+  }))
+
+  return sortContainerStats(stats)
+}
+
+async function getDockerSocketContainerSample(containerId: string): Promise<ContainerSample> {
+  const output = await readDockerSocket(`/containers/${encodeURIComponent(containerId)}/stats?stream=false&one-shot=true`)
+  const stats = JSON.parse(output) as DockerStatsJson
+  const cpuPercent = calculateDockerCpuPercent(stats)
+  const memoryRaw = calculateDockerMemoryUsage(stats)
+  const memoryLimit = stats.memory_stats?.limit ?? 0
+  const memoryPercent = memoryLimit > 0 ? (memoryRaw / memoryLimit) * 100 : 0
+
+  return {
+    cpu: `${cpuPercent.toFixed(2)}%`,
+    cpuPercent,
+    memory: memoryLimit > 0 ? `${formatBytes(memoryRaw)} / ${formatBytes(memoryLimit)}` : '—',
+    memoryRaw,
+    memoryLimit,
+    memoryPercent,
+  }
+}
+
+function calculateDockerCpuPercent(stats: DockerStatsJson): number {
+  const cpuTotal = stats.cpu_stats?.cpu_usage?.total_usage ?? 0
+  const previousCpuTotal = stats.precpu_stats?.cpu_usage?.total_usage ?? 0
+  const systemTotal = stats.cpu_stats?.system_cpu_usage ?? 0
+  const previousSystemTotal = stats.precpu_stats?.system_cpu_usage ?? 0
+  const cpuDelta = cpuTotal - previousCpuTotal
+  const systemDelta = systemTotal - previousSystemTotal
+  const onlineCpus =
+    stats.cpu_stats?.online_cpus ??
+    stats.cpu_stats?.cpu_usage?.percpu_usage?.length ??
+    1
+
+  if (cpuDelta <= 0 || systemDelta <= 0) return 0
+  return (cpuDelta / systemDelta) * onlineCpus * 100
+}
+
+function calculateDockerMemoryUsage(stats: DockerStatsJson): number {
+  const usage = stats.memory_stats?.usage ?? 0
+  const memoryStats = stats.memory_stats?.stats ?? {}
+  const cache = memoryStats['inactive_file'] ?? memoryStats['cache'] ?? 0
+  return usage > cache ? usage - cache : usage
+}
+
+function getDockerContainerName(container: DockerContainerJson): string {
+  const name = container.Names?.find((candidate) => candidate.trim().length > 0)
+  return (name ?? container.Id ?? 'unknown').replace(/^\//, '')
+}
+
+function formatContainerImage(image: string): string {
+  return image.split(':')[0]?.split('/').pop() ?? image
+}
+
+function getContainerStatsFromDockerCli(): ContainerInfo[] {
+  try {
     // Get container list via docker ps (filter to reduce daemon load)
     const psArgs = ['ps', '-a', '--format', '{{.Names}}|{{.State}}|{{.Status}}|{{.Image}}']
     if (CONTAINER_NAME_FILTER) psArgs.push('--filter', `name=${CONTAINER_NAME_FILTER}`)
@@ -150,9 +292,7 @@ function getContainerStats(): ContainerInfo[] {
     const psOutput = execFileSync('docker', psArgs, { timeout: 5000, encoding: 'utf-8' }).trim()
 
     if (!psOutput) {
-      const empty: ContainerInfo[] = []
-      containerStatsCache = { ts: Date.now(), data: empty }
-      return empty
+      return []
     }
 
     const containers = psOutput.split('\n').filter(Boolean)
@@ -212,16 +352,23 @@ function getContainerStats(): ContainerInfo[] {
         memoryLimit,
         memoryPercent: containerStats?.memPercent ?? 0,
         uptime: statusText ?? '',
-        image: (image ?? '').split(':')[0]?.split('/').pop() ?? image ?? '',
+        image: formatContainerImage(image ?? ''),
       })
     }
 
-    const sorted = stats.sort((a, b) => (b.cpuPercent - a.cpuPercent) || (b.memoryRaw - a.memoryRaw) || a.name.localeCompare(b.name))
-    containerStatsCache = { ts: Date.now(), data: sorted }
-    return sorted
-  } catch {
+    return sortContainerStats(stats)
+  } catch (error) {
+    logger.warn(`Docker CLI container stats failed: ${String(error)}`)
     return []
   }
+}
+
+function sortContainerStats(stats: ContainerInfo[]): ContainerInfo[] {
+  return stats.sort((a, b) =>
+    (b.cpuPercent - a.cpuPercent) ||
+    (b.memoryRaw - a.memoryRaw) ||
+    a.name.localeCompare(b.name),
+  )
 }
 
 function parseToBytes(value: number, unit: string): number {
@@ -402,7 +549,7 @@ systemRouter.get('/metrics', async (c) => {
 
   const cpu = getCpuUsage()
   const disk = getDiskUsage()
-  const containers = getContainerStats()
+  const containers = await getContainerStats()
   const indexJobs = getIndexJobs()
 
   // Network info

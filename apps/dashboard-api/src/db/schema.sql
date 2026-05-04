@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
     id TEXT PRIMARY KEY,       -- prefix + short random
     name TEXT NOT NULL,
     key_hash TEXT NOT NULL,    -- sha256 hash of the actual key
+    key_preview TEXT,          -- safe partial preview: prefix + tail, never full key
     scope TEXT NOT NULL,       -- e.g., 'all', 'knowledge', 'hub'
     permissions TEXT,          -- JSON string of permissions
     project_id TEXT,           -- optional scope to a project

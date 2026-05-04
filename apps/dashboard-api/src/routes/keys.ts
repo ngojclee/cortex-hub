@@ -13,10 +13,11 @@ function generateApiKey(): { key: string; hash: string } {
 }
 
 keysRouter.get('/', (c) => {
-  const stmt = db.prepare('SELECT id, name, scope, permissions, created_at as createdAt, expires_at as expiresAt, last_used_at as lastUsed FROM api_keys ORDER BY created_at DESC')
+  const stmt = db.prepare('SELECT id, name, scope, permissions, key_preview as keyPreview, created_at as createdAt, expires_at as expiresAt, last_used_at as lastUsed FROM api_keys ORDER BY created_at DESC')
   const keys = stmt.all().map((k: any) => ({
     ...k,
     prefix: 'sk_ctx_',
+    keyPreview: k.keyPreview ?? `sk_ctx_...${String(k.id).slice(-6)}`,
     permissions: k.permissions ? JSON.parse(k.permissions) : [],
   }))
   return c.json({ keys })
@@ -35,6 +36,7 @@ keysRouter.post('/', async (c) => {
     // ID for reference (not the actual secret key)
     const id = 'key_' + randomBytes(8).toString('hex')
     const prefix = 'sk_ctx_'
+    const keyPreview = `${key.slice(0, 10)}...${key.slice(-8)}`
 
     let expiresAt = null
     if (expiresInDays) {
@@ -43,14 +45,15 @@ keysRouter.post('/', async (c) => {
       expiresAt = date.toISOString()
     }
 
-    const stmt = db.prepare('INSERT INTO api_keys (id, name, key_hash, scope, permissions, expires_at) VALUES (?, ?, ?, ?, ?, ?)')
-    stmt.run(id, name, hash, scope, JSON.stringify(permissions), expiresAt)
+    const stmt = db.prepare('INSERT INTO api_keys (id, name, key_hash, key_preview, scope, permissions, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    stmt.run(id, name, hash, keyPreview, scope, JSON.stringify(permissions), expiresAt)
 
     return c.json({ 
       id,
       name,
       scope,
       prefix,
+      keyPreview,
       key: key,
       permissions
     }, 201)

@@ -42,6 +42,10 @@ function isAdminCapable(scope: string, permissions: string[]) {
     permissions.includes('knowledge:write')
 }
 
+function keyPreview(key: { id: string; prefix: string; keyPreview?: string }) {
+  return key.keyPreview || `${key.prefix}...${key.id.slice(-6)}`
+}
+
 export default function KeysPage() {
   const { data, mutate } = useSWR('api_keys', listApiKeys)
   const keys = data?.keys ?? []
@@ -253,7 +257,7 @@ export default function KeysPage() {
             {keys.map((key) => (
               <tr key={key.id}>
                 <td className={styles.keyName}>{key.name}</td>
-                <td><code className={styles.keyPrefix}>{key.prefix}</code></td>
+                <td><code className={styles.keyPrefix} title={key.id}>{keyPreview(key)}</code></td>
                 <td>{key.scope}</td>
                 <td>
                   <span className={isAdminCapable(key.scope, key.permissions) ? styles.capabilityAdmin : styles.capabilityStandard}>

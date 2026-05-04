@@ -182,6 +182,21 @@ export const migrations: Migration[] = [
       `)
     },
   },
+  {
+    id: 12,
+    name: 'add_api_key_preview',
+    up(db) {
+      const columns = db.prepare('PRAGMA table_info(api_keys)').all() as Array<{ name: string }>
+      if (!columns.some((column) => column.name === 'key_preview')) {
+        db.exec(`ALTER TABLE api_keys ADD COLUMN key_preview TEXT`)
+      }
+      db.exec(`
+        UPDATE api_keys
+        SET key_preview = 'sk_ctx_...' || substr(id, -6)
+        WHERE key_preview IS NULL OR key_preview = ''
+      `)
+    },
+  },
 ]
 
 /* ── Runner ── */

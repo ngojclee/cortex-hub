@@ -57,6 +57,7 @@ export interface ApiKey {
   id: string
   name: string
   prefix: string
+  keyPreview: string
   scope: string
   permissions: string[]
   createdAt: string

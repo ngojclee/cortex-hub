@@ -23,11 +23,11 @@ const allPermissions = [
   { id: 'cortex.memory.store', label: 'Store Memory', group: 'Memory' },
   { id: 'cortex.memory.search', label: 'Search Memory', group: 'Memory' },
   { id: 'cortex.code.search', label: 'Code Search', group: 'Code' },
-  { id: 'admin', label: 'Admin Access', group: 'Admin' },
-  { id: 'admin:write', label: 'Admin Write', group: 'Admin' },
-  { id: 'project:write', label: 'Project Write', group: 'Admin' },
-  { id: 'knowledge:write', label: 'Knowledge Write', group: 'Admin' },
-  { id: '*', label: 'Wildcard', group: 'Admin' },
+  { id: 'admin', label: 'Admin Access', group: 'Admin Cleanup' },
+  { id: 'admin:write', label: 'Admin Write', group: 'Admin Cleanup' },
+  { id: 'project:write', label: 'Project Cleanup', group: 'Admin Cleanup' },
+  { id: 'knowledge:write', label: 'Knowledge Cleanup', group: 'Admin Cleanup' },
+  { id: '*', label: 'Wildcard', group: 'Admin Cleanup' },
 ]
 
 const standardPermissions = ['cortex.health', 'cortex.memory.store', 'cortex.memory.search', 'cortex.code.search']
@@ -199,7 +199,8 @@ export default function KeysPage() {
             </div>
             <p className={styles.fieldHint}>
               Admin cleanup MCP tools require either admin-like scope (`admin`, `owner`, `system`, `write`, `full`)
-              or one of `admin`, `admin:write`, `project:write`, `knowledge:write`, `*`.
+              or one of `admin`, `admin:write`, `project:write`, `knowledge:write`, `*`. Normal memory/knowledge
+              store tools use the standard MCP permissions.
             </p>
 
             <label className={styles.fieldLabel} style={{ marginTop: 'var(--space-5)' }}>Expiration</label>

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import ThemedSelect from '@/components/ui/ThemedSelect'
 import useSWR from 'swr'
 import {
   getIntelProjectsResource,
@@ -961,18 +962,16 @@ export default function GraphPage() {
       <div className={styles.graphToolbar}>
         <div className={styles.projectControl}>
           <label className={styles.selectorLabel} htmlFor="graph-project-select">Project</label>
-          <select
+          <ThemedSelect
             id="graph-project-select"
             className={styles.selector}
             value={projectId}
-            onChange={(event) => setProjectId(event.target.value)}
-          >
-            {projects.map((project) => (
-              <option key={project.projectId} value={project.projectId}>
-                {project.name} ({project.slug}) - {projectKindLabel(project.classification.kind)}
-              </option>
-            ))}
-          </select>
+            onChange={setProjectId}
+            options={projects.map((project) => ({
+              value: project.projectId,
+              label: `${project.name} (${project.slug}) - ${projectKindLabel(project.classification.kind)}`,
+            }))}
+          />
         </div>
 
         <div className={styles.toolbarMeta}>

@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import ThemedSelect from '@/components/ui/ThemedSelect'
 import useSWR from 'swr'
 import {
   getKnowledgeDocuments,
@@ -50,16 +51,15 @@ function CreateDocumentDialog({
 
         <div className={styles.dialogField}>
           <label className={styles.dialogLabel}>Project</label>
-          <select
+          <ThemedSelect
             className={styles.dialogInput}
             value={projectId}
-            onChange={(e) => setProjectId(e.target.value)}
-          >
-            <option value="">Global (no project)</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.slug}>{p.name}</option>
-            ))}
-          </select>
+            onChange={setProjectId}
+            options={[
+              { value: '', label: 'Global (no project)' },
+              ...projects.map((p) => ({ value: p.slug, label: p.name })),
+            ]}
+          />
         </div>
 
         <div className={styles.dialogField}>
@@ -335,29 +335,27 @@ export default function KnowledgePage() {
       <div className={styles.actionBar}>
         <div className={styles.filters}>
           {/* Project filter */}
-          <select
+          <ThemedSelect
             className={styles.filterSelect}
             value={filterProject}
-            onChange={(e) => setFilterProject(e.target.value)}
-          >
-            <option value="all">All projects</option>
-            <option value="global">Global only</option>
-            {sortedProjects.map((p) => (
-              <option key={p.id} value={p.slug}>{p.name}</option>
-            ))}
-          </select>
+            onChange={setFilterProject}
+            options={[
+              { value: 'all', label: 'All projects' },
+              { value: 'global', label: 'Global only' },
+              ...sortedProjects.map((p) => ({ value: p.slug, label: p.name })),
+            ]}
+          />
 
           {/* Tag filter */}
-          <select
+          <ThemedSelect
             className={styles.filterSelect}
             value={filterTag}
-            onChange={(e) => setFilterTag(e.target.value)}
-          >
-            <option value="">All tags</option>
-            {(tagsData?.tags ?? []).map((tag) => (
-              <option key={tag} value={tag}>{tag}</option>
-            ))}
-          </select>
+            onChange={setFilterTag}
+            options={[
+              { value: '', label: 'All tags' },
+              ...(tagsData?.tags ?? []).map((tag) => ({ value: tag, label: tag })),
+            ]}
+          />
 
           {/* View mode toggle */}
           <div className={styles.viewToggle}>

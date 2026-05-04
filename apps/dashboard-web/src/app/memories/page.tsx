@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from 'react'
 import useSWR from 'swr'
 
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import ThemedSelect from '@/components/ui/ThemedSelect'
 import { deleteMemory, getAllProjects, getMemories } from '@/lib/api'
 import type { AgentMemory, Project } from '@/lib/api'
 import styles from './Memories.module.css'
@@ -183,18 +184,15 @@ export default function MemoriesPage() {
 
       <div className={styles.actionBar}>
         <div className={styles.filters}>
-          <select
+          <ThemedSelect
             className={styles.filterSelect}
             value={selectedProject}
-            onChange={(event) => setSelectedProject(event.target.value)}
-          >
-            <option value="all">All projects</option>
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.name}
-              </option>
-            ))}
-          </select>
+            onChange={setSelectedProject}
+            options={[
+              { value: 'all', label: 'All projects' },
+              ...projects.map((project) => ({ value: project.id, label: project.name })),
+            ]}
+          />
 
           <div className={styles.searchBox}>
             <span className={styles.searchIcon}>🔍</span>

@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import ThemedSelect from '@/components/ui/ThemedSelect'
 import useSWR from 'swr'
 import { config } from '@/lib/config'
 import styles from './page.module.css'
@@ -314,6 +315,17 @@ function ActiveConfigPanel({
       {purposes.map(({ key, label, desc }) => {
         const active = getActive(key)
         const result = testResults[key]
+        const modelOptions = enabledAccounts.flatMap((acc) => {
+          const models: string[] = Array.isArray(acc.models) ? acc.models : []
+          const relevantModels = key === 'embedding'
+            ? models.filter(isEmbeddingModelName)
+            : models.filter((m) => !isEmbeddingModelName(m))
+          const visibleModels = relevantModels.length > 0 || models.length === 0 ? relevantModels : models
+          return visibleModels.map((model) => ({
+            value: `${acc.id}|${model}`,
+            label: `${TYPE_ICONS[acc.type] ?? '📦'} ${acc.name} → ${model}`,
+          }))
+        })
         return (
           <div key={key} className={styles.activeCard}>
             <div className={styles.activeCardHeader}>
@@ -332,35 +344,18 @@ function ActiveConfigPanel({
             ) : (
               <div className={styles.activeEmpty}>No model assigned</div>
             )}
-            <select
+            <ThemedSelect
               className={styles.activeSelect}
               value={active ? `${active.accountId}|${active.model}` : ''}
-              onChange={(e) => {
-                const [accId, mod] = e.target.value.split('|')
+              onChange={(value) => {
+                const [accId, mod] = value.split('|')
                 if (accId && mod) handleChange(key, accId, mod)
               }}
-            >
-              <option value="">— Select model —</option>
-              {enabledAccounts.map((acc) => {
-                const models: string[] = Array.isArray(acc.models) ? acc.models : []
-                const relevantModels = key === 'embedding'
-                  ? models.filter(isEmbeddingModelName)
-                  : models.filter((m) => !isEmbeddingModelName(m))
-                if (relevantModels.length === 0 && models.length > 0) {
-                  // Show all models if no match — user can pick whatever
-                  return models.map((m) => (
-                    <option key={`${acc.id}|${m}`} value={`${acc.id}|${m}`}>
-                      {TYPE_ICONS[acc.type] ?? '📦'} {acc.name} → {m}
-                    </option>
-                  ))
-                }
-                return (relevantModels.length > 0 ? relevantModels : models).map((m) => (
-                  <option key={`${acc.id}|${m}`} value={`${acc.id}|${m}`}>
-                    {TYPE_ICONS[acc.type] ?? '📦'} {acc.name} → {m}
-                  </option>
-                ))
-              })}
-            </select>
+              options={[
+                { value: '', label: '— Select model —' },
+                ...modelOptions,
+              ]}
+            />
             <div className={styles.activeActions}>
               <button
                 className="btn btn-secondary btn-sm"
@@ -587,23 +582,28 @@ function AddProviderDialog({
           <>
             <div className={styles.dialogField}>
               <label className={styles.dialogLabel}>Provider Type *</label>
-              <select
+              <ThemedSelect
                 className={styles.dialogSelect}
                 value={selectedType.id}
-                onChange={(e) => handleTypeChange(e.target.value)}
+                onChange={handleTypeChange}
                 disabled={step === 'testing'}
-              >
-                <optgroup label="OAuth (CLIProxy)">
-                  {PROVIDER_TYPES.filter((t) => t.authType === 'oauth').map((t) => (
-                    <option key={t.id} value={t.id}>{t.icon} {t.label}</option>
-                  ))}
-                </optgroup>
-                <optgroup label="API Key">
-                  {PROVIDER_TYPES.filter((t) => t.authType === 'api_key').map((t) => (
-                    <option key={t.id} value={t.id}>{t.icon} {t.label}</option>
-                  ))}
-                </optgroup>
-              </select>
+                options={[
+                  {
+                    label: 'OAuth (CLIProxy)',
+                    options: PROVIDER_TYPES.filter((type) => type.authType === 'oauth').map((type) => ({
+                      value: type.id,
+                      label: `${type.icon} ${type.label}`,
+                    })),
+                  },
+                  {
+                    label: 'API Key',
+                    options: PROVIDER_TYPES.filter((type) => type.authType === 'api_key').map((type) => ({
+                      value: type.id,
+                      label: `${type.icon} ${type.label}`,
+                    })),
+                  },
+                ]}
+              />
             </div>
 
             <div className={styles.dialogField}>
@@ -726,31 +726,27 @@ function AddProviderDialog({
             {testResult.chatModels && testResult.chatModels.length > 0 && (
               <div className={styles.dialogField}>
                 <label className={styles.dialogLabel}>💬 Chat Model</label>
-                <select
+                <ThemedSelect
                   className={styles.dialogSelect}
                   value={selectedChatModel}
-                  onChange={(e) => setSelectedChatModel(e.target.value)}
-                >
-                  {testResult.chatModels.map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
+                  onChange={setSelectedChatModel}
+                  options={testResult.chatModels.map((model) => ({ value: model, label: model }))}
+                />
               </div>
             )}
 
             {testResult.embedModels && testResult.embedModels.length > 0 && (
               <div className={styles.dialogField}>
                 <label className={styles.dialogLabel}>🧠 Embedding Model</label>
-                <select
+                <ThemedSelect
                   className={styles.dialogSelect}
                   value={selectedEmbedModel}
-                  onChange={(e) => setSelectedEmbedModel(e.target.value)}
-                >
-                  <option value="">— Don&apos;t use for embedding —</option>
-                  {testResult.embedModels.map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
+                  onChange={setSelectedEmbedModel}
+                  options={[
+                    { value: '', label: "— Don't use for embedding —" },
+                    ...testResult.embedModels.map((model) => ({ value: model, label: model })),
+                  ]}
+                />
               </div>
             )}
 

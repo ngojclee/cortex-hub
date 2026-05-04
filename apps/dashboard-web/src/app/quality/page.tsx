@@ -2,6 +2,7 @@
 
 import { startTransition, useMemo, useState } from 'react'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import ThemedSelect from '@/components/ui/ThemedSelect'
 import useSWR from 'swr'
 import {
   getAllProjects,
@@ -288,12 +289,15 @@ function QuickReportCard({
       <div className={styles.composerGrid}>
         <label className={styles.formField}>
           <span className={styles.formLabel}>Project</span>
-          <select className={styles.formInput} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-            <option value="">Global / no project</option>
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>{project.name}</option>
-            ))}
-          </select>
+          <ThemedSelect
+            className={styles.formInput}
+            value={projectId}
+            onChange={setProjectId}
+            options={[
+              { value: '', label: 'Global / no project' },
+              ...projects.map((project) => ({ value: project.id, label: project.name })),
+            ]}
+          />
         </label>
 
         <label className={styles.formField}>
@@ -640,36 +644,33 @@ export default function QualityPage() {
       {activeTab === 'reports' && (
         <div className={styles.section}>
           <div className={styles.filterBar}>
-            <select
+            <ThemedSelect
               className={styles.filterSelect}
               value={filterProject}
-              onChange={(e) => { setFilterProject(e.target.value); setReportPage(1) }}
-            >
-              <option value="">All Projects</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>{project.name}</option>
-              ))}
-            </select>
-            <select
+              onChange={(value) => { setFilterProject(value); setReportPage(1) }}
+              options={[
+                { value: '', label: 'All Projects' },
+                ...projects.map((project) => ({ value: project.id, label: project.name })),
+              ]}
+            />
+            <ThemedSelect
               className={styles.filterSelect}
               value={filterGrade}
-              onChange={(e) => { setFilterGrade(e.target.value); setReportPage(1) }}
-            >
-              <option value="">All Grades</option>
-              {['A', 'B', 'C', 'D', 'F'].map(g => (
-                <option key={g} value={g}>Grade {g}</option>
-              ))}
-            </select>
-            <select
+              onChange={(value) => { setFilterGrade(value); setReportPage(1) }}
+              options={[
+                { value: '', label: 'All Grades' },
+                ...['A', 'B', 'C', 'D', 'F'].map((grade) => ({ value: grade, label: `Grade ${grade}` })),
+              ]}
+            />
+            <ThemedSelect
               className={styles.filterSelect}
               value={filterAgent}
-              onChange={(e) => { setFilterAgent(e.target.value); setReportPage(1) }}
-            >
-              <option value="">All Agents</option>
-              {uniqueAgents.map(a => (
-                <option key={a} value={a}>{a}</option>
-              ))}
-            </select>
+              onChange={(value) => { setFilterAgent(value); setReportPage(1) }}
+              options={[
+                { value: '', label: 'All Agents' },
+                ...uniqueAgents.map((agent) => ({ value: agent, label: agent })),
+              ]}
+            />
             <button className="btn btn-secondary btn-sm" onClick={() => mutateReports()}>
               Refresh
             </button>

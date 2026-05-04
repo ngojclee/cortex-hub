@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import ThemedSelect from '@/components/ui/ThemedSelect'
 import useSWR from 'swr'
 import {
   getProject, updateProject,
@@ -218,16 +219,13 @@ function IndexingPanel({ projectId, hasGitUrl }: { projectId: string; hasGitUrl:
           <div className={styles.branchInput}>
             <label className={styles.branchLabel}>Branch:</label>
             {branches.length > 0 ? (
-              <select
+              <ThemedSelect
                 className={styles.branchField}
                 value={branch}
-                onChange={(e) => setBranch(e.target.value)}
+                onChange={setBranch}
                 disabled={isActive}
-              >
-                {branches.map((b: string) => (
-                  <option key={b} value={b}>{b}</option>
-                ))}
-              </select>
+                options={branches.map((b: string) => ({ value: b, label: b }))}
+              />
             ) : (
               <input
                 className={styles.branchField}

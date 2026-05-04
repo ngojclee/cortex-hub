@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import ThemedSelect from '@/components/ui/ThemedSelect'
 import styles from './page.module.css'
 
 import useSWR from 'swr'
@@ -156,15 +157,12 @@ export default function KeysPage() {
             />
 
             <label className={styles.fieldLabel} style={{ marginTop: 'var(--space-5)' }}>Scope</label>
-            <select
+            <ThemedSelect
               className="input"
               value={keyScope}
-              onChange={(e) => setKeyScope(e.target.value)}
-            >
-              {scopeOptions.map((option) => (
-                <option key={option.id} value={option.id}>{option.label}</option>
-              ))}
-            </select>
+              onChange={setKeyScope}
+              options={scopeOptions.map((option) => ({ value: option.id, label: option.label }))}
+            />
             {selectedScope && <p className={styles.fieldHint}>{selectedScope.description}</p>}
 
             <label className={styles.fieldLabel} style={{ marginTop: 'var(--space-5)' }}>Presets</label>
@@ -201,16 +199,17 @@ export default function KeysPage() {
             </p>
 
             <label className={styles.fieldLabel} style={{ marginTop: 'var(--space-5)' }}>Expiration</label>
-            <select
+            <ThemedSelect
               className="input"
               value={keyExpiry}
-              onChange={(e) => setKeyExpiry(e.target.value)}
-            >
-              <option value="never">Never</option>
-              <option value="30">30 days</option>
-              <option value="90">90 days</option>
-              <option value="365">1 year</option>
-            </select>
+              onChange={setKeyExpiry}
+              options={[
+                { value: 'never', label: 'Never' },
+                { value: '30', label: '30 days' },
+                { value: '90', label: '90 days' },
+                { value: '365', label: '1 year' },
+              ]}
+            />
 
             <div className={creatingAdminCapable ? styles.adminNotice : styles.standardNotice}>
               <strong>{creatingAdminCapable ? 'Admin-capable key' : 'Standard machine key'}</strong>

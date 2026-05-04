@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import useSWR from 'swr'
+import ThemedSelect from '@/components/ui/ThemedSelect'
 import {
   getIntelProjectGraph,
   type IntelGraphEdge,
@@ -651,10 +652,16 @@ export default function GraphExplorer({ projectId, projectName, indexStatus }: G
 
           <div className={styles.filterGroup}>
             <label className={styles.filterLabel} htmlFor="community-filter">Community</label>
-            <select id="community-filter" className={styles.selectInput} value={community} onChange={(event) => setCommunity(event.target.value)}>
-              <option value="">All</option>
-              {communities.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
+            <ThemedSelect
+              id="community-filter"
+              className={styles.selectInput}
+              value={community}
+              onChange={setCommunity}
+              options={[
+                { value: '', label: 'All' },
+                ...communities.map((item) => ({ value: item, label: item })),
+              ]}
+            />
           </div>
         </aside>
 

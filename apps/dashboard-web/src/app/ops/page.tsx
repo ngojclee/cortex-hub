@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import ThemedSelect from '@/components/ui/ThemedSelect'
 import useSWR from 'swr'
 import {
   getActivityFeed,
@@ -286,11 +287,11 @@ export default function OpsPage() {
         <div className={styles.sectionHeader}>
           <h2>Server Logs</h2>
           <div className={styles.logControls}>
-            <select value={selectedLogService} onChange={(event) => setSelectedLogService(event.target.value)}>
-              {LOG_SERVICES.map((service) => (
-                <option key={service.id} value={service.id}>{service.label}</option>
-              ))}
-            </select>
+            <ThemedSelect
+              value={selectedLogService}
+              onChange={setSelectedLogService}
+              options={LOG_SERVICES.map((service) => ({ value: service.id, label: service.label }))}
+            />
           </div>
         </div>
         <div className={`card ${styles.logCard}`}>
@@ -331,19 +332,17 @@ export default function OpsPage() {
           <div className={`card ${styles.gitnexusCard}`}>
             <div className={styles.gitnexusControls}>
               <label className={styles.selectLabel} htmlFor="ops-project-select">Project</label>
-              <select
+              <ThemedSelect
                 id="ops-project-select"
                 className={styles.projectSelect}
                 value={selectedProject?.projectId ?? ''}
-                onChange={(event) => setSelectedProjectId(event.target.value)}
+                onChange={setSelectedProjectId}
                 disabled={indexableProjects.length === 0 || isStarting}
-              >
-                {indexableProjects.map((project) => (
-                  <option key={project.projectId} value={project.projectId}>
-                    {project.name} ({project.slug})
-                  </option>
-                ))}
-              </select>
+                options={indexableProjects.map((project) => ({
+                  value: project.projectId,
+                  label: `${project.name} (${project.slug})`,
+                }))}
+              />
               <button className="btn btn-primary btn-sm" onClick={handleStartGitNexus} disabled={!canStartIndex}>
                 {isStarting ? 'Queueing...' : 'Analyze'}
               </button>

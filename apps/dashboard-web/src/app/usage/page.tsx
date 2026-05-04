@@ -14,6 +14,8 @@ import {
 } from '@/lib/api'
 import styles from './page.module.css'
 
+const HEATMAP_DAYS = 365
+
 // ── Helpers ──
 function formatNumber(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
@@ -206,7 +208,7 @@ export default function UsagePage() {
   const { data: byAgent, mutate: mutateAgent } = useSWR('usage-by-agent', getUsageByAgent, {
     refreshInterval: 30000,
   })
-  const { data: historyData, mutate: mutateHistory } = useSWR('usage-history', () => getUsageHistory(90), {
+  const { data: historyData, mutate: mutateHistory } = useSWR('usage-history', () => getUsageHistory(HEATMAP_DAYS), {
     refreshInterval: 30000,
   })
 
@@ -218,11 +220,11 @@ export default function UsagePage() {
   const agents = byAgent?.agents ?? []
   const history = historyData?.history ?? []
 
-  // Pad history to 90 days for heatmap
+  // Pad history so the heatmap uses fixed-size daily cells instead of stretching a short range.
   const heatmapTrend = (() => {
     const dayMap = new Map(history.map((h) => [h.day, h]))
     const days: { day: string; dateObj: Date; requests: number; tokens: number }[] = []
-    for (let i = 89; i >= 0; i--) {
+    for (let i = HEATMAP_DAYS - 1; i >= 0; i--) {
       const d = new Date()
       d.setDate(d.getDate() - i)
       const dayStr = d.toISOString().split('T')[0] ?? ''
@@ -336,10 +338,10 @@ export default function UsagePage() {
             ))}
           </div>
 
-          {/* 90-Day Heatmap Calendar */}
+          {/* Daily Heatmap Calendar */}
           <div className={styles.heatmapContainer}>
             <div className={styles.heatmapHeader}>
-              <h3 className={styles.heatmapTitle}>90-Day History</h3>
+              <h3 className={styles.heatmapTitle}>Daily History · {HEATMAP_DAYS} days</h3>
               <div className={styles.heatmapLegend}>
                 Less
                 {[0,1,2,3,4].map(level => (

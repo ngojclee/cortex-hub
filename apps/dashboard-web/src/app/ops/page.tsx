@@ -1,12 +1,22 @@
 'use client'
 
+import { useMemo, useState } from 'react'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import useSWR from 'swr'
-import { getSystemMetrics, type SystemMetrics } from '@/lib/api'
+import {
+  getActivityFeed,
+  getIntelProjectsResource,
+  getSystemMetrics,
+  startIndexing,
+  type ActivityEvent,
+  type IntelProjectResourceSummary,
+  type SystemMetrics,
+} from '@/lib/api'
 import styles from './page.module.css'
 
 type Container = SystemMetrics['containers'][number]
 type IndexJob = SystemMetrics['indexJobs'][number]
+type ProjectResource = IntelProjectResourceSummary
 
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
@@ -31,7 +41,7 @@ function timeAgo(dateStr: string | null): string {
 
 function statusClass(status: string | null | undefined, active = false): string {
   if (active) return 'warning'
-  if (status === 'done' || status === 'running') return 'healthy'
+  if (status === 'done' || status === 'running' || status === 'ok' || status === 'active' || status === 'fresh') return 'healthy'
   if (status === 'error' || status === 'exited' || status === 'dead') return 'error'
   return 'warning'
 }
@@ -106,16 +116,109 @@ function JobRow({ job }: { job: IndexJob }) {
   )
 }
 
+function ActivityRow({ event }: { event: ActivityEvent }) {
+  const latency = event.latency_ms && event.latency_ms > 0 ? `${event.latency_ms}ms` : '-'
+  const project = event.project_name ?? event.project_id ?? 'global'
+
+  return (
+    <div className={styles.activityRow}>
+      <div className={styles.activityMain}>
+        <span className={`status-dot ${statusClass(event.status)}`} />
+        <div>
+          <strong>{event.detail}</strong>
+          <span>{event.agent_id} · {project}</span>
+        </div>
+      </div>
+      <span className={`badge badge-${statusClass(event.status)}`}>{event.status}</span>
+      <span className={styles.muted}>{latency}</span>
+      <span className={styles.muted}>{timeAgo(event.created_at)}</span>
+    </div>
+  )
+}
+
+function Signal({ label, value, tone = 'neutral' }: {
+  label: string
+  value: string
+  tone?: 'neutral' | 'healthy' | 'warning' | 'danger'
+}) {
+  const toneClass = tone === 'healthy'
+    ? styles.healthy
+    : tone === 'warning'
+      ? styles.warning
+      : tone === 'danger'
+        ? styles.danger
+        : ''
+
+  return (
+    <div className={styles.signalItem}>
+      <span>{label}</span>
+      <strong className={toneClass}>{value}</strong>
+    </div>
+  )
+}
+
+function projectIndexTone(project: ProjectResource): 'healthy' | 'warning' | 'danger' {
+  const status = project.latestIndexJob?.status ?? project.staleness.latestJobStatus ?? 'none'
+  if (status === 'done') return 'healthy'
+  if (status === 'error') return 'danger'
+  return 'warning'
+}
+
 export default function OpsPage() {
   const { data, error, isLoading, mutate } = useSWR('ops-system-metrics', getSystemMetrics, {
     refreshInterval: 5000,
   })
+  const { data: activityData } = useSWR('ops-activity', () => getActivityFeed(24), {
+    refreshInterval: 5000,
+  })
+  const { data: projectsData, mutate: mutateProjects } = useSWR('ops-intel-projects', getIntelProjectsResource, {
+    refreshInterval: 30000,
+  })
+  const [selectedProjectId, setSelectedProjectId] = useState('')
+  const [isStarting, setIsStarting] = useState(false)
+  const [startMessage, setStartMessage] = useState<string | null>(null)
+  const [startError, setStartError] = useState<string | null>(null)
 
   const containers = data?.containers ?? []
   const jobs = data?.indexJobs ?? []
   const activeJobs = jobs.filter((job) => job.active)
+  const activity = activityData?.activity ?? []
   const topCpu = containers[0]
   const topMemory = [...containers].sort((a, b) => b.memoryRaw - a.memoryRaw)[0]
+  const projects = projectsData?.data.items ?? []
+  const indexableProjects = useMemo(
+    () => projects
+      .filter((project) => project.classification.isIndexable)
+      .sort((a, b) => {
+        if (a.projectId === 'proj-10cea6cf') return -1
+        if (b.projectId === 'proj-10cea6cf') return 1
+        const staleRank = (project: ProjectResource) => project.staleness.status === 'fresh' ? 1 : 0
+        return staleRank(a) - staleRank(b) || a.name.localeCompare(b.name)
+      }),
+    [projects],
+  )
+  const selectedProject = indexableProjects.find((project) => project.projectId === selectedProjectId)
+    ?? indexableProjects[0]
+  const graphRelationships = selectedProject?.gitnexus.stats.relationships ?? 0
+  const graphReady = graphRelationships > 0
+  const canStartIndex = Boolean(selectedProject) && !isStarting && activeJobs.length === 0
+
+  async function handleStartGitNexus() {
+    if (!selectedProject) return
+    setIsStarting(true)
+    setStartMessage(null)
+    setStartError(null)
+
+    try {
+      const result = await startIndexing(selectedProject.projectId, selectedProject.branch ?? undefined)
+      setStartMessage(`Queued ${selectedProject.name} · ${result.jobId}`)
+      await Promise.all([mutate(), mutateProjects()])
+    } catch (err) {
+      setStartError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setIsStarting(false)
+    }
+  }
 
   return (
     <DashboardLayout title="Ops" subtitle="Live runtime load, containers, and indexing activity">
@@ -130,6 +233,8 @@ export default function OpsPage() {
       </div>
 
       {error && <div className={styles.errorBanner}>Could not load system metrics.</div>}
+      {startError && <div className={styles.errorBanner}>{startError}</div>}
+      {startMessage && <div className={styles.successBanner}>{startMessage}</div>}
 
       <div className={styles.resourceGrid}>
         <ResourceCard
@@ -157,6 +262,71 @@ export default function OpsPage() {
           <span>{activeJobs.length} active job{activeJobs.length === 1 ? '' : 's'}</span>
         </div>
       </div>
+
+      <section className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <h2>GitNexus One-Project Run</h2>
+          <span>{activeJobs.length > 0 ? 'Waiting for current job' : 'Ready for one bounded run'}</span>
+        </div>
+        <div className={`card ${styles.gitnexusCard}`}>
+          <div className={styles.gitnexusControls}>
+            <label className={styles.selectLabel} htmlFor="ops-project-select">Project</label>
+            <select
+              id="ops-project-select"
+              className={styles.projectSelect}
+              value={selectedProject?.projectId ?? ''}
+              onChange={(event) => setSelectedProjectId(event.target.value)}
+              disabled={indexableProjects.length === 0 || isStarting}
+            >
+              {indexableProjects.map((project) => (
+                <option key={project.projectId} value={project.projectId}>
+                  {project.name} ({project.slug})
+                </option>
+              ))}
+            </select>
+            <button className="btn btn-primary btn-sm" onClick={handleStartGitNexus} disabled={!canStartIndex}>
+              {isStarting ? 'Queueing...' : 'Analyze selected project'}
+            </button>
+          </div>
+
+          {selectedProject ? (
+            <div className={styles.signalGrid}>
+              <Signal
+                label="Index"
+                value={selectedProject.latestIndexJob?.status ?? selectedProject.staleness.latestJobStatus ?? 'none'}
+                tone={projectIndexTone(selectedProject)}
+              />
+              <Signal
+                label="Symbols"
+                value={String(selectedProject.gitnexus.stats.symbols ?? selectedProject.symbols ?? 0)}
+                tone={(selectedProject.gitnexus.stats.symbols ?? selectedProject.symbols ?? 0) > 0 ? 'healthy' : 'warning'}
+              />
+              <Signal
+                label="Mem9"
+                value={selectedProject.latestIndexJob?.mem9Status ?? 'unknown'}
+                tone={selectedProject.latestIndexJob?.mem9Status === 'done' ? 'healthy' : 'warning'}
+              />
+              <Signal
+                label="Docs"
+                value={`${selectedProject.knowledge.docs} docs / ${selectedProject.knowledge.chunks} chunks`}
+                tone={selectedProject.knowledge.docs > 0 ? 'healthy' : 'warning'}
+              />
+              <Signal
+                label="Staleness"
+                value={selectedProject.staleness.status}
+                tone={selectedProject.staleness.status === 'fresh' ? 'healthy' : 'warning'}
+              />
+              <Signal
+                label="Graph"
+                value={graphReady ? `${graphRelationships} edges` : 'no edges yet'}
+                tone={graphReady ? 'healthy' : 'warning'}
+              />
+            </div>
+          ) : (
+            <div className={styles.emptyState}>No indexable Cortex projects reported.</div>
+          )}
+        </div>
+      </section>
 
       <section className={styles.section}>
         <div className={styles.sectionHeader}>
@@ -189,6 +359,22 @@ export default function OpsPage() {
             jobs.map((job) => <JobRow key={job.id} job={job} />)
           ) : (
             <div className={styles.emptyState}>No indexing jobs recorded yet.</div>
+          )}
+        </div>
+      </section>
+
+      <section className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <h2>Runtime Activity</h2>
+          <span>{activity.length} recent events</span>
+        </div>
+        <div className={`card ${styles.activityCard}`}>
+          {activity.length > 0 ? (
+            activity.map((event, index) => (
+              <ActivityRow key={`${event.type}-${event.created_at}-${index}`} event={event} />
+            ))
+          ) : (
+            <div className={styles.emptyState}>No runtime activity recorded yet.</div>
           )}
         </div>
       </section>

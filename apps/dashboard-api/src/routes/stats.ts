@@ -280,14 +280,26 @@ statsRouter.get('/activity', (c) => {
   try {
     // Combine query_logs+session_handoffs into a unified activity feed
     const queryLogs = db.prepare(`
-      SELECT 'query' as type, agent_id, tool as detail, status, latency_ms, created_at
-      FROM query_logs ORDER BY created_at DESC LIMIT ?
-    `).all(limit) as { type: string; agent_id: string; detail: string; status: string; latency_ms: number | null; created_at: string }[]
+      SELECT 'query' as type, q.agent_id, q.tool as detail, q.status, q.latency_ms, q.created_at,
+             q.project_id, p.name as project_name
+      FROM query_logs q
+      LEFT JOIN projects p ON p.id = q.project_id
+      ORDER BY q.created_at DESC LIMIT ?
+    `).all(limit) as {
+      type: string; agent_id: string; detail: string; status: string; latency_ms: number | null
+      created_at: string; project_id: string | null; project_name: string | null
+    }[]
 
     const sessions = db.prepare(`
-      SELECT 'session' as type, from_agent as agent_id, task_summary as detail, status, 0 as latency_ms, created_at
-      FROM session_handoffs ORDER BY created_at DESC LIMIT ?
-    `).all(limit) as { type: string; agent_id: string; detail: string; status: string; latency_ms: number | null; created_at: string }[]
+      SELECT 'session' as type, sh.from_agent as agent_id, sh.task_summary as detail, sh.status, 0 as latency_ms,
+             sh.created_at, sh.project_id, COALESCE(p.name, sh.project) as project_name
+      FROM session_handoffs sh
+      LEFT JOIN projects p ON p.id = sh.project_id
+      ORDER BY sh.created_at DESC LIMIT ?
+    `).all(limit) as {
+      type: string; agent_id: string; detail: string; status: string; latency_ms: number | null
+      created_at: string; project_id: string | null; project_name: string | null
+    }[]
 
     // Merge and sort by time
     const activity = [...queryLogs, ...sessions]

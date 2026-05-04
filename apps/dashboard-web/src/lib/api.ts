@@ -1128,6 +1128,8 @@ export interface ActivityEvent {
   detail: string
   status: string
   latency_ms: number | null
+  project_id?: string | null
+  project_name?: string | null
   created_at: string
 }
 

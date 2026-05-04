@@ -5,6 +5,17 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Env } from '../types.js'
 import { apiCall } from '../api-call.js'
 
+const DEFAULT_MEMORY_STORE_TIMEOUT_MS = 120_000
+const MIN_MEMORY_STORE_TIMEOUT_MS = 30_000
+
+function resolveMemoryStoreTimeoutMs(env: Env): number {
+  const parsed = Number(env.MCP_MEMORY_STORE_TIMEOUT_MS ?? DEFAULT_MEMORY_STORE_TIMEOUT_MS)
+  if (!Number.isFinite(parsed) || parsed < MIN_MEMORY_STORE_TIMEOUT_MS) {
+    return DEFAULT_MEMORY_STORE_TIMEOUT_MS
+  }
+  return parsed
+}
+
 /**
  * Register memory tools.
  * Proxies to dashboard-api mem9 endpoints for agent memory storage and retrieval.
@@ -62,6 +73,7 @@ export function registerMemoryTools(server: McpServer, env: Env) {
         const response = await apiCall(env, '/api/mem9/store', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(resolveMemoryStoreTimeoutMs(env)),
           body: JSON.stringify({
             messages: [{ role: 'user', content }],
             userId,

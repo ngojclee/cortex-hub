@@ -24,5 +24,9 @@ export interface Env {
   CLIENT_USER_AGENT?: string
   CORTEX_ACCESS_URL?: string
   CORTEX_ACCESS_PORT?: string
+
+  // Memory writes can legitimately run longer than normal API calls because
+  // Mem9 performs LLM extraction, embedding, Qdrant lookup, and payload sync.
+  MCP_MEMORY_STORE_TIMEOUT_MS?: string
 }
 

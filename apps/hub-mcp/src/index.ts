@@ -97,6 +97,7 @@ app.use('*', async (c, next) => {
     'CLIENT_USER_AGENT',
     'CORTEX_ACCESS_URL',
     'CORTEX_ACCESS_PORT',
+    'MCP_MEMORY_STORE_TIMEOUT_MS',
   ]
   for (const key of envKeys) {
     if (!c.env[key] && process.env[key]) {

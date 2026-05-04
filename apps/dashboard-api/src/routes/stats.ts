@@ -95,179 +95,226 @@ statsRouter.get('/overview', async (c) => {
 })
 
 // ── Enriched Overview (v2) — single call for dashboard ──
+// Cached for OVERVIEW_V2_CACHE_TTL_MS (default 30s) to avoid hammering SQLite
+// and Qdrant when multiple Ops/Dashboard tabs poll concurrently.
+const OVERVIEW_V2_CACHE_TTL_MS = (() => {
+  const raw = Number(process.env.OVERVIEW_V2_CACHE_TTL_MS ?? '30000')
+  return Number.isFinite(raw) && raw >= 0 ? raw : 30000
+})()
+let overviewV2Cache: { ts: number; data: unknown } | null = null
+
+interface OverviewProjectRow {
+  id: string
+  name: string
+  slug: string
+  git_provider: string | null
+  git_repo_url: string | null
+  indexed_symbols: number | null
+  indexed_at: string | null
+  created_at: string
+  job_branch: string | null
+  job_status: string | null
+  job_mem9_status: string | null
+  job_mem9_chunks: number | null
+  job_symbols_found: number | null
+  job_total_files: number | null
+  job_completed_at: string | null
+  job_started_at: string | null
+  weekly_queries: number
+  active_sessions: number
+  knowledge_docs: number
+  knowledge_chunks: number
+}
+
+async function buildOverviewV2() {
+  // ── Basic counts ──
+  const keyCount = (db.prepare('SELECT COUNT(*) as count FROM api_keys').get() as { count: number }).count
+  const agentCount = (db.prepare('SELECT COUNT(DISTINCT agent_id) as count FROM query_logs').get() as { count: number }).count
+  const totalQueries = (db.prepare('SELECT COUNT(*) as count FROM query_logs').get() as { count: number }).count
+  const totalSessions = (db.prepare('SELECT COUNT(*) as count FROM session_handoffs').get() as { count: number }).count
+  const orgCount = (db.prepare('SELECT COUNT(*) as count FROM organizations').get() as { count: number }).count
+  const today = new Date().toISOString().split('T')[0]
+  const todayStart = `${today} 00:00:00`  // SQLite uses space, not T
+  const todayQueries = (db.prepare("SELECT COUNT(*) as count FROM query_logs WHERE created_at >= ?").get(todayStart) as { count: number }).count
+  const todayTokens = (db.prepare("SELECT COALESCE(SUM(total_tokens), 0) as total FROM usage_logs WHERE created_at >= ?").get(todayStart) as { total: number }).total
+
+  // ── Memory nodes from Qdrant ──
+  let memoryNodes = 0
+  try {
+    const res = await fetch(`${QDRANT_URL()}/collections`, { signal: AbortSignal.timeout(3000) })
+    if (res.ok) {
+      const data = (await res.json()) as { result?: { collections?: { name: string }[] } }
+      const collections = data.result?.collections ?? []
+      for (const col of collections) {
+        try {
+          const colRes = await fetch(`${QDRANT_URL()}/collections/${col.name}`, { signal: AbortSignal.timeout(2000) })
+          if (colRes.ok) {
+            const colData = (await colRes.json()) as { result?: { points_count?: number } }
+            memoryNodes += colData.result?.points_count ?? 0
+          }
+        } catch { /* skip */ }
+      }
+    }
+  } catch { /* qdrant offline */ }
+
+  // ── Per-project summaries: single CTE query collapsing latest job + aggregates ──
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+
+  // Detect knowledge_documents table once. Older DBs may not have run the migration yet.
+  let hasKnowledgeTable = true
+  try {
+    db.prepare("SELECT 1 FROM knowledge_documents LIMIT 1").get()
+  } catch { hasKnowledgeTable = false }
+
+  const knowledgeDocsExpr = hasKnowledgeTable
+    ? "COALESCE((SELECT COUNT(*) FROM knowledge_documents k WHERE (k.project_id = p.id OR k.project_id = LOWER(p.slug)) AND k.status = 'active'), 0)"
+    : '0'
+  const knowledgeChunksExpr = hasKnowledgeTable
+    ? "COALESCE((SELECT SUM(chunk_count) FROM knowledge_documents k WHERE (k.project_id = p.id OR k.project_id = LOWER(p.slug)) AND k.status = 'active'), 0)"
+    : '0'
+
+  const projectRows = db.prepare(`
+    WITH latest_jobs AS (
+      SELECT project_id, branch, status, mem9_status, mem9_chunks,
+             symbols_found, total_files, completed_at, created_at,
+             ROW_NUMBER() OVER (
+               PARTITION BY project_id
+               ORDER BY COALESCE(completed_at, created_at) DESC, created_at DESC
+             ) AS rn
+      FROM index_jobs
+    )
+    SELECT
+      p.id, p.name, p.slug, p.git_provider, p.git_repo_url,
+      p.indexed_symbols, p.indexed_at, p.created_at,
+      j.branch          AS job_branch,
+      j.status          AS job_status,
+      j.mem9_status     AS job_mem9_status,
+      j.mem9_chunks     AS job_mem9_chunks,
+      j.symbols_found   AS job_symbols_found,
+      j.total_files     AS job_total_files,
+      j.completed_at    AS job_completed_at,
+      j.created_at      AS job_started_at,
+      COALESCE((SELECT COUNT(*) FROM query_logs q WHERE q.project_id = p.id AND q.created_at >= ?), 0) AS weekly_queries,
+      COALESCE((SELECT COUNT(*) FROM session_handoffs s WHERE s.project_id = p.id AND s.status = 'active'), 0) AS active_sessions,
+      ${knowledgeDocsExpr}    AS knowledge_docs,
+      ${knowledgeChunksExpr}  AS knowledge_chunks
+    FROM projects p
+    LEFT JOIN latest_jobs j ON j.project_id = p.id AND j.rn = 1
+    ORDER BY p.created_at DESC
+  `).all(weekAgo) as OverviewProjectRow[]
+
+  const projectSummaries = projectRows.map((p) => {
+    const hasJob = p.job_status !== null
+    return {
+      id: p.id,
+      name: p.name,
+      slug: p.slug,
+      gitProvider: p.git_provider,
+      gitRepoUrl: p.git_repo_url,
+      gitnexus: hasJob ? {
+        status: p.job_status,
+        symbols: p.job_symbols_found ?? p.indexed_symbols ?? 0,
+        files: p.job_total_files ?? 0,
+        branch: p.job_branch,
+        completedAt: p.job_completed_at,
+      } : { status: 'none', symbols: 0, files: 0, branch: null, completedAt: null },
+      mem9: hasJob ? {
+        status: p.job_mem9_status ?? 'pending',
+        chunks: p.job_mem9_chunks ?? 0,
+      } : { status: 'none', chunks: 0 },
+      knowledge: {
+        docs: p.knowledge_docs,
+        chunks: p.knowledge_chunks,
+      },
+      weeklyQueries: p.weekly_queries,
+      activeSessions: p.active_sessions,
+      createdAt: p.created_at,
+    }
+  })
+
+  // ── Quality summary ──
+  const lastReport = db.prepare(
+    'SELECT grade, score_total, created_at FROM quality_reports ORDER BY created_at DESC LIMIT 1'
+  ).get() as { grade: string; score_total: number; created_at: string } | undefined
+
+  const reportsToday = (db.prepare(
+    "SELECT COUNT(*) as count FROM quality_reports WHERE created_at >= ?"
+  ).get(todayStart) as { count: number }).count
+
+  const avgScore = (db.prepare(
+    'SELECT AVG(score_total) as avg FROM quality_reports'
+  ).get() as { avg: number | null }).avg ?? 0
+
+  // ── Knowledge stats ──
+  let knowledgeStats = { totalDocs: 0, totalChunks: 0, totalHits: 0 }
+  if (hasKnowledgeTable) {
+    try {
+      const kAgg = db.prepare(
+        'SELECT COUNT(*) as docs, COALESCE(SUM(chunk_count), 0) as chunks, COALESCE(SUM(hit_count), 0) as hits FROM knowledge_documents'
+      ).get() as { docs: number; chunks: number; hits: number }
+      knowledgeStats = { totalDocs: kAgg.docs, totalChunks: kAgg.chunks, totalHits: kAgg.hits }
+    } catch (e) { console.warn('[overview-v2] knowledge stats error:', e) }
+  }
+
+  // ── Token savings (from Cortex tool calls) ──
+  let tokenSavings = { totalTokensSaved: 0, totalToolCalls: 0, avgTokensPerCall: 0, totalDataBytes: 0, topTools: [] as { tool: string; tokensSaved: number; calls: number }[] }
+  try {
+    const savingsOverall = db.prepare(`
+      SELECT COUNT(*) as total_calls,
+             COALESCE(SUM(output_size), 0) as total_output_bytes,
+             COALESCE(SUM(input_size), 0) + COALESCE(SUM(output_size), 0) as total_data_bytes
+      FROM query_logs WHERE status = 'ok'
+    `).get() as { total_calls: number; total_output_bytes: number; total_data_bytes: number }
+
+    const topTools = db.prepare(`
+      SELECT tool, COUNT(*) as calls, COALESCE(SUM(output_size), 0) as output_bytes, COALESCE(SUM(compute_tokens), 0) as compute_tokens
+      FROM query_logs WHERE status = 'ok'
+      GROUP BY tool ORDER BY output_bytes DESC LIMIT 5
+    `).all() as Array<{ tool: string; calls: number; output_bytes: number; compute_tokens: number }>
+
+    const totalTokensSaved = Math.round(savingsOverall.total_output_bytes / 4)
+    tokenSavings = {
+      totalTokensSaved,
+      totalToolCalls: savingsOverall.total_calls,
+      avgTokensPerCall: savingsOverall.total_calls > 0 ? Math.round(totalTokensSaved / savingsOverall.total_calls) : 0,
+      totalDataBytes: savingsOverall.total_data_bytes,
+      topTools: topTools.map(t => ({ tool: t.tool, tokensSaved: Math.round(t.output_bytes / 4), calls: t.calls, computeTokens: t.compute_tokens })),
+    }
+  } catch (e) { console.warn('[overview-v2] token savings error:', e) }
+
+  return {
+    activeKeys: keyCount,
+    totalAgents: agentCount,
+    memoryNodes,
+    uptime: Math.floor(process.uptime()),
+    totalQueries,
+    totalSessions,
+    organizations: orgCount,
+    today: { queries: todayQueries, tokens: todayTokens },
+    projects: projectSummaries,
+    quality: {
+      lastGrade: lastReport?.grade ?? 'N/A',
+      lastScore: lastReport?.score_total ?? 0,
+      reportsToday,
+      averageScore: Math.round(avgScore),
+    },
+    knowledge: knowledgeStats,
+    tokenSavings,
+  }
+}
+
 statsRouter.get('/overview-v2', async (c) => {
   try {
-    // ── Basic counts ──
-    const keyCount = (db.prepare('SELECT COUNT(*) as count FROM api_keys').get() as { count: number }).count
-    const agentCount = (db.prepare('SELECT COUNT(DISTINCT agent_id) as count FROM query_logs').get() as { count: number }).count
-    const totalQueries = (db.prepare('SELECT COUNT(*) as count FROM query_logs').get() as { count: number }).count
-    const totalSessions = (db.prepare('SELECT COUNT(*) as count FROM session_handoffs').get() as { count: number }).count
-    const orgCount = (db.prepare('SELECT COUNT(*) as count FROM organizations').get() as { count: number }).count
-    const today = new Date().toISOString().split('T')[0]
-    const todayStart = `${today} 00:00:00`  // SQLite uses space, not T
-    const todayQueries = (db.prepare("SELECT COUNT(*) as count FROM query_logs WHERE created_at >= ?").get(todayStart) as { count: number }).count
-    const todayTokens = (db.prepare("SELECT COALESCE(SUM(total_tokens), 0) as total FROM usage_logs WHERE created_at >= ?").get(todayStart) as { total: number }).total
-
-    // ── Memory nodes from Qdrant ──
-    let memoryNodes = 0
-    try {
-      const res = await fetch(`${QDRANT_URL()}/collections`, { signal: AbortSignal.timeout(3000) })
-      if (res.ok) {
-        const data = (await res.json()) as { result?: { collections?: { name: string }[] } }
-        const collections = data.result?.collections ?? []
-        for (const col of collections) {
-          try {
-            const colRes = await fetch(`${QDRANT_URL()}/collections/${col.name}`, { signal: AbortSignal.timeout(2000) })
-            if (colRes.ok) {
-              const colData = (await colRes.json()) as { result?: { points_count?: number } }
-              memoryNodes += colData.result?.points_count ?? 0
-            }
-          } catch { /* skip */ }
-        }
-      }
-    } catch { /* qdrant offline */ }
-
-    // ── Per-project summaries with index/mem9 status ──
-    const projects = db.prepare(`
-      SELECT p.id, p.name, p.slug, p.git_provider, p.git_repo_url,
-             p.indexed_symbols, p.indexed_at, p.created_at
-      FROM projects p ORDER BY p.created_at DESC
-    `).all() as Array<{
-      id: string; name: string; slug: string; git_provider: string | null
-      git_repo_url: string | null; indexed_symbols: number | null
-      indexed_at: string | null; created_at: string
-    }>
-
-    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-
-    const projectSummaries = projects.map((p) => {
-      // Latest indexing job
-      const job = db.prepare(`
-        SELECT id, branch, status, mem9_status, mem9_chunks,
-               symbols_found, total_files, completed_at, created_at as started_at
-        FROM index_jobs WHERE project_id = ? ORDER BY completed_at DESC, created_at DESC LIMIT 1
-      `).get(p.id) as {
-        id: string; branch: string; status: string; mem9_status: string | null
-        mem9_chunks: number | null; symbols_found: number | null
-        total_files: number | null; completed_at: string | null; started_at: string
-      } | undefined
-
-      // Weekly query count
-      const weeklyQueries = (db.prepare(
-        'SELECT COUNT(*) as count FROM query_logs WHERE project_id = ? AND created_at >= ?'
-      ).get(p.id, weekAgo) as { count: number }).count
-
-      // Active sessions
-      const activeSessions = (db.prepare(
-        "SELECT COUNT(*) as count FROM session_handoffs WHERE project_id = ? AND status = 'active'"
-      ).get(p.id) as { count: number }).count
-
-      // Knowledge documents for this project
-      // Note: buildKnowledgeFromDocs normalizes project_id to slug, so we query by both ID and slug
-      let knowledgeDocs = 0
-      let knowledgeChunks = 0
-      try {
-        const kStats = db.prepare(
-          "SELECT COUNT(*) as docs, COALESCE(SUM(chunk_count), 0) as chunks FROM knowledge_documents WHERE (project_id = ? OR project_id = ?) AND status = 'active'"
-        ).get(p.id, p.slug.toLowerCase()) as { docs: number; chunks: number }
-        knowledgeDocs = kStats.docs
-        knowledgeChunks = kStats.chunks
-      } catch { /* knowledge table may not exist yet */ }
-
-      return {
-        id: p.id,
-        name: p.name,
-        slug: p.slug,
-        gitProvider: p.git_provider,
-        gitRepoUrl: p.git_repo_url,
-        gitnexus: job ? {
-          status: job.status,
-          symbols: job.symbols_found ?? p.indexed_symbols ?? 0,
-          files: job.total_files ?? 0,
-          branch: job.branch,
-          completedAt: job.completed_at,
-        } : { status: 'none', symbols: 0, files: 0, branch: null, completedAt: null },
-        mem9: job ? {
-          status: job.mem9_status ?? 'pending',
-          chunks: job.mem9_chunks ?? 0,
-        } : { status: 'none', chunks: 0 },
-        knowledge: {
-          docs: knowledgeDocs,
-          chunks: knowledgeChunks,
-        },
-        weeklyQueries,
-        activeSessions,
-        createdAt: p.created_at,
-      }
-    })
-
-    // ── Quality summary ──
-    const lastReport = db.prepare(
-      'SELECT grade, score_total, created_at FROM quality_reports ORDER BY created_at DESC LIMIT 1'
-    ).get() as { grade: string; score_total: number; created_at: string } | undefined
-
-    const reportsToday = (db.prepare(
-      "SELECT COUNT(*) as count FROM quality_reports WHERE created_at >= ?"
-    ).get(todayStart) as { count: number }).count
-
-    const avgScore = (db.prepare(
-      'SELECT AVG(score_total) as avg FROM quality_reports'
-    ).get() as { avg: number | null }).avg ?? 0
-
-    // ── Knowledge stats ──
-    let knowledgeStats = { totalDocs: 0, totalChunks: 0, totalHits: 0 }
-    try {
-      const kDocs = (db.prepare('SELECT COUNT(*) as count FROM knowledge_documents').get() as { count: number }).count
-      const kChunks = (db.prepare('SELECT COALESCE(SUM(chunk_count), 0) as total FROM knowledge_documents').get() as { total: number }).total
-      const kHits = (db.prepare('SELECT COALESCE(SUM(hit_count), 0) as total FROM knowledge_documents').get() as { total: number }).total
-      knowledgeStats = { totalDocs: kDocs, totalChunks: kChunks, totalHits: kHits }
-    } catch (e) { console.warn('[overview-v2] knowledge stats error:', e) }
-
-    // ── Token savings (from Cortex tool calls) ──
-    let tokenSavings = { totalTokensSaved: 0, totalToolCalls: 0, avgTokensPerCall: 0, totalDataBytes: 0, topTools: [] as { tool: string; tokensSaved: number; calls: number }[] }
-    try {
-      const savingsOverall = db.prepare(`
-        SELECT COUNT(*) as total_calls,
-               COALESCE(SUM(output_size), 0) as total_output_bytes,
-               COALESCE(SUM(input_size), 0) + COALESCE(SUM(output_size), 0) as total_data_bytes
-        FROM query_logs WHERE status = 'ok'
-      `).get() as { total_calls: number; total_output_bytes: number; total_data_bytes: number }
-
-      const topTools = db.prepare(`
-        SELECT tool, COUNT(*) as calls, COALESCE(SUM(output_size), 0) as output_bytes, COALESCE(SUM(compute_tokens), 0) as compute_tokens
-        FROM query_logs WHERE status = 'ok'
-        GROUP BY tool ORDER BY output_bytes DESC LIMIT 5
-      `).all() as Array<{ tool: string; calls: number; output_bytes: number; compute_tokens: number }>
-
-      const totalTokensSaved = Math.round(savingsOverall.total_output_bytes / 4)
-      tokenSavings = {
-        totalTokensSaved,
-        totalToolCalls: savingsOverall.total_calls,
-        avgTokensPerCall: savingsOverall.total_calls > 0 ? Math.round(totalTokensSaved / savingsOverall.total_calls) : 0,
-        totalDataBytes: savingsOverall.total_data_bytes,
-        topTools: topTools.map(t => ({ tool: t.tool, tokensSaved: Math.round(t.output_bytes / 4), calls: t.calls, computeTokens: t.compute_tokens })),
-      }
-    } catch (e) { console.warn('[overview-v2] token savings error:', e) }
-
-    return c.json({
-      activeKeys: keyCount,
-      totalAgents: agentCount,
-      memoryNodes,
-      uptime: Math.floor(process.uptime()),
-      totalQueries,
-      totalSessions,
-      organizations: orgCount,
-      today: { queries: todayQueries, tokens: todayTokens },
-      projects: projectSummaries,
-      quality: {
-        lastGrade: lastReport?.grade ?? 'N/A',
-        lastScore: lastReport?.score_total ?? 0,
-        reportsToday,
-        averageScore: Math.round(avgScore),
-      },
-      knowledge: knowledgeStats,
-      tokenSavings,
-    })
+    if (
+      overviewV2Cache &&
+      OVERVIEW_V2_CACHE_TTL_MS > 0 &&
+      Date.now() - overviewV2Cache.ts < OVERVIEW_V2_CACHE_TTL_MS
+    ) {
+      return c.json(overviewV2Cache.data)
+    }
+    const data = await buildOverviewV2()
+    overviewV2Cache = { ts: Date.now(), data }
+    return c.json(data)
   } catch (error) {
     return c.json({ error: String(error) }, 500)
   }

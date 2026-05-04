@@ -122,26 +122,52 @@ async function getContainerLogs(container: string, tail: number): Promise<Runtim
 }
 
 // ── Helper: get Docker container stats ──
-function getContainerStats(): ContainerInfo[] {
-  try {
-    // Get container list via docker ps
-    const psOutput = execFileSync('docker', [
-      'ps', '-a',
-      '--format', '{{.Names}}|{{.State}}|{{.Status}}|{{.Image}}',
-    ], { timeout: 5000, encoding: 'utf-8' }).trim()
+// `docker stats --no-stream` blocks ~1.5s while sampling CPU. Without caching,
+// every /api/system/metrics request (Ops page polls every 15s, multiple tabs
+// possible) would re-sample the daemon. We cache the parsed result for a short
+// TTL and restrict the query to Cortex containers by default.
+const CONTAINER_STATS_TTL_MS = (() => {
+  const raw = Number(process.env.CONTAINER_STATS_TTL_MS ?? '8000')
+  return Number.isFinite(raw) && raw >= 0 ? raw : 8000
+})()
+const CONTAINER_NAME_FILTER = (process.env.CONTAINER_STATS_NAME_FILTER ?? 'cortex-').trim()
+let containerStatsCache: { ts: number; data: ContainerInfo[] } | null = null
 
-    if (!psOutput) return []
+function getContainerStats(): ContainerInfo[] {
+  if (
+    containerStatsCache &&
+    CONTAINER_STATS_TTL_MS > 0 &&
+    Date.now() - containerStatsCache.ts < CONTAINER_STATS_TTL_MS
+  ) {
+    return containerStatsCache.data
+  }
+
+  try {
+    // Get container list via docker ps (filter to reduce daemon load)
+    const psArgs = ['ps', '-a', '--format', '{{.Names}}|{{.State}}|{{.Status}}|{{.Image}}']
+    if (CONTAINER_NAME_FILTER) psArgs.push('--filter', `name=${CONTAINER_NAME_FILTER}`)
+
+    const psOutput = execFileSync('docker', psArgs, { timeout: 5000, encoding: 'utf-8' }).trim()
+
+    if (!psOutput) {
+      const empty: ContainerInfo[] = []
+      containerStatsCache = { ts: Date.now(), data: empty }
+      return empty
+    }
 
     const containers = psOutput.split('\n').filter(Boolean)
     const stats: ContainerInfo[] = []
 
-    // Get stats for all running containers in one call
+    // Get stats for all running containers in one call (filtered)
     let statsMap: Record<string, { cpu: string; cpuPercent: number; memory: string; memPercent: number }> = {}
     try {
-      const statsOutput = execFileSync('docker', [
+      const statsArgs = [
         'stats', '--no-stream',
         '--format', '{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}|{{.MemPerc}}',
-      ], { timeout: 10000, encoding: 'utf-8' }).trim()
+      ]
+      if (CONTAINER_NAME_FILTER) statsArgs.push('--filter', `name=${CONTAINER_NAME_FILTER}`)
+
+      const statsOutput = execFileSync('docker', statsArgs, { timeout: 10000, encoding: 'utf-8' }).trim()
 
       if (statsOutput) {
         for (const line of statsOutput.split('\n').filter(Boolean)) {
@@ -190,7 +216,9 @@ function getContainerStats(): ContainerInfo[] {
       })
     }
 
-    return stats.sort((a, b) => (b.cpuPercent - a.cpuPercent) || (b.memoryRaw - a.memoryRaw) || a.name.localeCompare(b.name))
+    const sorted = stats.sort((a, b) => (b.cpuPercent - a.cpuPercent) || (b.memoryRaw - a.memoryRaw) || a.name.localeCompare(b.name))
+    containerStatsCache = { ts: Date.now(), data: sorted }
+    return sorted
   } catch {
     return []
   }

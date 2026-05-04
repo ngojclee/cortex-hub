@@ -182,15 +182,15 @@ export default function OpsPage() {
   const [startError, setStartError] = useState<string | null>(null)
 
   const { data, error, isLoading, mutate } = useSWR('ops-system-metrics', getSystemMetrics, {
-    refreshInterval: 5000,
+    refreshInterval: 15000,
   })
   const { data: logData, mutate: mutateLogs } = useSWR(
     ['ops-runtime-logs', selectedLogService],
     () => getRuntimeLogs(selectedLogService, 160),
-    { refreshInterval: 3000 },
+    { refreshInterval: 10000 },
   )
   const { data: activityData } = useSWR('ops-activity', () => getActivityFeed(18), {
-    refreshInterval: 5000,
+    refreshInterval: 15000,
   })
   const { data: projectsData, mutate: mutateProjects } = useSWR('ops-intel-projects', getIntelProjectsResource, {
     refreshInterval: 30000,
@@ -250,7 +250,7 @@ export default function OpsPage() {
     <DashboardLayout title="Ops" subtitle="Live server workload, logs, and bounded maintenance actions">
       <div className={styles.toolbar}>
         <div>
-          <span className={styles.livePill}>Live - logs every 3s</span>
+          <span className={styles.livePill}>Live - logs every 10s</span>
           {data && <span className={styles.hostMeta}>{data.hostname} - {data.ip} - {data.cpu.cores} cores</span>}
         </div>
         <button className="btn btn-secondary btn-sm" onClick={refreshAll} disabled={isLoading}>

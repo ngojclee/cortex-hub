@@ -432,11 +432,11 @@ export async function startIndexing(projectId: string, jobId: string, branch: st
       })
 
       const summary = parseGitNexusAnalyzeSummary(analyzeResult.stdout)
-      symbolsFound = summary.symbolsFound
-      totalFiles = countSourceFilesInDir(repoDir)
 
-      if (analyzeResult.code === 0 && (symbolsFound > 0 || analyzeResult.stdout.includes('Repository indexed successfully'))) {
+      if (analyzeResult.code === 0 && (summary.symbolsFound > 0 || analyzeResult.stdout.includes('Repository indexed successfully'))) {
         gitnexusSuccess = true
+        symbolsFound = summary.symbolsFound
+        totalFiles = countSourceFilesInDir(repoDir)
         appendLog(jobId, `GitNexus: ${totalFiles} files, ${symbolsFound} symbols`)
       } else {
         appendLog(jobId, `[warn] Native GitNexus CLI exited ${analyzeResult.code}; falling back to pure JS extraction`)

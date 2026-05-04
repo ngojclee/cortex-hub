@@ -1462,6 +1462,20 @@ export async function getSystemMetrics() {
   return apiFetch<SystemMetrics>('/api/system/metrics')
 }
 
+
+export interface RuntimeLogEntry {
+  container: string
+  stream: string
+  message: string
+  timestamp: string | null
+}
+
+export async function getRuntimeLogs(service = 'all', tail = 120) {
+  const params = new URLSearchParams({ service, tail: String(tail) })
+  return apiFetch<{ service: string; tail: number; logs: RuntimeLogEntry[] }>(`/api/system/logs?${params}`)
+}
+
+
 // ── Knowledge Base ──
 export interface KnowledgeDocument {
   id: string

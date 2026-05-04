@@ -13,10 +13,11 @@ LOCK_FILE="${GITNEXUS_ANALYZE_LOCK_FILE:-/tmp/gitnexus-index.lock}"
 # it does not reserve RAM, but it prevents a single process from growing forever.
 export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=2048}"
 
-# Low-load defaults for small hosts/LXCs. Startup indexing runs in the background,
-# and auto-discovery is capped so recovery never fans out across all projects.
-GITNEXUS_STARTUP_INDEXING="${GITNEXUS_STARTUP_INDEXING:-true}"
-GITNEXUS_AUTO_DISCOVER="${GITNEXUS_AUTO_DISCOVER:-true}"
+# Low-load defaults for small hosts/LXCs. Cortex/API owns scheduled indexing.
+# Startup discovery is opt-in because container restarts can otherwise reload
+# every repo and repeatedly spike CPU while health checks are still warming up.
+GITNEXUS_STARTUP_INDEXING="${GITNEXUS_STARTUP_INDEXING:-false}"
+GITNEXUS_AUTO_DISCOVER="${GITNEXUS_AUTO_DISCOVER:-false}"
 GITNEXUS_STARTUP_INDEXING_DELAY_SECONDS="${GITNEXUS_STARTUP_INDEXING_DELAY_SECONDS:-15}"
 GITNEXUS_AUTO_DISCOVER_MAX_REPOS="${GITNEXUS_AUTO_DISCOVER_MAX_REPOS:-0}"
 GITNEXUS_ANALYZE_COOLDOWN_SECONDS="${GITNEXUS_ANALYZE_COOLDOWN_SECONDS:-90}"
@@ -295,4 +296,4 @@ else
 fi
 
 echo "GitNexus: Starting eval-server on port $PORT..."
-exec gitnexus eval-server --port "$PORT" --idle-timeout 0
+exec gitnexus eval-server --port "$PORT" --idle-timeout "${GITNEXUS_EVAL_IDLE_TIMEOUT_SECONDS:-0}"

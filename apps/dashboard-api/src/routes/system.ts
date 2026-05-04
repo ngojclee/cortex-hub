@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import os from 'node:os'
 import { execFileSync } from 'node:child_process'
+import { request } from 'node:http'
 import { db } from '../db/client.js'
 
 export const systemRouter = new Hono()
@@ -45,6 +46,79 @@ interface DiskInfo {
   available: string
   usedPercent: number
   mountpoint: string
+}
+
+interface RuntimeLogEntry {
+  container: string
+  stream: string
+  message: string
+  timestamp: string | null
+}
+
+const LOGGABLE_DOCKER_SERVICES = [
+  'cortex-api',
+  'cortex-mcp',
+  'cortex-gitnexus',
+  'cortex-llm-proxy',
+  'cortex-qdrant',
+] as const
+
+function readDockerSocket(path: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const req = request({
+      socketPath: '/var/run/docker.sock',
+      method: 'GET',
+      path,
+      timeout: 15_000,
+    }, (res) => {
+      const chunks: Buffer[] = []
+      res.on('data', (chunk) => { chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)) })
+      res.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8')
+        if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+          resolve(body)
+          return
+        }
+        reject(new Error(`Docker API ${res.statusCode ?? 'unknown'}: ${body || res.statusMessage || 'no body'}`))
+      })
+    })
+
+    req.on('timeout', () => { req.destroy(new Error('Docker API request timed out')) })
+    req.on('error', reject)
+    req.end()
+  })
+}
+
+function sanitizeLogLine(line: string): string {
+  return line
+    .replace(/(authorization\s*[:=]\s*bearer\s+)[^\s,;]+/gi, '$1[redacted]')
+    .replace(/((?:api[_-]?key|token|password|secret)\s*[:=]\s*)[^\s,;]+/gi, '$1[redacted]')
+    .replace(/([?&](?:key|token|password|secret)=)[^&\s]+/gi, '$1[redacted]')
+}
+
+function parseDockerLogLine(container: string, raw: string): RuntimeLogEntry | null {
+  const cleaned = raw.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').trim()
+  if (!cleaned) return null
+
+  const timestampMatch = cleaned.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[^\s]*)\s+(.*)$/)
+  const timestamp = timestampMatch?.[1] ?? null
+  const message = sanitizeLogLine(timestampMatch?.[2] ?? cleaned)
+  const lowered = message.toLowerCase()
+  const stream = lowered.includes('error') || lowered.includes('warn') || lowered.includes('failed')
+    ? 'stderr'
+    : 'stdout'
+
+  return { container, stream, message, timestamp }
+}
+
+async function getContainerLogs(container: string, tail: number): Promise<RuntimeLogEntry[]> {
+  const safeTail = Math.min(300, Math.max(10, tail))
+  const path = `/containers/${encodeURIComponent(container)}/logs?stdout=1&stderr=1&timestamps=1&tail=${safeTail}`
+  const body = await readDockerSocket(path)
+  return body
+    .split('\n')
+    .map((line) => parseDockerLogLine(container, line))
+    .filter((entry): entry is RuntimeLogEntry => Boolean(entry))
 }
 
 // ── Helper: get Docker container stats ──
@@ -265,6 +339,31 @@ function isIndexJobActive(status: string | null, mem9Status: string | null, docs
   return ['pending', 'cloning', 'analyzing', 'ingesting'].includes(status ?? '') ||
     mem9Status === 'embedding' || docsKnowledgeStatus === 'building'
 }
+
+// ── Runtime logs endpoint ──
+systemRouter.get('/logs', async (c) => {
+  const service = c.req.query('service') ?? 'all'
+  const tail = Number(c.req.query('tail') ?? 80)
+  const allowed = [...LOGGABLE_DOCKER_SERVICES]
+
+  if (service !== 'all' && !allowed.includes(service as typeof LOGGABLE_DOCKER_SERVICES[number])) {
+    return c.json({ error: `Cannot read logs for "${service}". Allowed: all, ${allowed.join(', ')}` }, 400)
+  }
+
+  try {
+    const targets = service === 'all' ? allowed : [service]
+    const logs = (await Promise.all(
+      targets.map((container) => getContainerLogs(container, Math.ceil(tail / targets.length)).catch(() => [])),
+    ))
+      .flat()
+      .sort((a, b) => (b.timestamp ?? '').localeCompare(a.timestamp ?? ''))
+      .slice(0, Math.min(300, Math.max(10, tail)))
+
+    return c.json({ service, tail, logs })
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
 
 // ── Main endpoint ──
 systemRouter.get('/metrics', async (c) => {

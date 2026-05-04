@@ -444,9 +444,164 @@
   font-size: 0.6875rem;
 }
 
+.opsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.diagnosisCard,
+.diagnosisCardDanger {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.8fr);
+  gap: var(--space-4);
+  align-items: stretch;
+  padding: var(--space-5);
+  margin-bottom: var(--space-6);
+}
+
+.diagnosisCard {
+  border-color: color-mix(in srgb, var(--status-warning) 20%, var(--border-subtle));
+}
+
+.diagnosisCardDanger {
+  border-color: color-mix(in srgb, var(--status-error) 35%, var(--border-subtle));
+  background: color-mix(in srgb, var(--status-error) 6%, var(--bg-card));
+}
+
+.diagnosisCard strong,
+.diagnosisCardDanger strong {
+  display: block;
+  margin-top: var(--space-2);
+  color: var(--text-primary);
+  font-size: 1rem;
+}
+
+.diagnosisCard p,
+.diagnosisCardDanger p {
+  margin: var(--space-2) 0 0;
+  color: var(--text-tertiary);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.diagnosisMetrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--border-subtle);
+}
+
+.logControls {
+  min-width: 180px;
+}
+
+.logControls select {
+  width: 100%;
+}
+
+.logCard,
+.workloadCard {
+  padding: 0;
+  overflow: hidden;
+}
+
+.logCard {
+  max-height: 520px;
+  overflow: auto;
+  background: color-mix(in srgb, var(--bg-primary) 86%, var(--bg-card));
+}
+
+.logRow {
+  display: grid;
+  grid-template-columns: 84px 104px minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+  padding: 7px var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 0.75rem;
+}
+
+.logRow:last-child {
+  border-bottom: none;
+}
+
+.logRow code {
+  min-width: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.logTime,
+.logService {
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.logService {
+  color: var(--accent-secondary);
+}
+
+.info,
+.warn,
+.error {
+  color: inherit;
+}
+
+.logRow.warn code {
+  color: var(--status-warning);
+}
+
+.logRow.error code {
+  color: var(--status-error);
+}
+
+.workloadHeader,
+.workloadRow {
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) 80px 90px 70px;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.workloadHeader {
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.workloadRow {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+.workloadRow:last-child {
+  border-bottom: none;
+}
+
 @media (max-width: 1100px) {
   .resourceGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .opsGrid,
+  .diagnosisCard,
+  .diagnosisCardDanger {
+    grid-template-columns: 1fr;
   }
 
   .signalGrid {
@@ -483,7 +638,8 @@
   }
 
   .tableCard,
-  .activityCard {
+  .activityCard,
+  .workloadCard {
     overflow-x: auto;
   }
 
@@ -493,8 +649,19 @@
   }
 
   .tableHeader,
-  .tableRow {
+  .tableRow,
+  .workloadHeader,
+  .workloadRow {
     min-width: 620px;
+  }
+
+  .logCard {
+    overflow-x: auto;
+  }
+
+  .logRow {
+    grid-template-columns: 78px 90px minmax(300px, 1fr);
+    min-width: 560px;
   }
 
   .jobProgress {
